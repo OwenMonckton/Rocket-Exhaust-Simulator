@@ -37,6 +37,8 @@ export function encodeState(s: AppState): string {
     s.flight.altitudeKm,
     s.flight.throttle,
     c.chambers,
+    c.extFixedDia,
+    c.extDeploy,
   ];
   return `${VERSION}.${toBase64Url(JSON.stringify(packed))}`;
 }
@@ -48,8 +50,8 @@ export function decodeState(hash: string): AppState | null {
     const dot = text.indexOf('.');
     if (dot < 0 || text.slice(0, dot) !== VERSION) return null;
     const a: unknown = JSON.parse(fromBase64Url(text.slice(dot + 1)));
-    // Links made before multi-chamber engines existed have 13 entries and mean one chamber.
-    if (!Array.isArray(a) || (a.length !== 13 && a.length !== 14)) return null;
+    // Older links are shorter: 13 entries (one chamber, one-piece nozzle) or 14 (chamber count added).
+    if (!Array.isArray(a) || ![13, 14, 16].includes(a.length)) return null;
     const [presetId, propellant, ...nums] = a;
     if (!isPropellantId(propellant)) return null;
     if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
@@ -67,6 +69,8 @@ export function decodeState(hash: string): AppState | null {
       mixtureRatio: n[7],
       scale: n[8],
       chambers: n.length > 11 ? n[11] : 1,
+      extFixedDia: n.length > 13 ? n[12] : 0,
+      extDeploy: n.length > 13 ? n[13] : 1,
     });
     return { config, flight: sanitizeFlight({ altitudeKm: n[9], throttle: n[10] }) };
   } catch {

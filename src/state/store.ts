@@ -6,7 +6,7 @@ import type { AppState } from './share';
 
 export type { AppState };
 
-const SCALED: (keyof EngineConfig)[] = ['chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall'];
+const SCALED: (keyof EngineConfig)[] = ['chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall', 'extFixedDia'];
 
 /** Grow or shrink the whole engine: every dimension, and the wall, by the same factor. */
 export function applyScale(cfg: EngineConfig, newScale: number): EngineConfig {
@@ -26,7 +26,7 @@ export function isModified(cfg: EngineConfig): boolean {
   if (cfg.propellant !== stock.propellant) return true;
   const keys: (keyof EngineConfig)[] = [
     'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'nozzleLenPct',
-    'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers',
+    'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers', 'extFixedDia', 'extDeploy',
   ];
   return keys.some((k) => !close(cfg[k] as number, stock[k] as number));
 }

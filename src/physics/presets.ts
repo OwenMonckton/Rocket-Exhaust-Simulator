@@ -9,8 +9,6 @@ export interface Preset {
   blurb: string;
   config: EngineConfig;
   published: { thrustKN: number; atVacuum: boolean; ispSL?: number; ispVac: number };
-  /** Present when the nozzle has a deployable extension: the exit diameter (m) with it stowed. The stock config has it deployed. */
-  extension?: { stowedExitDia: number };
 }
 
 interface Spec {
@@ -22,7 +20,7 @@ interface Spec {
   of: number;
   /** Nozzle expansion ratio (exit area / throat area) */
   eps: number;
-  /** Expansion ratio with a deployable nozzle extension stowed */
+  /** Expansion ratio of the fixed nozzle, for an engine with a deployable nozzle extension */
   epsStowed?: number;
   /** Chamber diameter as a multiple of throat diameter */
   contraction: number;
@@ -143,14 +141,15 @@ function build(s: Spec): Preset {
       mixtureRatio: PROPELLANTS[s.propellant].throttleable ? s.of : PROPELLANTS[s.propellant].ofDefault,
       scale: 1,
       chambers: s.chambers ?? 1,
+      // Deployable extension: stock engines have it seated.
+      extFixedDia: s.epsStowed ? round(throatDia * Math.sqrt(s.epsStowed)) : 0,
+      extDeploy: 1,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };
   const trial = simulate(shape(0.3), flight).thrust;
   const throatDia = 0.3 * Math.sqrt((s.published.thrustKN * 1000) / trial);
-  const preset: Preset = { id: s.id, name: s.name, blurb: s.blurb, config: shape(throatDia), published: s.published };
-  if (s.epsStowed) preset.extension = { stowedExitDia: round(preset.config.throatDia * Math.sqrt(s.epsStowed)) };
-  return preset;
+  return { id: s.id, name: s.name, blurb: s.blurb, config: shape(throatDia), published: s.published };
 }
 
 export const PRESETS: Preset[] = SPECS.map(build);

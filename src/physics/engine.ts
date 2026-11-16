@@ -34,6 +34,8 @@ export const RANGES = {
   chamberPressureBar: { min: 5, max: 400, fallback: 100 },
   scale: { min: 0.25, max: 5, fallback: 1 },
   chambers: { min: 1, max: 4, fallback: 1 },
+  extFixedDia: { min: 0, max: 25, fallback: 0 },
+  extDeploy: { min: 0, max: 1, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
 } satisfies Record<string, Range>;
@@ -49,6 +51,9 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
   const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
+  // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
+  let extFixedDia = clampTo(cfg.extFixedDia, RANGES.extFixedDia);
+  if (extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
   return {
     presetId: typeof cfg.presetId === 'string' ? cfg.presetId : null,
     propellant,
@@ -62,6 +67,8 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     mixtureRatio: clampMixture(propellant, cfg.mixtureRatio),
     scale: clampTo(cfg.scale, RANGES.scale),
     chambers: Math.round(clampTo(cfg.chambers, RANGES.chambers)),
+    extFixedDia,
+    extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
   };
 }
 
@@ -70,6 +77,14 @@ export function sanitizeFlight(f: FlightState): FlightState {
     altitudeKm: clampTo(f?.altitudeKm, RANGES.altitudeKm),
     throttle: clampTo(f?.throttle, RANGES.throttle),
   };
+}
+
+/** Exit diameter of the nozzle the gas is expanding through, allowing for a part-deployed extension. */
+export function flowExitDiameter(cfg: EngineConfig): number {
+  if (!(cfg.extFixedDia > 0)) return cfg.exitDia;
+  const t = Math.min(1, Math.max(0, (cfg.extDeploy - 0.9) / 0.1));
+  const seated = t * t * (3 - 2 * t);
+  return cfg.extFixedDia + (cfg.exitDia - cfg.extFixedDia) * seated;
 }
 
 function combustionEfficiency(lStar: number, lStarRef: number): number {
@@ -95,7 +110,10 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const g = gas.gamma;
 
   const at = (Math.PI / 4) * cfg.throatDia ** 2;
-  const ae = (Math.PI / 4) * cfg.exitDia ** 2;
+  // A nozzle extension does nothing until it is nearly seated: before that the exhaust simply
+  // leaves the fixed nozzle. It comes into play over the last tenth of its travel.
+  const flowExitDia = flowExitDiameter(cfg);
+  const ae = (Math.PI / 4) * flowExitDia ** 2;
   const eps = ae / at;
   const lStar = ((Math.PI / 4) * cfg.chamberDia ** 2 * cfg.chamberLen) / at;
 
@@ -171,6 +189,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     exitVelocity: now.ve,
     expansionRatio: eps,
     effectiveExitDia: Math.sqrt((4 * now.area) / Math.PI),
+    flowExitDia,
     tc: gas.tc,
     gamma: g,
     cStarEff,

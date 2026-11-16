@@ -22,6 +22,8 @@ uniform float uAfter;       // afterburning strength
 uniform vec3 uAfterCol;
 uniform float uParticles;   // glowing particles carried in the exhaust
 
+uniform float uWallOn;           // 1 when a nozzle extension stands in the plume
+uniform vec4 uWall;              // its inner surface in exit radii: (x, r) upstream end, (x, r) downstream end
 uniform int uExitCount;          // how many nozzle exits to draw a plume from (1 or 2)
 uniform float uExitOffsets[2];   // their vertical offsets from uExit, in pixels
 
@@ -201,6 +203,11 @@ void main() {
         // the glow along the line of sight instead of showing a single slice.
         // Only look as far out as the plume can plausibly reach.
         float reach = mix(min(size.y, max(1.6, 1.3 * uSettle) + 0.16 * xs), size.y, clamp(uBloom * 2.0, 0.0, 1.0));
+        // Inside a nozzle extension there is nothing to see beyond its wall, so don't look there:
+        // the samples are better spent on the gas inside.
+        if (uWallOn > 0.5 && xs >= uWall.x && xs <= uWall.z) {
+          reach = min(reach, mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x)) + 0.05);
+        }
         float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
         const int SAMPLES = 12;
         float jitter = hash(frag + fract(uTime) * 61.0);
@@ -250,6 +257,11 @@ void main() {
         col = mix(col, smokeCol, clamp(sm, 0.0, 0.92));
       }
 
+      // Nothing gets through the wall of a nozzle extension.
+      if (uWallOn > 0.5 && xs >= uWall.x && xs <= uWall.z) {
+        float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
+        em *= 1.0 - smoothstep(inner - 0.04, inner + 0.02, y);
+      }
       emTotal += em;
     }
     }

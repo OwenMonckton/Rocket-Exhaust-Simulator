@@ -1,5 +1,5 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
-import { machFromPressureRatio } from '../physics/nozzle';
+import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
 import { PROPELLANTS, gasProps, richness } from '../physics/propellants';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
 import type { SimInputs } from './fluidSim';
@@ -59,27 +59,61 @@ const R_AIR = 287.05;
 /** One representative air temperature (K); the solver only needs air to be cold and dense next to exhaust. */
 const AIR_TEMP = 250;
 
-/** Boundary conditions for the prototype gas simulation, in units of the nozzle exit state. */
-export function simInputs(cfg: EngineConfig, r: SimResult, fire: number): SimInputs {
+/** The gas as it leaves a fixed nozzle that has a deployable extension, whatever the extension is doing. */
+export interface FixedExitFlow {
+  radiusM: number;
+  mach: number;
+  /** Pa */
+  pressure: number;
+  /** True when the jet tore off the wall before reaching the end of the fixed nozzle */
+  separated: boolean;
+}
+
+/** Null for an ordinary one-piece nozzle. */
+export function fixedExitFlow(cfg: EngineConfig, r: SimResult): FixedExitFlow | null {
+  if (!(cfg.extFixedDia > 0)) return null;
+  const fixedR = cfg.extFixedDia / 2;
+  if (r.state === 'separated' && r.effectiveExitDia / 2 < fixedR * 0.999) {
+    return { radiusM: r.effectiveExitDia / 2, mach: r.exitMach, pressure: r.pe, separated: true };
+  }
+  const mach = machFromAreaRatio((cfg.extFixedDia / cfg.throatDia) ** 2, r.gamma);
+  return { radiusM: fixedR, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
+}
+
+/**
+ * Boundary conditions for the gas simulation, in units of the state where the gas enters it.
+ * That is the nozzle exit, or with `start` the exit of a fixed nozzle whose extension the
+ * simulation then treats as a solid wall.
+ */
+export function simInputs(
+  cfg: EngineConfig,
+  r: SimResult,
+  fire: number,
+  start?: { flow: FixedExitFlow; wallSlope: number },
+): SimInputs {
   const g = r.gamma;
-  const t0 = 1 + ((g - 1) / 2) * r.exitMach * r.exitMach;
+  const mach = start ? start.flow.mach : r.exitMach;
+  const pressure = start ? start.flow.pressure : r.pe;
+  const separated = start ? start.flow.separated : r.state === 'separated';
+  const t0 = 1 + ((g - 1) / 2) * mach * mach;
   const exitTemp = r.tc / t0;
   // The solver cannot reach a true vacuum, so the air never gets thinner than 1/400 of the exhaust pressure.
-  const pAmb = r.pa > 0 ? clamp(r.pa / r.pe, 1 / 400, 20) : 1 / 400;
+  const pAmb = r.pa > 0 ? clamp(r.pa / pressure, 1 / 400, 20) : 1 / 400;
   const gasR = gasProps(cfg.propellant, cfg.mixtureRatio).R;
+  // Slope of the bell wall at the lip (see engineProfile).
+  const lipSlope = start ? start.wallSlope : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
   return {
     gamma: g,
-    uExit: r.exitMach * Math.sqrt(g),
+    uExit: mach * Math.sqrt(g),
     pAmb,
     rhoAmb: (pAmb * gasR * exitTemp) / (R_AIR * AIR_TEMP),
     fire: clamp(fire, 0, 1),
     t0,
-    // Slope of the bell wall at the lip (see engineProfile). A jet that has already torn off the wall leaves straighter and more evenly.
-    divergence: r.state === 'separated' ? 0.06 : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct,
-    profile: r.state === 'separated' ? 0 : 0.4,
+    // A jet that has already torn off the wall leaves straighter and more evenly.
+    divergence: separated ? 0.06 : lipSlope,
+    profile: separated ? 0 : 0.4,
   };
 }
-
 /** Turn the physics result into what the plume should look like. `fire` is the 0–1 ignition ramp. */
 export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState, fire: number): PlumeParams {
   const prop = PROPELLANTS[cfg.propellant];

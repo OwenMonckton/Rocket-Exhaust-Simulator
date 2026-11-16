@@ -25,29 +25,29 @@ resetBtn.addEventListener('click', () => {
 // Deployable nozzle extension (RL10B-2): slides between its stowed and deployed sizes.
 const deployBtn = $<HTMLButtonElement>('deploy');
 deployBtn.title = TIPS.deploy;
-const extensionSizes = () => {
-  const cfg = store.get().config;
-  const preset = getPreset(cfg.presetId);
-  if (!preset?.extension) return null;
-  // Both sizes follow the engine scale.
-  const stowed = preset.extension.stowedExitDia * cfg.scale;
-  const deployed = preset.config.exitDia * cfg.scale;
-  return { stowed, deployed, isDeployed: cfg.exitDia > (stowed + deployed) / 2 };
-};
+// It travels slowly enough to watch the plume meet it on the way.
+const DEPLOY_MS = 6000;
 let deployAnim = 0;
+let deployTarget: number | null = null;
 deployBtn.addEventListener('click', () => {
-  const sizes = extensionSizes();
-  if (!sizes) return;
+  const cfg = store.get().config;
+  if (!(cfg.extFixedDia > 0)) return;
   cancelAnimationFrame(deployAnim);
-  const from = store.get().config.exitDia;
-  const to = sizes.isDeployed ? sizes.stowed : sizes.deployed;
-  const start = performance.now();
-  const DURATION_MS = 1600;
+  // Reverse if already moving; otherwise head for the other end.
+  const to = deployTarget !== null ? 1 - deployTarget : cfg.extDeploy > 0.5 ? 0 : 1;
+  deployTarget = to;
+  let last = performance.now();
   const tick = (now: number) => {
-    const t = Math.min(1, (now - start) / DURATION_MS);
-    const eased = t * t * (3 - 2 * t);
-    store.set({ config: { exitDia: from + (to - from) * eased } });
-    if (t < 1) deployAnim = requestAnimationFrame(tick);
+    const step = (now - last) / DEPLOY_MS;
+    last = now;
+    const at = store.get().config.extDeploy;
+    const next = to > at ? Math.min(to, at + step) : Math.max(to, at - step);
+    store.set({ config: { extDeploy: next } });
+    if (next !== to && store.get().config.extFixedDia > 0) deployAnim = requestAnimationFrame(tick);
+    else {
+      deployTarget = null;
+      syncHeader();
+    }
   };
   deployAnim = requestAnimationFrame(tick);
 });
@@ -56,9 +56,10 @@ const syncHeader = () => {
   const cfg = store.get().config;
   const preset = getPreset(cfg.presetId);
   const modified = preset ? isModified(cfg) : false;
-  const sizes = extensionSizes();
-  deployBtn.hidden = sizes === null;
-  if (sizes) deployBtn.textContent = sizes.isDeployed ? 'Stow nozzle' : 'Deploy nozzle';
+  deployBtn.hidden = !(cfg.extFixedDia > 0);
+  // While it is moving the button offers to send it back the other way.
+  const heading = deployTarget ?? (cfg.extDeploy > 0.5 ? 1 : 0);
+  deployBtn.textContent = heading === 1 ? 'Stow nozzle' : 'Deploy nozzle';
   presetSelect.value = preset ? preset.id : '';
   resetBtn.disabled = !modified;
   blurb.textContent = preset ? (modified ? `Modified ${preset.name}. ` : '') + preset.blurb : 'Custom engine.';

@@ -33,13 +33,24 @@ export interface SimInputs {
   profile: number;
 }
 
+/**
+ * The inner surface of a solid cone standing in the flow (a nozzle extension), in exit radii
+ * measured from where the gas enters the grid. Only the part inside the grid matters.
+ */
+export interface SimWall {
+  x0: number;
+  r0: number;
+  x1: number;
+  r1: number;
+}
+
 export interface FluidSim {
   /** Gas state: density, momentum (x, r), energy */
   readonly texture: WebGLTexture;
   /** Exhaust density (density × exhaust fraction) */
   readonly scalarTexture: WebGLTexture;
   /** Advance the simulation one display frame. `lengthRadii` is how many exit radii the grid spans downstream. */
-  step(inputs: SimInputs, lengthRadii: number): void;
+  step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null): void;
   reset(): void;
 }
 
@@ -67,6 +78,9 @@ uniform float uDiverge;
 uniform float uProfile;
 uniform float uExitSpeed;
 uniform vec2 uAmb;          // density, pressure
+uniform float uWallOn;      // 1 when a solid cone (a nozzle extension) stands in the flow
+uniform vec4 uWall;         // its inner surface: (x, r) at the upstream end, (x, r) at the downstream end
+uniform float uWallThick;
 
 layout(location = 0) out vec4 outU;
 layout(location = 1) out vec4 outS;
@@ -193,8 +207,27 @@ vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d, float fa, float fb, float fc, floa
   return F;
 }
 
+// Is this cell inside the solid wall of a nozzle extension?
+bool solid(ivec2 c) {
+  if (uWallOn < 0.5 || c.x < 0 || c.y < 0) return false;
+  float x = (float(c.x) + 0.5) * uDx;
+  float r = (float(c.y) + 0.5) * uDx;
+  if (x < uWall.x || x > uWall.z) return false;
+  float inner = mix(uWall.y, uWall.w, (x - uWall.x) / max(1e-6, uWall.z - uWall.x));
+  return r >= inner && r <= inner + uWallThick;
+}
+
+// Gas bounces off a solid surface: the velocity toward it is reversed.
+vec4 bounceX(vec4 w) { w.y = -w.y; return w; }
+vec4 bounceY(vec4 w) { w.z = -w.z; return w; }
+
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
+  if (solid(c)) {
+    outU = toCons(ambient());
+    outS = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
   float f0, fxm2, fxm1, fxp1, fxp2, fym2, fym1, fyp1, fyp2;
   vec4 w0 = cell(c, f0);
   vec4 xm2 = cell(c + ivec2(-2, 0), fxm2);
@@ -206,6 +239,17 @@ void main() {
   vec4 yp1 = cell(c + ivec2(0, 1), fyp1);
   vec4 yp2 = cell(c + ivec2(0, 2), fyp2);
 
+  // Where a neighbour is solid wall, replace it (and whatever lies beyond) with mirror images.
+  if (uWallOn > 0.5) {
+    if (solid(c + ivec2(-1, 0))) { xm1 = bounceX(w0); fxm1 = f0; xm2 = bounceX(xp1); fxm2 = fxp1; }
+    else if (solid(c + ivec2(-2, 0))) { xm2 = bounceX(xm1); fxm2 = fxm1; }
+    if (solid(c + ivec2(1, 0))) { xp1 = bounceX(w0); fxp1 = f0; xp2 = bounceX(xm1); fxp2 = fxm1; }
+    else if (solid(c + ivec2(2, 0))) { xp2 = bounceX(xp1); fxp2 = fxp1; }
+    if (solid(c + ivec2(0, -1))) { ym1 = bounceY(w0); fym1 = f0; ym2 = bounceY(yp1); fym2 = fyp1; }
+    else if (solid(c + ivec2(0, -2))) { ym2 = bounceY(ym1); fym2 = fym1; }
+    if (solid(c + ivec2(0, 1))) { yp1 = bounceY(w0); fyp1 = f0; yp2 = bounceY(ym1); fyp2 = fym1; }
+    else if (solid(c + ivec2(0, 2))) { yp2 = bounceY(yp1); fyp2 = fyp1; }
+  }
   float sxL, sxR, syB, syT;
   vec4 fxL = faceFlux(xm2, xm1, w0, xp1, fxm2, fxm1, f0, fxp1, sxL);
   vec4 fxR = faceFlux(xm1, w0, xp1, xp2, fxm1, f0, fxp1, fxp2, sxR);
@@ -295,6 +339,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     prev: u('uPrev'), cur: u('uCur'), prevS: u('uPrevS'), curS: u('uCurS'), stage: u('uStage'),
     grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
+    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'),
   };
 
   const makeTexture = (format: number) => {
@@ -363,7 +408,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     reset() {
       needsReset = true;
     },
-    step(inputs: SimInputs, lengthRadii: number) {
+    step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null) {
       if (needsReset) {
         fill(inputs, lengthRadii);
         needsReset = false;
@@ -387,6 +432,13 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform1f(loc.profile, inputs.profile);
       gl.uniform1f(loc.exitSpeed, inputs.uExit);
       gl.uniform2f(loc.amb, inputs.rhoAmb, inputs.pAmb);
+      const hasWall = !!wall && wall.x1 > 0 && wall.x1 > wall.x0;
+      gl.uniform1f(loc.wallOn, hasWall ? 1 : 0);
+      if (hasWall) {
+        gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+        // Thick enough that gas cannot leak through between neighbouring cells.
+        gl.uniform1f(loc.wallThick, Math.max(3 * dx, 0.05));
+      }
       gl.uniform1i(loc.prev, 0);
       gl.uniform1i(loc.cur, 1);
       gl.uniform1i(loc.prevS, 2);

@@ -7,7 +7,7 @@ import type { Failure, SimResult } from '../physics/types';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { engineProfile, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer } from '../render/plume';
-import { plumeParams, simInputs } from '../render/plumeParams';
+import { fixedExitFlow, plumeParams, simInputs } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
 
 export interface FrameInfo {
@@ -126,21 +126,51 @@ export function createRuntime(
 
     const params = plumeParams(state.config, result, state.flight, fire);
     const pixelsPerMetre = view.ppm * dpr;
+    const useSim = plumeMode === 'sim' && (plume?.simAvailable ?? false);
+
+    // A nozzle extension is a separate part. Until it seats, the gas leaves the engine at the end
+    // of the fixed nozzle and the extension is just a wall in its way. The simulated plume always
+    // starts at the fixed nozzle, and works out the flow inside the extension itself.
+    const ext = profile.extension;
+    const fixedFlow = ext ? fixedExitFlow(state.config, result) : null;
+    const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
+    const flowExitX = fromFixed ? fromFixed.ext.seam.x : profile.exitX;
+    const plumeRadiusM = fromFixed
+      ? useSim
+        ? fromFixed.flow.radiusM
+        : Math.min(params.exitRadiusM, fromFixed.ext.seam.r)
+      : params.exitRadiusM;
+    const wall = fromFixed
+      ? {
+          x0: -fromFixed.ext.shift / plumeRadiusM,
+          r0: fromFixed.ext.seam.r / plumeRadiusM,
+          x1: (fromFixed.ext.length - fromFixed.ext.shift) / plumeRadiusM,
+          r1: state.config.exitDia / 2 / plumeRadiusM,
+        }
+      : null;
+
     plume?.draw(
       params,
       {
-        exitX: (view.originX + profile.exitX * view.ppm) * dpr,
+        exitX: (view.originX + flowExitX * view.ppm) * dpr,
         exitY: (h - view.centreY) * dpr,
-        radiusPx: params.exitRadiusM * view.ppm * dpr,
+        radiusPx: plumeRadiusM * view.ppm * dpr,
         offsetsPx: profile.offsets.map((o) => o * pixelsPerMetre),
+        wall,
       },
       timeS,
-      plumeMode === 'sim' ? simInputs(state.config, result, fire) : null,
+      useSim
+        ? simInputs(
+            state.config,
+            result,
+            fire,
+            fromFixed ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope } : undefined,
+          )
+        : null,
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT }, w, h);
-
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 

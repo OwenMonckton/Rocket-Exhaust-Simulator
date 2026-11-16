@@ -1,5 +1,4 @@
 import { areaRatio, machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
-import { getPreset } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { engineProfile, radiusAt, type EngineProfile, type View } from './geometry';
@@ -14,6 +13,8 @@ export interface EngineAnim {
   failure: Failure;
   /** Seconds since the failure happened */
   failT: number;
+  /** Distance (m) from the injector face to where the gas leaves the engine: the fixed nozzle's exit until an extension seats */
+  flowExitX: number;
 }
 
 const css = (c: RGB, a = 1) =>
@@ -203,16 +204,20 @@ export function drawEngine(
   };
 
   // --- Interior cavity -----------------------------------------------------
+  // With a nozzle extension, the fixed nozzle and the extension are separate parts.
+  const ext = profile.extension;
+  const wallPts = ext ? ext.fixedPoints : pts;
+  const gasPts = ext && anim.flowExitX < profile.exitX - 1e-6 ? ext.fixedPoints : pts;
   const cavity = (clipR?: (x: number, r: number) => number) => {
     ctx.beginPath();
-    pts.forEach((p, i) => {
+    gasPts.forEach((p, i) => {
       const r = clipR ? clipR(p.x, p.r) : p.r;
       if (i === 0) ctx.moveTo(X(p.x), cy - r * ppm);
       else ctx.lineTo(X(p.x), cy - r * ppm);
     });
-    for (let i = pts.length - 1; i >= 0; i--) {
-      const r = clipR ? clipR(pts[i].x, pts[i].r) : pts[i].r;
-      ctx.lineTo(X(pts[i].x), cy + r * ppm);
+    for (let i = gasPts.length - 1; i >= 0; i--) {
+      const r = clipR ? clipR(gasPts[i].x, gasPts[i].r) : gasPts[i].r;
+      ctx.lineTo(X(gasPts[i].x), cy + r * ppm);
     }
     ctx.closePath();
   };
@@ -330,13 +335,13 @@ export function drawEngine(
   // --- Walls ---------------------------------------------------------------
   for (const sign of [-1, 1]) {
     ctx.beginPath();
-    pts.forEach((p, i) => {
+    wallPts.forEach((p, i) => {
       const y = cy + sign * p.r * ppm;
       if (i === 0) ctx.moveTo(X(p.x), y);
       else ctx.lineTo(X(p.x), y);
     });
-    for (let i = pts.length - 1; i >= 0; i--) {
-      ctx.lineTo(X(pts[i].x), cy + sign * (pts[i].r * ppm + wallAt(pts[i].x)));
+    for (let i = wallPts.length - 1; i >= 0; i--) {
+      ctx.lineTo(X(wallPts[i].x), cy + sign * (wallPts[i].r * ppm + wallAt(wallPts[i].x)));
     }
     ctx.closePath();
     const top = cy + sign * (profile.maxRadius * ppm + wallPx);
@@ -365,45 +370,51 @@ export function drawEngine(
   }
 
   // --- Deployable nozzle extension -----------------------------------------
-  // Drawn as a darker carbon section from where the fixed nozzle ends.
-  const extension = getPreset(cfg.presetId)?.extension;
-  const fixedR = extension ? (extension.stowedExitDia * cfg.scale) / 2 : 0;
-  if (extension && cfg.exitDia / 2 > fixedR * 1.01) {
-    const bell = pts.filter((p) => p.x >= profile.throatX);
-    const start = bell.findIndex((p) => p.r >= fixedR);
-    if (start > 0) {
-      const a = bell[start - 1];
-      const b = bell[start];
-      const f = (fixedR - a.r) / Math.max(1e-9, b.r - a.r);
-      const seam = { x: a.x + (b.x - a.x) * f, r: fixedR };
-      const section = [seam, ...bell.slice(start)];
-      for (const sign of [-1, 1]) {
-        ctx.beginPath();
-        section.forEach((p, i) => {
-          const y = cy + sign * p.r * ppm;
-          if (i === 0) ctx.moveTo(X(p.x), y);
-          else ctx.lineTo(X(p.x), y);
-        });
-        for (let i = section.length - 1; i >= 0; i--) {
-          ctx.lineTo(X(section[i].x), cy + sign * (section[i].r * ppm + wallAt(section[i].x)));
-        }
-        ctx.closePath();
-        ctx.fillStyle = '#2b2e36';
-        ctx.fill();
-        ctx.strokeStyle = '#0f1115';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        // Joint between the fixed nozzle and the extension.
-        ctx.strokeStyle = '#c9ced8';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(X(seam.x), cy + sign * seam.r * ppm);
-        ctx.lineTo(X(seam.x), cy + sign * (seam.r * ppm + wallAt(seam.x) + 3));
-        ctx.stroke();
+  // A separate carbon cone. Stowed, it sits forward around the engine; to deploy it travels
+  // aft along its rails and seats on the end of the fixed nozzle.
+  if (ext) {
+    const shiftPx = ext.shift * ppm;
+    const seamX = X(ext.seam.x);
+    const seamR = ext.seam.r * ppm;
+    for (const sign of [-1, 1]) {
+      // Rail the extension slides along.
+      const railY = cy + sign * (seamR + wallAt(ext.seam.x) + 5);
+      ctx.strokeStyle = 'rgba(190,196,208,0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(seamX - ext.length * ppm, railY);
+      ctx.lineTo(seamX, railY);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ext.points.forEach((p, i) => {
+        const y = cy + sign * p.r * ppm;
+        if (i === 0) ctx.moveTo(X(p.x) - shiftPx, y);
+        else ctx.lineTo(X(p.x) - shiftPx, y);
+      });
+      for (let i = ext.points.length - 1; i >= 0; i--) {
+        const p = ext.points[i];
+        ctx.lineTo(X(p.x) - shiftPx, cy + sign * (p.r * ppm + wallAt(p.x)));
       }
+      ctx.closePath();
+      ctx.fillStyle = '#4b505c';
+      ctx.fill();
+      // A pale outline so the dark carbon cone still reads against the black of space.
+      ctx.strokeStyle = '#9aa2b1';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Mating rings: one on the end of the fixed nozzle, one on the front of the extension.
+      ctx.strokeStyle = '#c9ced8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(seamX, cy + sign * seamR);
+      ctx.lineTo(seamX, cy + sign * (seamR + wallAt(ext.seam.x) + 3));
+      ctx.moveTo(seamX - shiftPx, cy + sign * seamR);
+      ctx.lineTo(seamX - shiftPx, cy + sign * (seamR + wallAt(ext.seam.x) + 7));
+      ctx.stroke();
     }
   }
-
   // --- Injector head / forward dome ---------------------------------------
   const headW =Math.max(8, 0.16 * rc * ppm + wallPx);
   const headH = rc * ppm + wallPx;

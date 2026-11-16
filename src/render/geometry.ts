@@ -21,8 +21,25 @@ export interface EngineProfile {
   offsets: number[];
   /** Half the height of everything drawn, m */
   halfHeight: number;
-  /** Space needed ahead of the injector face for a shared turbopump, m */
+  /** Space needed ahead of the injector face for a shared turbopump or a stowed nozzle extension, m */
   frontSpace: number;
+  /** Present when the nozzle has a deployable extension */
+  extension: NozzleExtension | null;
+}
+
+export interface NozzleExtension {
+  /** Where the extension seats: the exit of the fixed nozzle */
+  seam: ProfilePoint;
+  /** The fixed nozzle's contour, from the injector face to the seam */
+  fixedPoints: ProfilePoint[];
+  /** The extension's contour in its seated position, from the seam to the exit */
+  points: ProfilePoint[];
+  /** Axial length of the extension, m */
+  length: number;
+  /** How far forward of its seated position it currently sits, m (0 when seated) */
+  shift: number;
+  /** Slope (dr/dx) of the nozzle wall at the seam */
+  seamSlope: number;
 }
 
 export interface View {
@@ -74,8 +91,33 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   const multi = cfg.chambers > 1;
   const pitch = 1.18 * 2 * Math.max(rc, re);
 
+  // Deployable extension: split the bell where the fixed nozzle ends. Stowed, the extension
+  // sits forward by its own length, wrapped around the engine.
+  let extension: NozzleExtension | null = null;
+  const fixedR = cfg.extFixedDia / 2;
+  if (fixedR > rt && fixedR < re) {
+    const i = points.findIndex((p) => p.x > throatX && p.r >= fixedR);
+    if (i > 0) {
+      const a = points[i - 1];
+      const b = points[i];
+      const f = (fixedR - a.r) / Math.max(1e-12, b.r - a.r);
+      const seam = { x: a.x + (b.x - a.x) * f, r: fixedR };
+      const length = throatX + bellLen - seam.x;
+      extension = {
+        seam,
+        fixedPoints: [...points.slice(0, i), seam],
+        points: [seam, ...points.slice(i)],
+        length,
+        shift: (1 - cfg.extDeploy) * length,
+        seamSlope: (b.r - a.r) / Math.max(1e-12, b.x - a.x),
+      };
+    }
+  }
+  const stowedOverhang = extension ? Math.max(0, extension.length - extension.seam.x) + 0.1 * re : 0;
+
   return {
     points,
+    extension,
     chamberEndX: cfg.chamberLen,
     throatX,
     exitX: throatX + bellLen,
@@ -83,7 +125,7 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
     maxRadius: Math.max(rc, re),
     offsets: multi ? [-pitch / 2, pitch / 2] : [0],
     halfHeight: Math.max(rc, re) + (multi ? pitch / 2 : 0),
-    frontSpace: multi ? 0.75 * pitch : 0,
+    frontSpace: Math.max(multi ? 0.75 * pitch : 0, stowedOverhang),
   };
 }
 

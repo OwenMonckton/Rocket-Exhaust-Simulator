@@ -1,4 +1,4 @@
-import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs } from './fluidSim';
+import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
 import type { PlumeParams } from './plumeParams';
 
@@ -9,6 +9,8 @@ export interface PlumeTarget {
   radiusPx: number;
   /** Vertical offsets (device pixels) of each nozzle exit that gets a plume; one entry for a single-chamber engine */
   offsetsPx: number[];
+  /** A nozzle extension standing in the plume, in exit radii from the plume's origin; the plume cannot pass through it */
+  wall?: SimWall | null;
 }
 
 export interface PlumeRenderer {
@@ -24,7 +26,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall',
 ] as const;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -104,7 +106,7 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         const up = (0.5 * canvas.height + Math.max(...target.offsetsPx.map(Math.abs))) / target.radiusPx;
         const length = Math.min(24, Math.max(4, across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
         cell = length / SIM_NX;
-        sim!.step(simInputs!, length);
+        sim!.step(simInputs!, length, target.wall);
       }
 
       gl.useProgram(program);
@@ -133,6 +135,11 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       gl.uniform3fv(u.uEdge, p.edge);
       gl.uniform3fv(u.uSkyTop, p.skyTop);
       gl.uniform3fv(u.uSkyBottom, p.skyBottom);
+
+      const wall = target.wall;
+      const hasWall = !!wall && wall.x1 > 0 && wall.x1 > wall.x0;
+      gl.uniform1f(u.uWallOn, hasWall ? 1 : 0);
+      if (hasWall) gl.uniform4f(u.uWall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
 
       gl.uniform1f(u.uUseSim, useSim ? 1 : 0);
       gl.uniform1i(u.uSim, 0);

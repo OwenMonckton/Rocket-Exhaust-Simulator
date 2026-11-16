@@ -78,6 +78,14 @@ export interface EngineConfig {
    * Every dimension above describes one chamber; thrust and propellant flow are the total.
    */
   chambers: number;
+  /**
+   * Deployable nozzle extension (RL10B-2). `extFixedDia` is the exit diameter (m) of the fixed
+   * nozzle the extension seats onto, or 0 for an ordinary one-piece nozzle; `exitDia` is then
+   * the exit of the extension. `extDeploy` runs from 0 (stowed, slid forward around the engine)
+   * to 1 (seated on the fixed nozzle).
+   */
+  extFixedDia: number;
+  extDeploy: number;
 }
 
 export interface FlightState {
@@ -113,6 +121,8 @@ export interface SimResult {
   expansionRatio: number;
   /** Diameter of the jet where it leaves the wall; less than exitDia when separated */
   effectiveExitDia: number;
+  /** Exit diameter of the nozzle the gas is actually expanding through: the fixed nozzle alone until an extension seats */
+  flowExitDia: number;
   tc: number;
   gamma: number;
   cStarEff: number;

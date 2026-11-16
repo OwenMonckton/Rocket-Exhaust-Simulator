@@ -55,18 +55,29 @@ describe('presets', () => {
     expect(simulate(nerva, { altitudeKm: 100, throttle: 0.5 }).tc).toBe(r.tc);
   });
 
-  it('loses vacuum efficiency with the RL10B-2 nozzle extension stowed', () => {
-    const rl10 = getPreset('rl10b-2')!;
-    expect(rl10.extension).toBeDefined();
-    expect(rl10.extension!.stowedExitDia).toBeLessThan(rl10.config.exitDia);
+  it('gives the RL10B-2 a nozzle extension that only works once it seats', () => {
+    const rl10 = getPreset('rl10b-2')!.config;
+    expect(rl10.extFixedDia).toBeGreaterThan(rl10.throatDia);
+    expect(rl10.extFixedDia).toBeLessThan(rl10.exitDia);
+    expect(rl10.extDeploy).toBe(1);
     const vac = { altitudeKm: 100, throttle: 1 };
-    const deployed = simulate(rl10.config, vac);
-    const stowed = simulate({ ...rl10.config, exitDia: rl10.extension!.stowedExitDia }, vac);
-    expect(stowed.ispVacuum).toBeLessThan(deployed.ispVacuum);
-    expect(stowed.ispVacuum).toBeGreaterThan(0.95 * deployed.ispVacuum);
-    expect(PRESETS.filter((p) => p.extension).map((p) => p.id)).toEqual(['rl10b-2']);
+    const at = (extDeploy: number) => simulate({ ...rl10, extDeploy }, vac);
+    const seated = at(1);
+    const stowed = at(0);
+    expect(seated.flowExitDia).toBeCloseTo(rl10.exitDia, 9);
+    expect(stowed.flowExitDia).toBeCloseTo(rl10.extFixedDia, 9);
+    expect(stowed.ispVacuum).toBeLessThan(seated.ispVacuum);
+    expect(stowed.ispVacuum).toBeGreaterThan(0.95 * seated.ispVacuum);
+    // Halfway down its rails it is still doing nothing; it comes in over the last tenth of travel.
+    expect(at(0.5).thrust).toBe(stowed.thrust);
+    expect(at(0.9).thrust).toBe(stowed.thrust);
+    expect(at(0.95).thrust).toBeGreaterThan(stowed.thrust);
+    expect(at(0.95).thrust).toBeLessThan(seated.thrust);
+    // Only this engine has one; everything else ignores the setting.
+    expect(PRESETS.filter((p) => p.config.extFixedDia > 0).map((p) => p.id)).toEqual(['rl10b-2']);
+    const merlin = getPreset('merlin-1d')!.config;
+    expect(simulate({ ...merlin, extDeploy: 0 }, vac).thrust).toBe(simulate(merlin, vac).thrust);
   });
-
   it('models the RD-170 as four chambers sharing one pump', () => {
     const rd170 = getPreset('rd-170')!.config;
     expect(rd170.chambers).toBe(4);

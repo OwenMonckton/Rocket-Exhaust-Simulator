@@ -23,6 +23,11 @@ describe('share links', () => {
     expect(four.config.chambers).toBe(4);
     const silly = 'v1.' + btoa(JSON.stringify(['merlin-1d', 'kerolox', 0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 99.7]));
     expect(decodeState(silly)!.config.chambers).toBe(4);
+    // A half-deployed nozzle extension survives a share link.
+    const half = { config: { ...getPreset('rl10b-2')!.config, extDeploy: 0.5 }, flight: { altitudeKm: 100, throttle: 1 } };
+    expect(decodeState(encodeState(half))).toEqual(half);
+    expect(decodeState(old)!.config.extFixedDia).toBe(0);
+    expect(decodeState(old)!.config.extDeploy).toBe(1);
   });
   it('rejects garbage without throwing (review focus)', () => {
     const good = encodeState(defaultState());

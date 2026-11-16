@@ -56,6 +56,26 @@ describe('engine profile', () => {
     expect(single.offsets).toEqual([0]);
     expect(single.frontSpace).toBe(0);
   });
+  it('splits a nozzle with an extension, and slides the extension forward to stow it', () => {
+    const rl10 = PRESETS.find((p) => p.id === 'rl10b-2')!.config;
+    const seated = engineProfile(rl10).extension!;
+    expect(seated).not.toBeNull();
+    expect(seated.shift).toBe(0);
+    expect(seated.seam.r).toBeCloseTo(rl10.extFixedDia / 2, 9);
+    expect(seated.fixedPoints.at(-1)).toEqual(seated.seam);
+    expect(seated.points[0]).toEqual(seated.seam);
+    expect(seated.points.at(-1)!.r).toBeCloseTo(rl10.exitDia / 2, 9);
+    expect(seated.seamSlope).toBeGreaterThan(0);
+    const stowed = engineProfile({ ...rl10, extDeploy: 0 });
+    expect(stowed.extension!.shift).toBeCloseTo(seated.length, 9);
+    expect(engineProfile({ ...rl10, extDeploy: 0.5 }).extension!.shift).toBeCloseTo(seated.length / 2, 9);
+    // The view does not move as it deploys, and leaves room in front for the stowed extension.
+    expect(stowed.length).toBe(engineProfile(rl10).length);
+    expect(stowed.frontSpace).toBe(engineProfile(rl10).frontSpace);
+    const v = viewTransform(stowed, 1200, 600);
+    expect(v.originX + (seated.seam.x - seated.length) * v.ppm).toBeGreaterThan(0);
+    expect(engineProfile(PRESETS[0].config).extension).toBeNull();
+  });
   it('fits the engine in the left of the stage', () => {
     for (const p of PRESETS) {
       const prof = engineProfile(p.config);

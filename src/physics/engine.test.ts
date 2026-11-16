@@ -15,6 +15,8 @@ const base: EngineConfig = {
   mixtureRatio: 2.4,
   scale: 1,
   chambers: 1,
+  extFixedDia: 0,
+  extDeploy: 1,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 
