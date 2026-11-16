@@ -1,6 +1,6 @@
 import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
-import type { PlumeParams } from './plumeParams';
+import { VACUUM_FLOOR, type PlumeParams } from './plumeParams';
 
 export interface PlumeTarget {
   /** Device pixels, origin bottom-left as WebGL expects */
@@ -26,8 +26,21 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip', 'uSimCurve',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
 ] as const;
+
+/** Longest stretch of plume the gas simulation covers, in exit radii. */
+export const SIM_MAX_LENGTH = 24;
+
+/**
+ * How long to make the simulation grid (in exit radii) to cover at least `needed`.
+ * The length only comes in steps about 9% apart: every change means carrying the gas over
+ * to the new grid, which blurs it slightly, so it should not happen on every frame of a zoom.
+ */
+export function gridLength(needed: number): number {
+  const steps = Math.ceil(8 * Math.log2(Math.max(4, needed) / 4) - 1e-9);
+  return Math.min(SIM_MAX_LENGTH, 4 * 2 ** (steps / 8));
+}
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -101,14 +114,21 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       const useSim = !!simInputs && sim !== null && target.radiusPx > 0.5;
       let cell = 1;
       let upstream = 0;
+      let fadeX = 1.1;
+      let fadeY = 0.45;
       if (useSim) {
         // Size the grid to cover the visible plume, whatever the zoom.
         const across = (canvas.width - target.exitX) / target.radiusPx;
         const up = (0.5 * canvas.height + Math.max(...target.offsetsPx.map(Math.abs))) / target.radiusPx;
-        const length = Math.min(24, Math.max(4, across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
+        const length = gridLength(Math.max(across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
         // A strip beside the nozzle, upstream of its exit, for exhaust that curls back around the lip.
         upstream = Math.min(2, 0.15 * length);
         cell = (length + upstream) / SIM_NX;
+        // Zoomed out far enough, the grid ends on screen. A plume that fills it (as one does in
+        // a vacuum) would stop there in a hard straight line, so let it thin out gradually instead.
+        const height = SIM_NY * cell;
+        fadeX = Math.min(0.3 * length, 1.1 + 1.5 * Math.max(0, across - length));
+        fadeY = Math.min(0.3 * height, 0.45 + 1.5 * Math.max(0, up - height));
         sim!.step(simInputs!, length + upstream, target.wall, upstream);
       }
 
@@ -158,12 +178,14 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         gl.uniform2f(u.uSimGrid, SIM_NX, SIM_NY);
         gl.uniform1f(u.uSimCell, cell);
         gl.uniform1f(u.uSimUp, upstream);
+        gl.uniform2f(u.uSimFade, fadeX, fadeY);
         gl.uniform1f(u.uSimLip, simInputs!.divergence);
         gl.uniform1f(u.uSimCurve, simInputs!.wallCurve);
         gl.uniform1f(u.uSimGamma, simInputs!.gamma);
         gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb);
         gl.uniform1f(u.uSimT0, simInputs!.t0);
         gl.uniform1f(u.uSimAmbP, simInputs!.pAmb);
+        gl.uniform1f(u.uSimFloor, VACUUM_FLOOR);
       }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },

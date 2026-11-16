@@ -337,8 +337,13 @@ void main() {
     w.x = mix(w.x, uAmb.x, k);
     w.w = mix(w.w, uAmb.y, k);
     // Wisps of exhaust left drifting in still air disperse (the grid has no wind to carry them off).
-    float drifting = 1.0 - smoothstep(0.05, 0.2, length(w.yz) / uExitSpeed);
-    frac *= 1.0 - 0.02 * drifting;
+    // Only exhaust beside air counts, so a lingering cloud wears away from its edges. Slow gas
+    // inside the jet (behind a shock in its core) is left alone: turned into air there, it would
+    // be pulled up to the density of the air outside and sit in the jet's path as a dense plug,
+    // and every plug the jet pushed out of the way would run down it as a shock front.
+    float slow = 1.0 - smoothstep(0.05, 0.2, length(w.yz) / uExitSpeed);
+    float besideAir = 1.0 - smoothstep(0.3, 0.7, min(min(fxm1, fxp1), min(fym1, fyp1)));
+    frac *= 1.0 - 0.02 * slow * besideAir;
   } else {
     // Engine off: let everything settle back to still air.
     w.x = mix(w.x, uAmb.x, 0.05);
@@ -355,6 +360,48 @@ void main() {
   }
   outU = U1;
   outS = vec4(S1, 0.0, 0.0, 1.0);
+}
+`;
+
+// Carries the gas over to a grid of a different size. The grid is measured in exit radii,
+// so when the view zooms and the grid grows or shrinks, the gas has to be moved to where it
+// physically is on the new grid; leaving it in the same cells would stretch the whole plume
+// out of shape, and it would shudder as it settled back.
+const RESAMPLE = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+uniform sampler2D uSrcU;
+uniform sampler2D uSrcS;
+uniform ivec2 uGrid;
+uniform float uDxOld;
+uniform float uUpOld;
+uniform float uDxNew;
+uniform float uUpNew;
+
+layout(location = 0) out vec4 outU;
+layout(location = 1) out vec4 outS;
+
+ivec2 clampCell(ivec2 c) {
+  return clamp(c, ivec2(0), uGrid - 1);
+}
+
+void main() {
+  vec2 c = gl_FragCoord.xy;   // cell centre on the new grid (already offset by half a cell)
+  vec2 p = vec2(c.x * uDxNew - uUpNew, c.y * uDxNew);
+  // The same point on the old grid, in cells. Beyond the old grid the edge cells carry on.
+  vec2 f = vec2((p.x + uUpOld) / uDxOld, p.y / uDxOld) - 0.5;
+  ivec2 i = ivec2(floor(f));
+  vec2 t = f - vec2(i);
+  ivec2 a = clampCell(i);
+  ivec2 b = clampCell(i + ivec2(1, 0));
+  ivec2 d = clampCell(i + ivec2(0, 1));
+  ivec2 e = clampCell(i + ivec2(1, 1));
+  outU = mix(mix(texelFetch(uSrcU, a, 0), texelFetch(uSrcU, b, 0), t.x),
+             mix(texelFetch(uSrcU, d, 0), texelFetch(uSrcU, e, 0), t.x), t.y);
+  float s = mix(mix(texelFetch(uSrcS, a, 0).x, texelFetch(uSrcS, b, 0).x, t.x),
+                mix(texelFetch(uSrcS, d, 0).x, texelFetch(uSrcS, e, 0).x, t.x), t.y);
+  outS = vec4(s, 0.0, 0.0, 1.0);
 }
 `;
 
@@ -377,15 +424,21 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
   // Smooth sampling when the plume is drawn; without it the plume just looks blockier.
   const smooth = gl.getExtension('OES_texture_float_linear') !== null;
 
-  let program: WebGLProgram;
-  try {
-    program = gl.createProgram()!;
-    gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERT));
-    gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAG));
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(program) ?? 'program link failed');
+  const link = (fragment: string): WebGLProgram => {
+    const p = gl.createProgram()!;
+    gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, VERT));
+    gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fragment));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(p) ?? 'program link failed');
     }
+    return p;
+  };
+  let program: WebGLProgram;
+  let resampler: WebGLProgram;
+  try {
+    program = link(FRAG);
+    resampler = link(RESAMPLE);
   } catch (err) {
     console.error('Fluid simulation shader failed to build', err);
     return null;
@@ -396,6 +449,11 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
     wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'),
+  };
+  const r = (name: string) => gl.getUniformLocation(resampler, name);
+  const rloc = {
+    srcU: r('uSrcU'), srcS: r('uSrcS'), grid: r('uGrid'),
+    dxOld: r('uDxOld'), upOld: r('uUpOld'), dxNew: r('uDxNew'), upNew: r('uUpNew'),
   };
 
   const makeTexture = (format: number) => {
@@ -458,6 +516,29 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     gl.bindTexture(gl.TEXTURE_2D, texture);
   };
 
+  // The size the gas currently in the textures was simulated at.
+  let simulatedSpan = 0;
+  let simulatedUpstream = 0;
+
+  const resample = (dxOld: number, upOld: number, dxNew: number, upNew: number) => {
+    const from = targets[current];
+    const to = targets[(current + 1) % 3];
+    gl.useProgram(resampler);
+    gl.viewport(0, 0, SIM_NX, SIM_NY);
+    bind(0, from.state);
+    bind(1, from.scalar);
+    gl.uniform1i(rloc.srcU, 0);
+    gl.uniform1i(rloc.srcS, 1);
+    gl.uniform2i(rloc.grid, SIM_NX, SIM_NY);
+    gl.uniform1f(rloc.dxOld, dxOld);
+    gl.uniform1f(rloc.upOld, upOld);
+    gl.uniform1f(rloc.dxNew, dxNew);
+    gl.uniform1f(rloc.upNew, upNew);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, to.fbo);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    current = (current + 1) % 3;
+  };
+
   const sim = {
     texture: targets[0].state,
     scalarTexture: targets[0].scalar,
@@ -468,7 +549,11 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       if (needsReset) {
         fill(inputs, lengthRadii);
         needsReset = false;
+      } else if (lengthRadii !== simulatedSpan || upstreamRadii !== simulatedUpstream) {
+        resample(simulatedSpan / SIM_NX, simulatedUpstream, lengthRadii / SIM_NX, upstreamRadii);
       }
+      simulatedSpan = lengthRadii;
+      simulatedUpstream = upstreamRadii;
       const g = inputs.gamma;
       const dx = lengthRadii / SIM_NX;
       // Fastest the gas can ever go: all of its heat turned into speed.

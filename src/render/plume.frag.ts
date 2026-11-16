@@ -16,10 +16,12 @@ uniform float uSimCell;     // cell size, in exit radii
 uniform float uSimUp;       // how far the grid reaches upstream of the nozzle exit, in exit radii
 uniform float uSimLip;      // slope of the nozzle wall at the lip
 uniform float uSimCurve;    // and how sharply it curves in upstream of that
+uniform vec2 uSimFade;      // how far in from its far end and its outer edge the simulated gas fades out, in exit radii
 uniform float uSimGamma;
 uniform float uSimAmbT;     // ambient temperature over exit temperature
 uniform float uSimT0;       // stagnation temperature over exit temperature
 uniform float uSimAmbP;     // ambient pressure over exit pressure
+uniform float uSimFloor;    // the solver's stand-in for a vacuum: the lowest ambient pressure it can hold
 uniform sampler2D uSimS;    // exhaust density
 uniform float uAfter;       // afterburning strength
 uniform vec3 uAfterCol;
@@ -94,6 +96,16 @@ vec3 simGas(vec2 q) {
   return vec3(rho, p / rho, clamp(texture(uSimS, uv).x / rho, 0.0, 1.0));
 }
 
+// How much of a parcel of exhaust to show, given how close it is to the solver's vacuum floor.
+// In a true vacuum the plume thins smoothly to nothing as it fans out around the lip. The solver's
+// thin leftover gas instead stops it at a sharp edge, almost straight up and down at the nozzle's
+// exit plane, where the exhaust has expanded down to the floor's pressure. Fading out exhaust that
+// close to the floor turns that edge back into a gradual thinning. At lower altitudes the outside
+// air is far above the floor, so this does nothing there.
+float aboveFloor(vec3 gas) {
+  return smoothstep(0.4, 2.5, log(max(gas.x * gas.y, 1e-12) / uSimFloor));
+}
+
 // Light given off by a small parcel of simulated gas.
 vec3 simGlow(vec3 gas) {
   float temp = gas.y;
@@ -120,7 +132,7 @@ vec3 simGlow(vec3 gas) {
   // Solid particles in the exhaust stay incandescent after the gas around them has cooled.
   // Their glow is in proportion to how many there are, so it thins out as the exhaust spreads.
   glow += mix(uMid, uCore, 0.6) * uParticles * exhaust * clamp(gas.x, 0.0, 1.6) * 1.25;
-  return glow;
+  return glow * aboveFloor(gas);
 }
 
 void main() {
@@ -204,8 +216,10 @@ void main() {
         // Beside the nozzle (x below zero) look at the gas exactly where it is.
         if (x < 0.0) q = vec2(x, y);
         vec2 size = uSimGrid * uSimCell - vec2(uSimUp, 0.0);
-        float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y)
-                       * smoothstep(-uSimUp, -uSimUp + 0.4, x);
+        // Thin the gas out toward the edges of the grid so it never ends in a straight line.
+        float edgeFade = falloff(size.x - 0.1 - uSimFade.x, size.x - 0.1, xs)
+                       * falloff(size.y - 0.05 - uSimFade.y, size.y - 0.05, y)
+                       * smoothstep(-uSimUp, -0.4 * uSimUp, x);
         // The nozzle itself is drawn separately; nothing shows through it. The margin stops the
         // exhaust held inside the nozzle from blurring out past the wall where the grid is coarse.
         if (x < 0.0) {
@@ -269,11 +283,11 @@ void main() {
           for (int i = 0; i < 5; i++) {
             float z = (float(i) + 0.5) / 5.0 * depthS;
             vec3 gas = simGas(vec2(xs, length(vec2(ys, z))));
-            amount += gas.x * gas.z;
+            amount += gas.x * gas.z * aboveFloor(gas);
           }
           amount *= 2.0 * depthS / 5.0 / widen;
           sm = (1.0 - exp(-amount * 1.6)) * smoothstep(0.4, 3.0, xs) * (0.5 + 0.5 * sn)
-             * falloff(size.x - 1.2, size.x - 0.1, xs);
+             * falloff(size.x - uSimUp - 0.1 - uSimFade.x, size.x - uSimUp - 0.1, xs);
         }
         sm *= clamp(smokeAmt, 0.0, 1.0) * uIntensity * thin * 0.9;
         float skyLight = 0.25 + 0.75 * dot(uSkyBottom, vec3(0.33));
