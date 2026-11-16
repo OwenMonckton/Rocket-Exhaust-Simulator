@@ -4,14 +4,13 @@ import type { EngineConfig, Failure, Limits } from './types';
 /** Allowable chamber hoop stress, in bar (≈ 300 MPa). */
 export const SIGMA_ALLOW_BAR = 3000;
 const HEAT_ALLOW = 2.9;
-/** Temperature (K) at which a nuclear thermal engine's reactor fuel fails. */
-export const CORE_TEMP_LIMIT = 2900;
-
-/** The two things that can overheat: the throat, and (nuclear thermal only) the reactor core. */
+/** The two things that can overheat: the throat, and the reactor core where an engine has one. */
 function heatSources(cfg: EngineConfig, pcBar: number, tc: number): { throat: number; core: number } {
+  const prop = PROPELLANTS[cfg.propellant];
+  const wallTemp = tc * (prop.wallHeatFactor ?? 1);
   const throat =
-    (Math.pow(pcBar / 100, 0.8) * Math.pow(0.25 / cfg.throatDia, 0.2) * (tc / 3500)) / HEAT_ALLOW;
-  const core = PROPELLANTS[cfg.propellant].mixKind === 'temperature' ? tc / CORE_TEMP_LIMIT : 0;
+    (Math.pow(pcBar / 100, 0.8) * Math.pow(0.25 / cfg.throatDia, 0.2) * (wallTemp / 3500)) / HEAT_ALLOW;
+  const core = prop.coreTempLimit ? tc / prop.coreTempLimit : 0;
   return { throat, core };
 }
 

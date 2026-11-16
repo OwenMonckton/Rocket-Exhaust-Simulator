@@ -101,20 +101,21 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           },
           get: (s) => s.config.mixtureRatio,
           set: (v) => {
-            const kind = PROPELLANTS[store.get().config.propellant].mixKind;
-            const rounded = kind === 'temperature' ? Math.round(v / 10) * 10 : Math.round(v * 100) / 100;
+            const p = PROPELLANTS[store.get().config.propellant];
+            // Temperatures step in round numbers suited to their range: 10 K for a reactor core,
+            // 10,000 K for a fission plasma.
+            const step = Math.pow(10, Math.floor(Math.log10(p.ofMax - p.ofMin)) - 2);
+            const rounded = p.mixKind === 'temperature' ? Math.round(v / step) * step : Math.round(v * 100) / 100;
             store.set({ config: { mixtureRatio: rounded } });
           },
           format: (v, s) => {
             const kind = PROPELLANTS[s.config.propellant].mixKind;
             if (kind === 'ratio') return `${v.toFixed(2)} : 1`;
-            return kind === 'temperature' ? `${Math.round(v)} K` : 'fixed in the grain';
+            return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
           },
           disabled: (s) => PROPELLANTS[s.config.propellant].mixKind === 'none',
           describe: (s) =>
-            PROPELLANTS[s.config.propellant].mixKind === 'temperature'
-              ? { label: 'Core temperature', tip: TIPS.coreTemperature }
-              : { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
+            PROPELLANTS[s.config.propellant].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
         },
       ],
     },

@@ -108,6 +108,14 @@ const SPECS: Spec[] = [
     published: { thrustKN: 246.7, atVacuum: true, ispVac: 841 },
   },
   {
+    id: 'nswr',
+    name: 'Nuclear salt water',
+    blurb: "Robert Zubrin's 1991 concept, never built: uranium salt water fissions continuously in the nozzle, giving huge thrust and huge efficiency at once.",
+    propellant: 'saltwater', pcBar: 100, of: 470000, eps: 40, contraction: 2.2, lStar: 1.0,
+    nozzleLenPct: 80, structural: 0.5,
+    published: { thrustKN: 12900, atVacuum: true, ispVac: 6730 },
+  },
+  {
     id: 'solid-booster',
     name: 'Solid booster',
     blurb: 'A generic strap-on solid rocket motor. Bright, smoky, and it cannot be throttled.',

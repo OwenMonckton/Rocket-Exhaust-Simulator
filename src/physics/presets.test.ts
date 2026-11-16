@@ -55,6 +55,24 @@ describe('presets', () => {
     expect(simulate(nerva, { altitudeKm: 100, throttle: 0.5 }).tc).toBe(r.tc);
   });
 
+  it('gives the nuclear salt-water rocket huge thrust and efficiency together, limited by its nozzle', () => {
+    const nswr = getPreset('nswr')!.config;
+    const vac = { altitudeKm: 100, throttle: 1 };
+    const r = simulate(nswr, vac);
+    // Several times NERVA's efficiency and far more thrust than any chemical engine here.
+    expect(r.ispVacuum).toBeGreaterThan(6 * simulate(getPreset('nerva')!.config, vac).ispVacuum);
+    expect(r.thrust).toBeGreaterThan(simulate(getPreset('rd-170')!.config, vac).thrust);
+    expect(r.exitVelocity).toBeGreaterThan(55000);
+    expect(r.rough).toBe(false);
+    // No reactor core to melt: what gives way is the nozzle.
+    expect(r.limits.heating).toBeGreaterThan(0.7);
+    expect(r.limits.heating).toBeLessThan(0.9);
+    const hotter = simulate({ ...nswr, mixtureRatio: 550000 }, vac);
+    expect(hotter.ispVacuum).toBeGreaterThan(r.ispVacuum);
+    expect(hotter.failure).toBe(null);
+    expect(simulate({ ...nswr, mixtureRatio: 700000 }, vac).failure).toBe('burnthrough');
+  });
+
   it('gives the RL10B-2 a nozzle extension that only works once it seats', () => {
     const rl10 = getPreset('rl10b-2')!.config;
     expect(rl10.extFixedDia).toBeGreaterThan(rl10.throatDia);

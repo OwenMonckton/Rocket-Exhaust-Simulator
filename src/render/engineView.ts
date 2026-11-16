@@ -174,6 +174,9 @@ export function drawEngine(
   const prop = PROPELLANTS[cfg.propellant];
   const isSolid = cfg.propellant === 'solid';
   const isNuclear = cfg.propellant === 'nuclear';
+  // Engines fed a single propellant: hydrogen for nuclear thermal, uranium salt water otherwise.
+  const singleFeed = isNuclear || cfg.propellant === 'saltwater';
+  const feedColour = cfg.propellant === 'saltwater' ? '#9ad64f' : OX_COLOUR;
   const pts = profile.points;
   const rc = cfg.chamberDia / 2;
   const rt = cfg.throatDia / 2;
@@ -433,15 +436,15 @@ export function drawEngine(
     const holes = Math.max(3, Math.min(11, Math.round((rc * ppm) / 9)));
     for (let i = 0; i < holes; i++) {
       const hy = cy + ((i + 0.5) / holes - 0.5) * 2 * rc * ppm * 0.9;
-      ctx.fillStyle = i % 2 || isNuclear ? '#4f8fd6' : '#d6a04f';
+      ctx.fillStyle = singleFeed ? feedColour : i % 2 ? OX_COLOUR : FUEL_COLOUR;
       ctx.fillRect(X(0) - headW * 0.55, hy - 1, headW * 0.55, 2);
     }
     const pipe = Math.max(4, 0.22 * rc * ppm);
-    ctx.fillStyle = '#4f8fd6';
+    ctx.fillStyle = singleFeed ? feedColour : OX_COLOUR;
     if (multi) {
       // Fed from the shared turbopump instead.
-    } else if (isNuclear) {
-      // One propellant only: a single hydrogen feed line.
+    } else if (singleFeed) {
+      // One propellant only: a single feed line.
       ctx.fillRect(X(0) - headW - pipe * 1.6, cy - pipe / 2, pipe * 1.6, pipe);
     } else {
       ctx.fillRect(X(0) - headW - pipe * 1.6, cy - headH * 0.55 - pipe / 2, pipe * 1.6, pipe);

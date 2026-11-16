@@ -4,7 +4,7 @@ import { createRuntime, type PlumeMode } from './sim/runtime';
 import { decodeState, encodeState } from './state/share';
 import { createStore, defaultState, isModified } from './state/store';
 import { createControls, fillPresetSelect } from './ui/controls';
-import { FAILURE_COPY, TIPS } from './ui/copy';
+import { TIPS, failureCopy } from './ui/copy';
 import { createReadouts } from './ui/readouts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -98,7 +98,7 @@ const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<H
     s.button.disabled = info.failure !== null;
   }
   if (info.failure) {
-    const copy = FAILURE_COPY[info.failure];
+    const copy = failureCopy(info.failure, store.get().config.propellant);
     failureBox.querySelector('h2')!.textContent = copy.title;
     failureBox.querySelector('p')!.textContent = copy.text;
   }

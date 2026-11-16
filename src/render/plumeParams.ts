@@ -112,7 +112,10 @@ export function simInputs(
     gamma: g,
     uExit: mach * Math.sqrt(g),
     pAmb,
-    rhoAmb: (pAmb * gasR * exitTemp) / (R_AIR * AIR_TEMP),
+    // Air is denser than hot exhaust at the same pressure. The ratio is capped: against an
+    // exhaust as hot and thin as a nuclear salt-water rocket's, true air would be thousands of
+    // times denser and the plume would take minutes to push through it.
+    rhoAmb: pAmb * Math.min(30, (gasR * exitTemp) / (R_AIR * AIR_TEMP)),
     fire: clamp(fire, 0, 1),
     t0,
     // A jet that has already torn off the wall leaves straighter and more evenly.

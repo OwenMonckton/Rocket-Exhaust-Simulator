@@ -174,6 +174,12 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     instabilityRefDia: 6.0,
     throttleable: true,
     mixKind: 'temperature',
+    mixLabel: {
+      label: 'Core temperature',
+      tip: 'How hot the reactor heats the hydrogen. Hotter is more efficient, until the core melts.',
+    },
+    // Temperature at which the reactor's fuel elements fail.
+    coreTempLimit: 2900,
     table: [
       { of: 1500, tc: 1500, gamma: 1.36, molarMass: 2.016 },
       { of: 2000, tc: 2000, gamma: 1.34, molarMass: 2.016 },
@@ -194,7 +200,46 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       particles: 0,
     },
   },
+  saltwater: {
+    id: 'saltwater',
+    name: 'Nuclear salt water',
+    fuel: 'uranium salt dissolved in water',
+    oxidiser: 'its own fission to heat it',
+    // For this propellant the "mixture" setting is the temperature of the fission reaction in
+    // kelvin. The exhaust is water torn apart into a plasma of hydrogen and oxygen.
+    ofMin: 100000,
+    ofMax: 1000000,
+    ofDefault: 470000,
+    lStarRef: 0,
+    instabilityRefDia: 8.0,
+    throttleable: true,
+    mixKind: 'temperature',
+    mixLabel: {
+      label: 'Reaction temperature',
+      tip: 'How fiercely the uranium fissions in the nozzle. Hotter is far more efficient, until the nozzle vaporises.',
+    },
+    // The reaction is held away from the walls by a layer of water, so they see only a
+    // small fraction of its temperature.
+    wallHeatFactor: 0.0225,
+    table: [
+      { of: 100000, tc: 100000, gamma: 1.3, molarMass: 6 },
+      { of: 1000000, tc: 1000000, gamma: 1.3, molarMass: 6 },
+    ],
+    look: {
+      core: [1.0, 1.0, 1.0],
+      mid: [0.75, 0.88, 1.0],
+      edge: [0.4, 0.62, 1.0],
+      richTint: [0.4, 0.62, 1.0],
+      opacity: 1.0,
+      soot: 0,
+      smoke: 0,
+      afterburn: [0.6, 0.75, 1.0],
+      afterburnStrength: 0,
+      particles: 1.0,
+    },
+  },
 };
+
 export const PROPELLANT_IDS = Object.keys(PROPELLANTS) as PropellantId[];
 
 export function isPropellantId(v: unknown): v is PropellantId {

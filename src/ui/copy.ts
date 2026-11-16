@@ -1,4 +1,4 @@
-import type { ExpansionState, Failure } from '../physics/types';
+import type { ExpansionState, Failure, PropellantId } from '../physics/types';
 
 export const TIPS = {
   scale: 'Grows or shrinks the whole engine in proportion, walls included. Thrust grows with the square of size.',
@@ -10,7 +10,6 @@ export const TIPS = {
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
   propellant: 'What the engine burns. Each has its own efficiency, flame temperature and plume colour.',
   mixtureRatio: 'Kilograms of oxidiser burned per kilogram of fuel. Lower is fuel-rich, higher is oxidiser-rich.',
-  coreTemperature: 'How hot the reactor heats the hydrogen. Hotter is more efficient, until the core melts.',
   deploy: 'Slide the nozzle extension into place, or stow it. The longer nozzle is far more efficient in vacuum.',
   altitudeKm: 'How high the engine is. The air thins out as you climb, and is effectively gone by 86 km.',
   throttle: 'Run the engine below full power by lowering chamber pressure.',
@@ -57,8 +56,19 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
 };
 
+/** Failure text, with wording specific to a propellant where the general wording would mislead. */
+export function failureCopy(failure: Exclude<Failure, null>, propellant: PropellantId): { title: string; text: string } {
+  if (propellant === 'saltwater' && failure === 'burnthrough') {
+    return {
+      title: 'Nozzle vaporised',
+      text: 'The fission reaction ran hotter than the layer of water protecting the nozzle could take. Turn down the reaction temperature, lower the chamber pressure or widen the throat.',
+    };
+  }
+  return FAILURE_COPY[failure];
+}
+
 export const LIMIT_COPY = {
   structural: { label: 'Wall stress', tip: 'How close the chamber walls are to bursting from the pressure inside.' },
-  heating: { label: 'Heat load', tip: 'How close the hottest part is to melting: the throat, or the reactor core in a nuclear engine. Throat heat rises with chamber pressure and with smaller throats.' },
+  heating: { label: 'Heat load', tip: 'How close the hottest part is to melting: the throat, or the reactor core in a nuclear thermal engine. Throat heat rises with chamber pressure and with smaller throats.' },
   instability: { label: 'Instability', tip: 'How close the chamber is to shaking itself apart. Rises with chamber width.' },
 };

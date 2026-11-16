@@ -1,4 +1,4 @@
-export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid' | 'nuclear';
+export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid' | 'nuclear' | 'saltwater';
 
 export type RGB = [number, number, number];
 
@@ -48,10 +48,19 @@ export interface Propellant {
   throttleable: boolean;
   /**
    * What the engine's `mixtureRatio` setting means for this propellant:
-   * 'ratio' is oxidiser-to-fuel mass ratio, 'temperature' is reactor core temperature in K
-   * (nuclear thermal: nothing burns, a reactor heats the propellant), 'none' is fixed.
+   * 'ratio' is oxidiser-to-fuel mass ratio, 'temperature' is the temperature in K the propellant
+   * is heated to (nuclear engines: nothing burns), 'none' is fixed.
    */
   mixKind: 'ratio' | 'temperature' | 'none';
+  /** Name and one-line explanation of the temperature setting, for 'temperature' propellants */
+  mixLabel?: { label: string; tip: string };
+  /** Temperature (K) at which a solid reactor core fails; absent where there is no core to melt */
+  coreTempLimit?: number;
+  /**
+   * Fraction of the gas temperature the nozzle wall is exposed to (default 1). Far below 1 where
+   * the reaction is held away from the walls, as in a nuclear salt-water rocket.
+   */
+  wallHeatFactor?: number;
   table: { of: number; tc: number; gamma: number; molarMass: number }[];
   look: PlumeLook;
 }
