@@ -72,17 +72,31 @@ createControls($('controls'), store);
 const updateReadouts = createReadouts($('readouts'));
 
 const fireBtn = $<HTMLButtonElement>('fire');
-const ascentBtn = $<HTMLButtonElement>('ascent');
 const failureBox = $('failure');
-ascentBtn.title = TIPS.ascent;
+
+// The two altitude sweeps. Each button shows a pause sign while its own sweep is running.
+const sweeps = ([
+  { id: 'ascent', direction: 1, icon: '▲', label: ' Ascend', tip: TIPS.ascent },
+  { id: 'descent', direction: -1, icon: '▼', label: ' Descend', tip: TIPS.descent },
+] as const).map((s) => {
+  const button = $<HTMLButtonElement>(s.id);
+  button.title = s.tip;
+  button.setAttribute('aria-label', s.label.trim());
+  return { ...s, button, iconEl: button.querySelector('.icon')!, labelEl: button.querySelector('.label')! };
+});
 
 const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<HTMLCanvasElement>('overlay-canvas'), (info) => {
   updateReadouts(info);
   fireBtn.textContent = info.firing ? 'Shut down' : 'Fire';
   fireBtn.classList.toggle('firing', info.firing);
   fireBtn.disabled = info.failure !== null;
-  ascentBtn.textContent = info.ascent ? '❚❚ Pause ascent' : '▲ Ascent';
-  ascentBtn.disabled = info.failure !== null;
+  for (const s of sweeps) {
+    const running = info.sweep === s.direction;
+    s.iconEl.textContent = running ? '❚❚' : s.icon;
+    s.labelEl.textContent = running ? ' Pause' : s.label;
+    s.button.classList.toggle('firing', running);
+    s.button.disabled = info.failure !== null;
+  }
   if (info.failure) {
     const copy = FAILURE_COPY[info.failure];
     failureBox.querySelector('h2')!.textContent = copy.title;
@@ -93,7 +107,7 @@ const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<H
 $('nogl').hidden = runtime.hasPlume;
 
 fireBtn.addEventListener('click', () => runtime.toggleFire());
-ascentBtn.addEventListener('click', () => runtime.toggleAscent());
+for (const s of sweeps) s.button.addEventListener('click', () => runtime.toggleSweep(s.direction));
 $('rebuild').addEventListener('click', () => runtime.rebuild());
 $<HTMLSelectElement>('overlay').title = TIPS.overlay;
 $<HTMLSelectElement>('overlay').addEventListener('change', (e) =>

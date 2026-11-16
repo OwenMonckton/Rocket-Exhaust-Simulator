@@ -15,13 +15,15 @@ export interface FrameInfo {
   stock: SimResult | null;
   stockName: string | null;
   firing: boolean;
-  ascent: boolean;
+  /** Altitude sweep in progress: 1 climbing, -1 descending, 0 none */
+  sweep: Sweep;
   failure: Failure;
 }
 
 export interface Runtime {
   toggleFire(): void;
-  toggleAscent(): void;
+  /** Start an altitude sweep in a direction (1 up, -1 down), or pause it if already running that way. */
+  toggleSweep(direction: 1 | -1): void;
   rebuild(): void;
   setOverlay(o: FlowOverlay): void;
   setMuted(m: boolean): void;
@@ -37,10 +39,11 @@ export interface Runtime {
 }
 
 export type PlumeMode = 'drawn' | 'sim';
+export type Sweep = 0 | 1 | -1;
 
 const RAMP_UP_S = 1.0;
 const RAMP_DOWN_S = 0.6;
-const ASCENT_S = 30;
+const SWEEP_S = 30;
 export const ZOOM_MIN = 0.3;
 export const ZOOM_MAX = 1.4;
 
@@ -57,7 +60,7 @@ export function createRuntime(
 
   let firing = false;
   let fire = 0;
-  let ascent = false;
+  let sweep: Sweep = 0;
   let failure: Failure = null;
   let failT = 0;
   let overlay: FlowOverlay = 'none';
@@ -77,10 +80,10 @@ export function createRuntime(
     last = now;
     const timeS = now / 1000;
 
-    if (ascent && firing) {
-      const alt = store.get().flight.altitudeKm + (dt * 100) / ASCENT_S;
-      if (alt >= 100) ascent = false;
-      store.set({ flight: { altitudeKm: Math.min(100, alt) } });
+    if (sweep !== 0 && firing) {
+      const alt = store.get().flight.altitudeKm + (sweep * dt * 100) / SWEEP_S;
+      if (alt >= 100 || alt <= 0) sweep = 0;
+      store.set({ flight: { altitudeKm: Math.min(100, Math.max(0, alt)) } });
     }
 
     const state = store.get();
@@ -94,7 +97,7 @@ export function createRuntime(
         failure = result.failure;
         failT = 0;
         firing = false;
-        ascent = false;
+        sweep = 0;
         fire = 0;
       }
     }
@@ -183,7 +186,7 @@ export function createRuntime(
         stock: preset && modified ? simulate(preset.config, state.flight) : null,
         stockName: preset?.name ?? null,
         firing,
-        ascent,
+        sweep,
         failure,
       });
     }
@@ -201,17 +204,20 @@ export function createRuntime(
     toggleFire() {
       if (failure) return;
       firing = !firing;
-      if (!firing) ascent = false;
+      if (!firing) sweep = 0;
     },
-    toggleAscent() {
+    toggleSweep(direction) {
       if (failure) return;
-      if (ascent) {
-        ascent = false;
+      if (sweep === direction) {
+        sweep = 0;
         return;
       }
-      if (store.get().flight.altitudeKm >= 99.9 || !firing) store.set({ flight: { altitudeKm: 0 } });
+      // Start from the far end if the engine is off, or if it is already where it is headed.
+      const alt = store.get().flight.altitudeKm;
+      if (direction === 1 && (alt >= 99.9 || !firing)) store.set({ flight: { altitudeKm: 0 } });
+      if (direction === -1 && (alt <= 0.1 || !firing)) store.set({ flight: { altitudeKm: 100 } });
       firing = true;
-      ascent = true;
+      sweep = direction;
     },
     rebuild() {
       failure = null;

@@ -15,6 +15,7 @@ export const TIPS = {
   altitudeKm: 'How high the engine is. The air thins out as you climb, and is effectively gone by 86 km.',
   throttle: 'Run the engine below full power by lowering chamber pressure.',
   ascent: 'Fire the engine and climb from the ground to space over about 30 seconds.',
+  descent: 'Fire the engine and come down from space to the ground over about 30 seconds.',
   overlay: 'Colour the gas inside the engine by how fast or how hot it is.',
 };
 

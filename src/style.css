@@ -104,6 +104,11 @@ button.primary {
   font-weight: 700;
 }
 
+.actions button.sweep.firing {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 button.primary.firing {
   background: #2a303c;
   border-color: var(--accent);
@@ -179,7 +184,7 @@ input[type='range'] {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: 1fr 1fr 1.3fr;
   gap: 8px;
   padding: 10px 14px;
   border-top: 1px solid var(--line);
@@ -188,6 +193,11 @@ input[type='range'] {
 .actions button {
   padding: 10px;
   font-size: 15px;
+}
+
+.actions button.sweep {
+  padding: 10px 4px;
+  font-size: 13px;
 }
 
 main {
@@ -396,6 +406,13 @@ main {
 @media (max-width: 1100px) {
   body {
     grid-template-columns: clamp(230px, 28vw, 330px) minmax(0, 1fr);
+  }
+  /* The control panel is narrow here: the sweep buttons keep just their arrows. */
+  .actions button.sweep .label {
+    display: none;
+  }
+  .actions button.sweep {
+    font-size: 15px;
   }
   header {
     flex-wrap: wrap;
