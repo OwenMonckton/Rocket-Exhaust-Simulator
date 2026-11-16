@@ -25,7 +25,8 @@ describe('propellants', () => {
     for (const id of PROPELLANT_IDS) {
       for (const row of PROPELLANTS[id].table) {
         expect(row.gamma).toBeGreaterThan(1.1);
-        expect(row.gamma).toBeLessThan(1.3);
+        // Pure hydrogen (nuclear thermal) has a higher ratio than combustion products.
+        expect(row.gamma).toBeLessThan(id === 'nuclear' ? 1.4 : 1.3);
       }
       const p = PROPELLANTS[id];
       expect(p.ofDefault).toBeGreaterThanOrEqual(p.ofMin);

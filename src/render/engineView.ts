@@ -1,4 +1,5 @@
 import { areaRatio, machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
+import { getPreset } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { engineProfile, radiusAt, type EngineProfile, type View } from './geometry';
@@ -68,6 +69,7 @@ export function drawEngine(
   const profile = engineProfile(cfg);
   const prop = PROPELLANTS[cfg.propellant];
   const isSolid = cfg.propellant === 'solid';
+  const isNuclear = cfg.propellant === 'nuclear';
   const pts = profile.points;
   const rc = cfg.chamberDia / 2;
   const rt = cfg.throatDia / 2;
@@ -184,6 +186,38 @@ export function drawEngine(
     }
   }
 
+  // --- Reactor core (nuclear thermal) --------------------------------------
+  // Hydrogen flows through channels in the reactor's fuel and comes out hot.
+  if (isNuclear) {
+    const x0 = X(cfg.chamberLen * 0.12);
+    const x1 = X(cfg.chamberLen * 0.88);
+    const outer = rc * ppm;
+    const half = outer * 0.86;
+    const hot = anim.failure ? 0 : anim.fire;
+    const warmth = Math.min(1, Math.max(0, (result.tc - 1500) / 1700));
+    // Reflector ring around the fuel.
+    ctx.fillStyle = '#434955';
+    ctx.fillRect(x0, cy - outer, x1 - x0, 2 * outer);
+    ctx.fillStyle = css(lerp3([0.13, 0.14, 0.17], lerp3([0.45, 0.13, 0.06], [0.8, 0.4, 0.15], warmth), hot));
+    ctx.fillRect(x0, cy - half, x1 - x0, 2 * half);
+    const channels = Math.max(4, Math.min(14, Math.round(half / 6)));
+    for (let i = 0; i < channels; i++) {
+      const y = cy - half + ((i + 0.5) / channels) * 2 * half;
+      if (hot > 0.01) {
+        const flow = ctx.createLinearGradient(x0, 0, x1, 0);
+        flow.addColorStop(0, css([0.45, 0.62, 1.0], 0.7 * hot));
+        flow.addColorStop(1, css(lerp3([1.0, 0.5, 0.2], [1.0, 0.96, 0.85], warmth), hot));
+        ctx.fillStyle = flow;
+      } else {
+        ctx.fillStyle = '#0c0d11';
+      }
+      ctx.fillRect(x0, y - 1, x1 - x0, 2);
+    }
+    ctx.strokeStyle = '#1b1e25';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0, cy - outer, x1 - x0, 2 * outer);
+  }
+
   // --- Walls ---------------------------------------------------------------
   for (const sign of [-1, 1]) {
     ctx.beginPath();
@@ -221,8 +255,48 @@ export function drawEngine(
     }
   }
 
+  // --- Deployable nozzle extension -----------------------------------------
+  // Drawn as a darker carbon section from where the fixed nozzle ends.
+  const extension = getPreset(cfg.presetId)?.extension;
+  const fixedR = extension ? (extension.stowedExitDia * cfg.scale) / 2 : 0;
+  if (extension && cfg.exitDia / 2 > fixedR * 1.01) {
+    const bell = pts.filter((p) => p.x >= profile.throatX);
+    const start = bell.findIndex((p) => p.r >= fixedR);
+    if (start > 0) {
+      const a = bell[start - 1];
+      const b = bell[start];
+      const f = (fixedR - a.r) / Math.max(1e-9, b.r - a.r);
+      const seam = { x: a.x + (b.x - a.x) * f, r: fixedR };
+      const section = [seam, ...bell.slice(start)];
+      for (const sign of [-1, 1]) {
+        ctx.beginPath();
+        section.forEach((p, i) => {
+          const y = cy + sign * p.r * ppm;
+          if (i === 0) ctx.moveTo(X(p.x), y);
+          else ctx.lineTo(X(p.x), y);
+        });
+        for (let i = section.length - 1; i >= 0; i--) {
+          ctx.lineTo(X(section[i].x), cy + sign * (section[i].r * ppm + wallAt(section[i].x)));
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#2b2e36';
+        ctx.fill();
+        ctx.strokeStyle = '#0f1115';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Joint between the fixed nozzle and the extension.
+        ctx.strokeStyle = '#c9ced8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(X(seam.x), cy + sign * seam.r * ppm);
+        ctx.lineTo(X(seam.x), cy + sign * (seam.r * ppm + wallAt(seam.x) + 3));
+        ctx.stroke();
+      }
+    }
+  }
+
   // --- Injector head / forward dome ---------------------------------------
-  const headW = Math.max(8, 0.16 * rc * ppm + wallPx);
+  const headW =Math.max(8, 0.16 * rc * ppm + wallPx);
   const headH = rc * ppm + wallPx;
   ctx.fillStyle = '#7b838f';
   ctx.strokeStyle = '#1b1e25';
@@ -239,14 +313,19 @@ export function drawEngine(
     const holes = Math.max(3, Math.min(11, Math.round((rc * ppm) / 9)));
     for (let i = 0; i < holes; i++) {
       const hy = cy + ((i + 0.5) / holes - 0.5) * 2 * rc * ppm * 0.9;
-      ctx.fillStyle = i % 2 ? '#4f8fd6' : '#d6a04f';
+      ctx.fillStyle = i % 2 || isNuclear ? '#4f8fd6' : '#d6a04f';
       ctx.fillRect(X(0) - headW * 0.55, hy - 1, headW * 0.55, 2);
     }
     const pipe = Math.max(4, 0.22 * rc * ppm);
     ctx.fillStyle = '#4f8fd6';
-    ctx.fillRect(X(0) - headW - pipe * 1.6, cy - headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
-    ctx.fillStyle = '#d6a04f';
-    ctx.fillRect(X(0) - headW - pipe * 1.6, cy + headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
+    if (isNuclear) {
+      // One propellant only: a single hydrogen feed line.
+      ctx.fillRect(X(0) - headW - pipe * 1.6, cy - pipe / 2, pipe * 1.6, pipe);
+    } else {
+      ctx.fillRect(X(0) - headW - pipe * 1.6, cy - headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
+      ctx.fillStyle = '#d6a04f';
+      ctx.fillRect(X(0) - headW - pipe * 1.6, cy + headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
+    }
   }
 
   // Centreline.

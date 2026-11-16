@@ -15,6 +15,8 @@ interface SliderSpec {
   set(v: number): void;
   format(v: number, s: AppState): string;
   disabled?(s: AppState): boolean;
+  /** Label and tooltip that depend on the engine (overrides `label` and `tip`) */
+  describe?(s: AppState): { label: string; tip: string };
 }
 
 const STEPS = 1000;
@@ -98,10 +100,21 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
           },
           get: (s) => s.config.mixtureRatio,
-          set: (v) => store.set({ config: { mixtureRatio: Math.round(v * 100) / 100 } }),
-          format: (v, s) =>
-            PROPELLANTS[s.config.propellant].throttleable ? `${v.toFixed(2)} : 1` : 'fixed in the grain',
-          disabled: (s) => !PROPELLANTS[s.config.propellant].throttleable,
+          set: (v) => {
+            const kind = PROPELLANTS[store.get().config.propellant].mixKind;
+            const rounded = kind === 'temperature' ? Math.round(v / 10) * 10 : Math.round(v * 100) / 100;
+            store.set({ config: { mixtureRatio: rounded } });
+          },
+          format: (v, s) => {
+            const kind = PROPELLANTS[s.config.propellant].mixKind;
+            if (kind === 'ratio') return `${v.toFixed(2)} : 1`;
+            return kind === 'temperature' ? `${Math.round(v)} K` : 'fixed in the grain';
+          },
+          disabled: (s) => PROPELLANTS[s.config.propellant].mixKind === 'none',
+          describe: (s) =>
+            PROPELLANTS[s.config.propellant].mixKind === 'temperature'
+              ? { label: 'Core temperature', tip: TIPS.coreTemperature }
+              : { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
         },
       ],
     },
@@ -167,7 +180,8 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       row.title = spec.tip;
       const head = el('span', 'row-head');
       const value = el('output');
-      head.append(el('span', 'name', spec.label), value);
+      const name = el('span', 'name', spec.label);
+      head.append(name, value);
       const input = el('input');
       input.type = 'range';
       input.id = spec.id;
@@ -193,6 +207,11 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
         const pos = String(toPos(v, s));
         if (input.value !== pos) input.value = pos;
         value.textContent = spec.format(v, s);
+        const text = spec.describe?.(s);
+        if (text) {
+          name.textContent = text.label;
+          row.title = text.tip;
+        }
         const off = spec.disabled?.(s) ?? false;
         input.disabled = off;
         row.classList.toggle('disabled', off);

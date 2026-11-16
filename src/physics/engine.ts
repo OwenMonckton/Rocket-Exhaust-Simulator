@@ -87,8 +87,9 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const pcBar = cfg.chamberPressureBar * throttle;
   const pc = pcBar * 1e5;
   const table = gasProps(cfg.propellant, cfg.mixtureRatio);
-  // Higher pressure suppresses dissociation, so the flame runs a little hotter.
-  const gas = { ...table, tc: table.tc * Math.pow(pcBar / 70, 0.03) };
+  // Higher pressure suppresses dissociation, so a flame runs a little hotter.
+  // A reactor-heated gas is simply as hot as the reactor core.
+  const gas = prop.mixKind === 'temperature' ? table : { ...table, tc: table.tc * Math.pow(pcBar / 70, 0.03) };
   const g = gas.gamma;
 
   const at = (Math.PI / 4) * cfg.throatDia ** 2;
@@ -100,6 +101,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const shudder = Math.min(1, Math.max(0, (limits.instability - 0.7) / 0.3));
   const span = prop.ofMax - prop.ofMin;
   const rough =
+    prop.mixKind === 'ratio' &&
     span > 0 &&
     (cfg.mixtureRatio - prop.ofMin < 0.04 * span || prop.ofMax - cfg.mixtureRatio < 0.04 * span);
 
@@ -175,6 +177,6 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     rough,
     shudder,
     limits,
-    failure: failureFor(limits),
+    failure: failureFor(cfg, pcBar, gas.tc),
   };
 }

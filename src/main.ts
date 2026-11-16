@@ -22,10 +22,43 @@ resetBtn.addEventListener('click', () => {
   if (id) store.loadPreset(id);
 });
 
+// Deployable nozzle extension (RL10B-2): slides between its stowed and deployed sizes.
+const deployBtn = $<HTMLButtonElement>('deploy');
+deployBtn.title = TIPS.deploy;
+const extensionSizes = () => {
+  const cfg = store.get().config;
+  const preset = getPreset(cfg.presetId);
+  if (!preset?.extension) return null;
+  // Both sizes follow the engine scale.
+  const stowed = preset.extension.stowedExitDia * cfg.scale;
+  const deployed = preset.config.exitDia * cfg.scale;
+  return { stowed, deployed, isDeployed: cfg.exitDia > (stowed + deployed) / 2 };
+};
+let deployAnim = 0;
+deployBtn.addEventListener('click', () => {
+  const sizes = extensionSizes();
+  if (!sizes) return;
+  cancelAnimationFrame(deployAnim);
+  const from = store.get().config.exitDia;
+  const to = sizes.isDeployed ? sizes.stowed : sizes.deployed;
+  const start = performance.now();
+  const DURATION_MS = 1600;
+  const tick = (now: number) => {
+    const t = Math.min(1, (now - start) / DURATION_MS);
+    const eased = t * t * (3 - 2 * t);
+    store.set({ config: { exitDia: from + (to - from) * eased } });
+    if (t < 1) deployAnim = requestAnimationFrame(tick);
+  };
+  deployAnim = requestAnimationFrame(tick);
+});
+
 const syncHeader = () => {
   const cfg = store.get().config;
   const preset = getPreset(cfg.presetId);
   const modified = preset ? isModified(cfg) : false;
+  const sizes = extensionSizes();
+  deployBtn.hidden = sizes === null;
+  if (sizes) deployBtn.textContent = sizes.isDeployed ? 'Stow nozzle' : 'Deploy nozzle';
   presetSelect.value = preset ? preset.id : '';
   resetBtn.disabled = !modified;
   blurb.textContent = preset ? (modified ? `Modified ${preset.name}. ` : '') + preset.blurb : 'Custom engine.';

@@ -9,6 +9,8 @@ export interface Preset {
   blurb: string;
   config: EngineConfig;
   published: { thrustKN: number; atVacuum: boolean; ispSL?: number; ispVac: number };
+  /** Present when the nozzle has a deployable extension: the exit diameter (m) with it stowed. The stock config has it deployed. */
+  extension?: { stowedExitDia: number };
 }
 
 interface Spec {
@@ -20,9 +22,11 @@ interface Spec {
   of: number;
   /** Nozzle expansion ratio (exit area / throat area) */
   eps: number;
+  /** Expansion ratio with a deployable nozzle extension stowed */
+  epsStowed?: number;
   /** Chamber diameter as a multiple of throat diameter */
   contraction: number;
-  /** Chamber length: characteristic length L* in m, or for solids a multiple of chamber diameter */
+  /** Chamber length: characteristic length L* in m, or a multiple of chamber diameter where nothing burns in a liquid spray (solids, nuclear) */
   lStar: number;
   nozzleLenPct: number;
   /** Fraction of the structural limit the stock engine runs at */
@@ -72,6 +76,14 @@ const SPECS: Spec[] = [
     published: { thrustKN: 3830, atVacuum: false, ispSL: 311, ispVac: 338 },
   },
   {
+    id: 'rd-170',
+    name: 'RD-170',
+    blurb: 'Energia and Zenit booster engine, the most powerful liquid engine flown. Four chambers, drawn here as one.',
+    propellant: 'kerolox', pcBar: 245, of: 2.63, eps: 36.87, contraction: 1.5, lStar: 1.1,
+    nozzleLenPct: 80, structural: 0.8,
+    published: { thrustKN: 7257, atVacuum: false, ispSL: 309, ispVac: 337 },
+  },
+  {
     id: 'f-1',
     name: 'F-1',
     blurb: 'Saturn V first-stage engine. Enormous, low pressure, and famous for combustion instability.',
@@ -82,10 +94,18 @@ const SPECS: Spec[] = [
   {
     id: 'rl10b-2',
     name: 'RL10B-2',
-    blurb: 'Delta IV upper-stage engine. Small and gentle, with a gigantic vacuum nozzle.',
-    propellant: 'hydrolox', pcBar: 44, of: 5.88, eps: 280, contraction: 2.0, lStar: 0.9,
+    blurb: 'Delta IV upper-stage engine. Small and gentle, with a gigantic nozzle extension that slides into place in space.',
+    propellant: 'hydrolox', pcBar: 44, of: 5.88, eps: 280, epsStowed: 130, contraction: 2.0, lStar: 0.9,
     nozzleLenPct: 90, structural: 0.4,
     published: { thrustKN: 110, atVacuum: true, ispVac: 465 },
+  },
+  {
+    id: 'nerva',
+    name: 'NERVA',
+    blurb: '1960s nuclear thermal engine. A reactor heats hydrogen instead of burning it, for roughly twice the efficiency of any chemical engine.',
+    propellant: 'nuclear', pcBar: 38.6, of: 2360, eps: 100, contraction: 6.0, lStar: 1.3,
+    nozzleLenPct: 80, structural: 0.4,
+    published: { thrustKN: 246.7, atVacuum: true, ispVac: 841 },
   },
   {
     id: 'solid-booster',
@@ -105,7 +125,7 @@ function build(s: Spec): Preset {
     const chamberDia = round(throatDia * s.contraction);
     const at = (Math.PI / 4) * throatDia ** 2;
     const chamberLen =
-      s.propellant === 'solid'
+      PROPELLANTS[s.propellant].lStarRef === 0
         ? round(chamberDia * s.lStar)
         : round((s.lStar * at) / ((Math.PI / 4) * chamberDia ** 2));
     return {
@@ -125,7 +145,9 @@ function build(s: Spec): Preset {
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };
   const trial = simulate(shape(0.3), flight).thrust;
   const throatDia = 0.3 * Math.sqrt((s.published.thrustKN * 1000) / trial);
-  return { id: s.id, name: s.name, blurb: s.blurb, config: shape(throatDia), published: s.published };
+  const preset: Preset = { id: s.id, name: s.name, blurb: s.blurb, config: shape(throatDia), published: s.published };
+  if (s.epsStowed) preset.extension = { stowedExitDia: round(preset.config.throatDia * Math.sqrt(s.epsStowed)) };
+  return preset;
 }
 
 export const PRESETS: Preset[] = SPECS.map(build);

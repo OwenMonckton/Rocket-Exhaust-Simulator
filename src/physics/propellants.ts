@@ -16,6 +16,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     lStarRef: 1.0,
     instabilityRefDia: 1.15,
     throttleable: true,
+    mixKind: 'ratio',
     table: [
       { of: 1.8, tc: 3050, gamma: 1.225, molarMass: 19.3 },
       { of: 2.1, tc: 3350, gamma: 1.21, molarMass: 20.9 },
@@ -48,6 +49,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     lStarRef: 0.7,
     instabilityRefDia: 1.15,
     throttleable: true,
+    mixKind: 'ratio',
     table: [
       { of: 3.5, tc: 2650, gamma: 1.215, molarMass: 8.9 },
       { of: 4.5, tc: 3050, gamma: 1.195, molarMass: 10.8 },
@@ -80,6 +82,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     lStarRef: 0.9,
     instabilityRefDia: 1.15,
     throttleable: true,
+    mixKind: 'ratio',
     table: [
       { of: 2.6, tc: 3150, gamma: 1.185, molarMass: 18.3 },
       { of: 3.0, tc: 3400, gamma: 1.175, molarMass: 19.8 },
@@ -111,6 +114,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     lStarRef: 0.8,
     instabilityRefDia: 1.15,
     throttleable: true,
+    mixKind: 'ratio',
     table: [
       { of: 1.6, tc: 2950, gamma: 1.225, molarMass: 20.0 },
       { of: 2.0, tc: 3200, gamma: 1.215, molarMass: 21.5 },
@@ -142,6 +146,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     lStarRef: 0,
     instabilityRefDia: 4.0,
     throttleable: false,
+    mixKind: 'none',
     table: [{ of: 1, tc: 3400, gamma: 1.18, molarMass: 28.5 }],
     look: {
       core: [1.0, 0.98, 0.9],
@@ -156,8 +161,40 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       particles: 1.0,
     },
   },
+  nuclear: {
+    id: 'nuclear',
+    name: 'Nuclear thermal',
+    fuel: 'liquid hydrogen',
+    oxidiser: 'a reactor to heat it',
+    // For this propellant the "mixture" setting is the reactor core temperature in kelvin.
+    ofMin: 1500,
+    ofMax: 3200,
+    ofDefault: 2360,
+    lStarRef: 0,
+    instabilityRefDia: 6.0,
+    throttleable: true,
+    mixKind: 'temperature',
+    table: [
+      { of: 1500, tc: 1500, gamma: 1.36, molarMass: 2.016 },
+      { of: 2000, tc: 2000, gamma: 1.34, molarMass: 2.016 },
+      { of: 2360, tc: 2360, gamma: 1.33, molarMass: 2.016 },
+      { of: 2800, tc: 2800, gamma: 1.315, molarMass: 2.01 },
+      { of: 3200, tc: 3200, gamma: 1.3, molarMass: 1.99 },
+    ],
+    look: {
+      core: [0.92, 0.88, 1.0],
+      mid: [0.72, 0.62, 0.98],
+      edge: [0.6, 0.45, 0.9],
+      richTint: [0.6, 0.45, 0.9],
+      opacity: 0.22,
+      soot: 0,
+      smoke: 0,
+      afterburn: [1.0, 0.55, 0.4],
+      afterburnStrength: 1.0,
+      particles: 0,
+    },
+  },
 };
-
 export const PROPELLANT_IDS = Object.keys(PROPELLANTS) as PropellantId[];
 
 export function isPropellantId(v: unknown): v is PropellantId {

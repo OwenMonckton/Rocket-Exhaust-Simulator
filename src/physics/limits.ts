@@ -4,20 +4,33 @@ import type { EngineConfig, Failure, Limits } from './types';
 /** Allowable chamber hoop stress, in bar (≈ 300 MPa). */
 export const SIGMA_ALLOW_BAR = 3000;
 const HEAT_ALLOW = 2.9;
+/** Temperature (K) at which a nuclear thermal engine's reactor fuel fails. */
+export const CORE_TEMP_LIMIT = 2900;
+
+/** The two things that can overheat: the throat, and (nuclear thermal only) the reactor core. */
+function heatSources(cfg: EngineConfig, pcBar: number, tc: number): { throat: number; core: number } {
+  const throat =
+    (Math.pow(pcBar / 100, 0.8) * Math.pow(0.25 / cfg.throatDia, 0.2) * (tc / 3500)) / HEAT_ALLOW;
+  const core = PROPELLANTS[cfg.propellant].mixKind === 'temperature' ? tc / CORE_TEMP_LIMIT : 0;
+  return { throat, core };
+}
 
 /** Each limit is a fraction of its allowable: 1 or more means the engine fails. */
 export function computeLimits(cfg: EngineConfig, pcBar: number, tc: number): Limits {
   const structural = (pcBar * cfg.chamberDia) / (2 * cfg.wall) / SIGMA_ALLOW_BAR;
-  const heating =
-    (Math.pow(pcBar / 100, 0.8) * Math.pow(0.25 / cfg.throatDia, 0.2) * (tc / 3500)) / HEAT_ALLOW;
+  const heat = heatSources(cfg, pcBar, tc);
   const refDia = PROPELLANTS[cfg.propellant].instabilityRefDia;
   const instability = Math.pow(cfg.chamberDia / refDia, 1.5) * (0.9 + (0.1 * pcBar) / 70);
-  return { structural, heating, instability };
+  return { structural, heating: Math.max(heat.throat, heat.core), instability };
 }
 
-export function failureFor(l: Limits): Failure {
+export function failureFor(cfg: EngineConfig, pcBar: number, tc: number): Failure {
+  const l = computeLimits(cfg, pcBar, tc);
   if (l.structural >= 1) return 'burst';
-  if (l.heating >= 1) return 'burnthrough';
+  if (l.heating >= 1) {
+    const heat = heatSources(cfg, pcBar, tc);
+    return heat.core >= heat.throat ? 'meltdown' : 'burnthrough';
+  }
   if (l.instability >= 1) return 'instability';
   return null;
 }

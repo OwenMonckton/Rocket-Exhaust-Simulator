@@ -1,4 +1,4 @@
-export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid';
+export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid' | 'nuclear';
 
 export type RGB = [number, number, number];
 
@@ -46,6 +46,12 @@ export interface Propellant {
   /** Chamber diameter (m) at which combustion instability destroys the engine */
   instabilityRefDia: number;
   throttleable: boolean;
+  /**
+   * What the engine's `mixtureRatio` setting means for this propellant:
+   * 'ratio' is oxidiser-to-fuel mass ratio, 'temperature' is reactor core temperature in K
+   * (nuclear thermal: nothing burns, a reactor heats the propellant), 'none' is fixed.
+   */
+  mixKind: 'ratio' | 'temperature' | 'none';
   table: { of: number; tc: number; gamma: number; molarMass: number }[];
   look: PlumeLook;
 }
@@ -63,7 +69,7 @@ export interface EngineConfig {
   /** Chamber wall thickness, m. Grows with engine scale; not a user control. */
   wall: number;
   chamberPressureBar: number;
-  /** Oxidiser-to-fuel mass ratio */
+  /** Oxidiser-to-fuel mass ratio; for nuclear thermal engines, the reactor core temperature in K */
   mixtureRatio: number;
   /** Engine scale multiplier already applied to the dimensions above */
   scale: number;
@@ -76,7 +82,7 @@ export interface FlightState {
 }
 
 export type ExpansionState = 'ideal' | 'over' | 'under' | 'separated';
-export type Failure = null | 'burst' | 'burnthrough' | 'instability';
+export type Failure = null | 'burst' | 'burnthrough' | 'instability' | 'meltdown';
 
 export interface Limits {
   structural: number;
