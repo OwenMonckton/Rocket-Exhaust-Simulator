@@ -200,8 +200,9 @@ main {
 
 #stage {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 0;
+  /* The engine view always keeps most of the height; the readouts scroll if they don't fit. */
+  min-height: 55%;
   background: #05070a;
   overflow: hidden;
 }
@@ -281,6 +282,9 @@ main {
 }
 
 #readouts {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
@@ -390,14 +394,37 @@ main {
 }
 
 @media (max-width: 1100px) {
+  body {
+    grid-template-columns: clamp(230px, 28vw, 330px) minmax(0, 1fr);
+  }
+  header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
   #blurb {
     display: none;
   }
   #readouts {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .stat.wide,
+  .stat.wide {
+    grid-column: span 1;
+  }
   .meters {
     grid-column: span 3;
+  }
+  .stat,
+  .meters {
+    padding: 6px 10px;
+  }
+  .v {
+    font-size: 20px;
+  }
+  .v.small {
+    font-size: 14px;
+  }
+  .d {
+    font-size: 11px;
+    min-height: 0;
   }
 }
