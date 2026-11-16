@@ -31,6 +31,8 @@ interface Spec {
   nozzleLenPct: number;
   /** Fraction of the structural limit the stock engine runs at */
   structural: number;
+  /** Number of identical chambers sharing one turbopump (default 1) */
+  chambers?: number;
   published: Preset['published'];
 }
 
@@ -78,9 +80,9 @@ const SPECS: Spec[] = [
   {
     id: 'rd-170',
     name: 'RD-170',
-    blurb: 'Energia and Zenit booster engine, the most powerful liquid engine flown. Four chambers, drawn here as one.',
-    propellant: 'kerolox', pcBar: 245, of: 2.63, eps: 36.87, contraction: 1.5, lStar: 1.1,
-    nozzleLenPct: 80, structural: 0.8,
+    blurb: 'Energia and Zenit booster engine, the most powerful liquid engine flown. One turbopump feeds four chambers; two are shown.',
+    propellant: 'kerolox', pcBar: 245, of: 2.63, eps: 36.87, contraction: 1.6, lStar: 1.1,
+    nozzleLenPct: 80, structural: 0.8, chambers: 4,
     published: { thrustKN: 7257, atVacuum: false, ispSL: 309, ispVac: 337 },
   },
   {
@@ -140,6 +142,7 @@ function build(s: Spec): Preset {
       chamberPressureBar: s.pcBar,
       mixtureRatio: PROPELLANTS[s.propellant].throttleable ? s.of : PROPELLANTS[s.propellant].ofDefault,
       scale: 1,
+      chambers: s.chambers ?? 1,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };

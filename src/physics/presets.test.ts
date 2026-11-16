@@ -67,6 +67,27 @@ describe('presets', () => {
     expect(PRESETS.filter((p) => p.extension).map((p) => p.id)).toEqual(['rl10b-2']);
   });
 
+  it('models the RD-170 as four chambers sharing one pump', () => {
+    const rd170 = getPreset('rd-170')!.config;
+    expect(rd170.chambers).toBe(4);
+    // Each real chamber is about 0.38 m across with a 1.43 m nozzle exit.
+    expect(rd170.chamberDia).toBeGreaterThan(0.34);
+    expect(rd170.chamberDia).toBeLessThan(0.42);
+    expect(rd170.exitDia).toBeGreaterThan(1.35);
+    expect(rd170.exitDia).toBeLessThan(1.5);
+    const sl = { altitudeKm: 0, throttle: 1 };
+    const all = simulate(rd170, sl);
+    const one = simulate({ ...rd170, chambers: 1 }, sl);
+    expect(all.thrust / one.thrust).toBeCloseTo(4, 9);
+    expect(all.massFlow / one.massFlow).toBeCloseTo(4, 9);
+    expect(all.isp).toBeCloseTo(one.isp, 9);
+    // Chamber count does not change how hard each chamber is working.
+    expect(all.limits).toEqual(one.limits);
+    // Four small chambers are far less prone to instability than one big one of the same thrust.
+    expect(all.limits.instability).toBeLessThan(0.3);
+    expect(PRESETS.filter((p) => p.config.chambers > 1).map((p) => p.id)).toEqual(['rd-170']);
+  });
+
   it('has a default preset', () => {
     expect(getPreset(DEFAULT_PRESET_ID)).toBeDefined();
     expect(getPreset('nope')).toBeUndefined();

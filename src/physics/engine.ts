@@ -33,6 +33,7 @@ export const RANGES = {
   wall: { min: 0.0002, max: 2, fallback: 0.01 },
   chamberPressureBar: { min: 5, max: 400, fallback: 100 },
   scale: { min: 0.25, max: 5, fallback: 1 },
+  chambers: { min: 1, max: 4, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
 } satisfies Record<string, Range>;
@@ -60,6 +61,7 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     chamberPressureBar: clampTo(cfg.chamberPressureBar, RANGES.chamberPressureBar),
     mixtureRatio: clampMixture(propellant, cfg.mixtureRatio),
     scale: clampTo(cfg.scale, RANGES.scale),
+    chambers: Math.round(clampTo(cfg.chambers, RANGES.chambers)),
   };
 }
 
@@ -111,7 +113,9 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
 
   const cStarIdeal = cStar(g, gas.R, gas.tc);
   const cStarEff = cStarIdeal * combustionEff;
-  const massFlow = (pc * at) / cStarEff;
+  // Totals across all chambers; everything else below is per chamber.
+  const n = cfg.chambers;
+  const massFlow = (n * pc * at) / cStarEff;
   // Thrust depends on chamber pressure and throat area, not on how efficiently
   // that pressure was produced, so the momentum term uses the ideal flow.
   const idealFlow = (pc * at) / cStarIdeal;
@@ -146,7 +150,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     }
     const ve = exitVelocity(mach, g, gas.R, gas.tc);
     const thrust = THRUST_EFF * (nozzleEff * idealFlow * ve + (pExit - pa) * area);
-    return { thrust: Math.max(0, thrust), state, mach, pExit, area, ve };
+    return { thrust: n * Math.max(0, thrust), state, mach, pExit, area, ve };
   };
 
   const pa = ambientPressure(flight.altitudeKm * 1000);

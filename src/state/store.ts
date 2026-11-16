@@ -26,7 +26,7 @@ export function isModified(cfg: EngineConfig): boolean {
   if (cfg.propellant !== stock.propellant) return true;
   const keys: (keyof EngineConfig)[] = [
     'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'nozzleLenPct',
-    'wall', 'chamberPressureBar', 'mixtureRatio', 'scale',
+    'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers',
   ];
   return keys.some((k) => !close(cfg[k] as number, stock[k] as number));
 }

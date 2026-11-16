@@ -14,6 +14,15 @@ export interface EngineProfile {
   exitX: number;
   length: number;
   maxRadius: number;
+  /**
+   * Centreline offsets (m) of the chambers that are drawn. A multi-chamber engine shows two,
+   * side by side; the rest are hidden behind them.
+   */
+  offsets: number[];
+  /** Half the height of everything drawn, m */
+  halfHeight: number;
+  /** Space needed ahead of the injector face for a shared turbopump, m */
+  frontSpace: number;
 }
 
 export interface View {
@@ -61,6 +70,10 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   // Guard against any floating-point wobble in the final point.
   points[points.length - 1] = { x: throatX + bellLen, r: re };
 
+  // Chambers of a multi-chamber engine sit just far enough apart for their nozzles to clear.
+  const multi = cfg.chambers > 1;
+  const pitch = 1.18 * 2 * Math.max(rc, re);
+
   return {
     points,
     chamberEndX: cfg.chamberLen,
@@ -68,6 +81,9 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
     exitX: throatX + bellLen,
     length: throatX + bellLen,
     maxRadius: Math.max(rc, re),
+    offsets: multi ? [-pitch / 2, pitch / 2] : [0],
+    halfHeight: Math.max(rc, re) + (multi ? pitch / 2 : 0),
+    frontSpace: multi ? 0.75 * pitch : 0,
   };
 }
 
@@ -88,7 +104,8 @@ export function radiusAt(profile: EngineProfile, x: number): number {
 export function viewTransform(profile: EngineProfile, widthPx: number, heightPx: number, zoom = 1): View {
   // The injector head and feed lines sit behind x = 0, so reserve some margin for them.
   const margin = 0.06 * widthPx;
-  const fit = zoom * Math.min((0.34 * widthPx) / profile.length, (0.55 * heightPx) / (2 * profile.maxRadius));
+  const fit =
+    zoom * Math.min((0.34 * widthPx) / (profile.length + profile.frontSpace), (0.55 * heightPx) / (2 * profile.halfHeight));
   // A long engine with a small nozzle (a solid booster) would leave the plume only a few
   // pixels wide, so keep the nozzle exit a sensible size and let the front of the engine
   // run off the left edge instead.
@@ -96,6 +113,9 @@ export function viewTransform(profile: EngineProfile, widthPx: number, heightPx:
   const minExitPx = heightPx * (0.03 + 0.04 * Math.min(zoom, 1));
   const ppm = Math.max(fit, minExitPx / exitRadius);
   const exitLimit = margin + 0.36 * widthPx;
-  const originX = Math.min(margin + 0.08 * profile.maxRadius * ppm, exitLimit - profile.length * ppm);
+  const originX = Math.min(
+    margin + (0.08 * profile.maxRadius + profile.frontSpace) * ppm,
+    exitLimit - profile.length * ppm,
+  );
   return { ppm, originX, centreY: heightPx / 2 };
 }

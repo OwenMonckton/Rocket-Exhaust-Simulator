@@ -73,6 +73,11 @@ export interface EngineConfig {
   mixtureRatio: number;
   /** Engine scale multiplier already applied to the dimensions above */
   scale: number;
+  /**
+   * How many identical chambers share the engine's turbopump (the RD-170 has four).
+   * Every dimension above describes one chamber; thrust and propellant flow are the total.
+   */
+  chambers: number;
 }
 
 export interface FlightState {

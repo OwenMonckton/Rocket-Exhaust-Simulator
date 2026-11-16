@@ -7,6 +7,8 @@ export interface PlumeTarget {
   exitX: number;
   exitY: number;
   radiusPx: number;
+  /** Vertical offsets (device pixels) of each nozzle exit that gets a plume; one entry for a single-chamber engine */
+  offsetsPx: number[];
 }
 
 export interface PlumeRenderer {
@@ -22,7 +24,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets',
 ] as const;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -99,7 +101,7 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       if (useSim) {
         // Size the grid to cover the visible plume, whatever the zoom.
         const across = (canvas.width - target.exitX) / target.radiusPx;
-        const up = (0.5 * canvas.height) / target.radiusPx;
+        const up = (0.5 * canvas.height + Math.max(...target.offsetsPx.map(Math.abs))) / target.radiusPx;
         const length = Math.min(24, Math.max(4, across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
         cell = length / SIM_NX;
         sim!.step(simInputs!, length);
@@ -110,6 +112,8 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       gl.uniform2f(u.uRes, canvas.width, canvas.height);
       gl.uniform2f(u.uExit, target.exitX, target.exitY);
       gl.uniform1f(u.uRadius, target.radiusPx);
+      gl.uniform1i(u.uExitCount, Math.min(2, target.offsetsPx.length));
+      gl.uniform1fv(u.uExitOffsets, [target.offsetsPx[0] ?? 0, target.offsetsPx[1] ?? 0]);
       // Keep time small so the noise stays precise on long sessions.
       gl.uniform1f(u.uTime, timeS % 600);
       gl.uniform1f(u.uIntensity, p.intensity);

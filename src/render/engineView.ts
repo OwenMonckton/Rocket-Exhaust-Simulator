@@ -56,6 +56,109 @@ const rand = (n: number) => {
   return s - Math.floor(s);
 };
 
+const OX_COLOUR = '#4f8fd6';
+const FUEL_COLOUR = '#d6a04f';
+
+/** The turbopump shared by a multi-chamber engine, with its feed lines to each chamber's injector. */
+function drawTurbopump(
+  ctx: CanvasRenderingContext2D,
+  profile: EngineProfile,
+  view: View,
+  chamberRadiusPx: number,
+  wallPx: number,
+  anim: EngineAnim,
+): void {
+  const ppm = view.ppm;
+  const cy = view.centreY;
+  const pitch = (profile.offsets[profile.offsets.length - 1] - profile.offsets[0]) * ppm;
+  const headW = Math.max(8, 0.16 * chamberRadiusPx + wallPx);
+  const headH = chamberRadiusPx + wallPx;
+  const headX = view.originX - headW;
+  const pumpW = 0.42 * pitch;
+  const pumpH = 0.5 * pitch;
+  const pumpX = headX - 0.72 * pitch;
+  const pumpRight = pumpX + pumpW;
+  const lineW = Math.min(9, Math.max(3, 0.035 * pitch));
+  const spinning = anim.failure ? 0 : anim.fire;
+
+  // Feed lines: one manifold per propellant, branching to every chamber.
+  const lines: { colour: string; outY: number; runX: number; inlet: number }[] = [
+    { colour: OX_COLOUR, outY: cy - 0.25 * pumpH, runX: pumpRight + 0.1 * pitch, inlet: -0.45 },
+    { colour: FUEL_COLOUR, outY: cy + 0.25 * pumpH, runX: pumpRight + 0.2 * pitch, inlet: 0.45 },
+  ];
+  ctx.lineWidth = lineW;
+  ctx.lineJoin = 'round';
+  for (const line of lines) {
+    const targets = profile.offsets.map((o) => cy + o * ppm + line.inlet * headH);
+    ctx.strokeStyle = line.colour;
+    ctx.beginPath();
+    // From the tanks into the pump, and out to the manifold.
+    ctx.moveTo(pumpX - 0.14 * pitch, line.outY);
+    ctx.lineTo(line.runX, line.outY);
+    ctx.moveTo(line.runX, Math.min(...targets));
+    ctx.lineTo(line.runX, Math.max(...targets));
+    for (const y of targets) {
+      ctx.moveTo(line.runX, y);
+      ctx.lineTo(headX + 1, y);
+    }
+    ctx.stroke();
+  }
+
+  // Pump body.
+  ctx.fillStyle = '#6f7783';
+  ctx.strokeStyle = '#1b1e25';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(pumpX, cy - pumpH / 2, pumpW, pumpH, Math.min(8, pumpW * 0.2));
+  ctx.fill();
+  ctx.stroke();
+
+  // Shaft joining the two pumps, with the turbine that drives them in the middle.
+  const midX = pumpX + pumpW / 2;
+  ctx.strokeStyle = '#2a2e37';
+  ctx.lineWidth = Math.max(2, pumpW * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(midX, cy - 0.25 * pumpH);
+  ctx.lineTo(midX, cy + 0.25 * pumpH);
+  ctx.stroke();
+  ctx.fillStyle = spinning > 0.05 ? `rgba(240,150,60,${0.5 + 0.5 * spinning})` : '#3b404b';
+  ctx.beginPath();
+  ctx.arc(midX, cy, 0.09 * pumpH, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Impellers, spinning while the engine runs.
+  const radius = Math.min(0.19 * pumpH, 0.42 * pumpW);
+  const angle = anim.timeS * 16 * spinning;
+  for (const [colour, y] of [
+    [OX_COLOUR, cy - 0.25 * pumpH],
+    [FUEL_COLOUR, cy + 0.25 * pumpH],
+  ] as const) {
+    ctx.fillStyle = '#23262d';
+    ctx.beginPath();
+    ctx.arc(midX, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = Math.max(1.5, radius * 0.16);
+    ctx.beginPath();
+    ctx.arc(midX, y, radius, 0, Math.PI * 2);
+    for (let i = 0; i < 6; i++) {
+      const a = angle + (i / 6) * Math.PI * 2;
+      ctx.moveTo(midX, y);
+      ctx.lineTo(midX + Math.cos(a) * radius, y + Math.sin(a) * radius);
+    }
+    ctx.stroke();
+  }
+
+  if (pumpW > 34) {
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Turbopump', midX, cy + pumpH / 2 + 5);
+    ctx.textAlign = 'left';
+  }
+}
+
 export function drawEngine(
   ctx: CanvasRenderingContext2D,
   cfg: EngineConfig,
@@ -86,7 +189,13 @@ export function drawEngine(
     );
   }
 
+  // A multi-chamber engine draws two of its chambers, fed by one shared turbopump.
+  const multi = profile.offsets.length > 1;
   const wallPx = Math.min(Math.max(cfg.wall * ppm, 3), Math.max(3, 0.3 * rc * ppm));
+  if (multi) drawTurbopump(ctx, profile, view, rc * ppm, wallPx, anim);
+
+  // Everything for one chamber, drawn about the centreline `cy`.
+  const drawChamber = (index: number) => {
   const wallAt = (x: number) => {
     if (x <= profile.throatX) return wallPx;
     const t = (x - profile.throatX) / Math.max(1e-9, profile.exitX - profile.throatX);
@@ -318,7 +427,9 @@ export function drawEngine(
     }
     const pipe = Math.max(4, 0.22 * rc * ppm);
     ctx.fillStyle = '#4f8fd6';
-    if (isNuclear) {
+    if (multi) {
+      // Fed from the shared turbopump instead.
+    } else if (isNuclear) {
       // One propellant only: a single hydrogen feed line.
       ctx.fillRect(X(0) - headW - pipe * 1.6, cy - pipe / 2, pipe * 1.6, pipe);
     } else {
@@ -338,7 +449,8 @@ export function drawEngine(
   ctx.setLineDash([]);
 
   // --- Failure -------------------------------------------------------------
-  if (anim.failure) {
+  // One chamber failing is enough to end the run, so only the first one is shown torn open.
+  if (anim.failure && index === 0) {
     const fx = X(anim.failure === 'burnthrough' ? profile.throatX : cfg.chamberLen * 0.55);
     const fr = (anim.failure === 'burnthrough' ? rt : rc) * ppm;
     const size = Math.max(40, profile.maxRadius * ppm);
@@ -385,6 +497,14 @@ export function drawEngine(
       }
     }
   }
+  };
+
+  profile.offsets.forEach((offset, index) => {
+    ctx.save();
+    ctx.translate(0, offset * ppm);
+    drawChamber(index);
+    ctx.restore();
+  });
   ctx.restore();
 
   // --- Scale bar and overlay legend (not shaken) ---------------------------

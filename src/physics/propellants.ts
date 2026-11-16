@@ -186,7 +186,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       mid: [0.72, 0.62, 0.98],
       edge: [0.6, 0.45, 0.9],
       richTint: [0.6, 0.45, 0.9],
-      opacity: 0.22,
+      opacity: 0.42,
       soot: 0,
       smoke: 0,
       afterburn: [1.0, 0.55, 0.4],

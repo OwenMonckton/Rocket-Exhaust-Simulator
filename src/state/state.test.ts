@@ -16,6 +16,14 @@ describe('share links', () => {
     const s = { config: { ...PRESETS[0].config, presetId: null, chamberPressureBar: 123 }, flight: { altitudeKm: 0, throttle: 1 } };
     expect(decodeState(encodeState(s))).toEqual(s);
   });
+  it('reads links made before multi-chamber engines as single-chamber', () => {
+    const old = 'v1.' + btoa(JSON.stringify(['merlin-1d', 'kerolox', 0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1]));
+    expect(decodeState(old)!.config.chambers).toBe(1);
+    const four = decodeState(encodeState({ config: getPreset('rd-170')!.config, flight: { altitudeKm: 0, throttle: 1 } }))!;
+    expect(four.config.chambers).toBe(4);
+    const silly = 'v1.' + btoa(JSON.stringify(['merlin-1d', 'kerolox', 0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 99.7]));
+    expect(decodeState(silly)!.config.chambers).toBe(4);
+  });
   it('rejects garbage without throwing (review focus)', () => {
     const good = encodeState(defaultState());
     const bad = ['', '#', 'v1.', 'v1.!!!', 'v9.abc', 'hello', good.slice(0, 20), good.slice(0, -7), 'v1.' + btoa('{"a":1}'), 'v1.' + btoa('[1,2,3]')];

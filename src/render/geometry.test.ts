@@ -41,6 +41,21 @@ describe('engine profile', () => {
     const merlin = engineProfile(PRESETS[0].config);
     expect(viewTransform(merlin, 1200, 600).originX).toBeGreaterThan(0);
   });
+  it('draws two chambers side by side for a multi-chamber engine, with room for the pump', () => {
+    const rd170 = PRESETS.find((p) => p.id === 'rd-170')!.config;
+    const prof = engineProfile(rd170);
+    expect(prof.offsets).toHaveLength(2);
+    expect(prof.offsets[0]).toBeCloseTo(-prof.offsets[1], 9);
+    // Nozzles clear each other.
+    expect(prof.offsets[1] - prof.offsets[0]).toBeGreaterThan(rd170.exitDia);
+    expect(prof.frontSpace).toBeGreaterThan(0);
+    const v = viewTransform(prof, 1200, 600);
+    expect(2 * prof.halfHeight * v.ppm).toBeLessThanOrEqual(0.55 * 600 + 1e-6);
+    expect(v.originX - prof.frontSpace * v.ppm).toBeGreaterThan(0);
+    const single = engineProfile(PRESETS[0].config);
+    expect(single.offsets).toEqual([0]);
+    expect(single.frontSpace).toBe(0);
+  });
   it('fits the engine in the left of the stage', () => {
     for (const p of PRESETS) {
       const prof = engineProfile(p.config);

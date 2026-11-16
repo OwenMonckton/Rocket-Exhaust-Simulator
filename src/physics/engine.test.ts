@@ -14,6 +14,7 @@ const base: EngineConfig = {
   chamberPressureBar: 100,
   mixtureRatio: 2.4,
   scale: 1,
+  chambers: 1,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 

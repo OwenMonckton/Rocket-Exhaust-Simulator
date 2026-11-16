@@ -125,12 +125,14 @@ export function createRuntime(
     }
 
     const params = plumeParams(state.config, result, state.flight, fire);
+    const pixelsPerMetre = view.ppm * dpr;
     plume?.draw(
       params,
       {
         exitX: (view.originX + profile.exitX * view.ppm) * dpr,
         exitY: (h - view.centreY) * dpr,
         radiusPx: params.exitRadiusM * view.ppm * dpr,
+        offsetsPx: profile.offsets.map((o) => o * pixelsPerMetre),
       },
       timeS,
       plumeMode === 'sim' ? simInputs(state.config, result, fire) : null,

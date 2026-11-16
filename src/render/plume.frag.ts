@@ -22,6 +22,9 @@ uniform float uAfter;       // afterburning strength
 uniform vec3 uAfterCol;
 uniform float uParticles;   // glowing particles carried in the exhaust
 
+uniform int uExitCount;          // how many nozzle exits to draw a plume from (1 or 2)
+uniform float uExitOffsets[2];   // their vertical offsets from uExit, in pixels
+
 uniform vec2 uRes;
 uniform vec2 uExit;
 uniform float uRadius;
@@ -92,7 +95,9 @@ vec3 simGlow(vec3 gas) {
   float exhaust = gas.z;
   // 0 for cold gas, about a third for exhaust leaving the nozzle, 1 for gas brought to a stop.
   float floorT = 2.0 * uSimAmbT;
-  float heat = clamp((temp - floorT) / max(0.1, uSimT0 - floorT), 0.0, 1.0);
+  // The hot end of the scale is capped: a very high-expansion nozzle (NERVA, RL10) cools its
+  // exhaust so far below its starting temperature that the plume would otherwise barely register.
+  float heat = clamp((temp - floorT) / max(0.1, min(uSimT0, 3.0) - floorT), 0.0, 1.0);
   float shock = smoothstep(0.5, 0.9, heat);
   float dens = clamp(pow(gas.x, 0.55), 0.0, 2.2);
   vec3 tint = mix(uEdge, uMid, smoothstep(0.15, 0.45, heat));
@@ -122,7 +127,12 @@ void main() {
   col += vec3(star) * uStars;
 
   if (uIntensity > 0.002 && uRadius > 0.5) {
-    vec2 p = (frag - uExit) / uRadius;
+    // A multi-chamber engine has a plume from each nozzle that is drawn. They are worked
+    // out one at a time and their light added together; they do not push on each other.
+    vec3 emTotal = vec3(0.0);
+    for (int e = 0; e < 2; e++) {
+    if (e >= uExitCount) break;
+    vec2 p = (frag - uExit - vec2(0.0, uExitOffsets[e])) / uRadius;
     float x = p.x;
     float y = abs(p.y);
 
@@ -240,12 +250,15 @@ void main() {
         col = mix(col, smokeCol, clamp(sm, 0.0, 0.92));
       }
 
-      // The flame hides the sky behind it in proportion to how bright it is,
-      // so it keeps its colour against a daytime sky as well as in space.
-      vec3 lit = 1.0 - exp(-em * 2.4);
-      float cover = clamp(max(lit.r, max(lit.g, lit.b)) * 1.5, 0.0, 1.0);
-      col = col * (1.0 - cover) + lit;
+      emTotal += em;
     }
+    }
+
+    // The flame hides the sky behind it in proportion to how bright it is,
+    // so it keeps its colour against a daytime sky as well as in space.
+    vec3 lit = 1.0 - exp(-emTotal * 2.4);
+    float cover = clamp(max(lit.r, max(lit.g, lit.b)) * 1.5, 0.0, 1.0);
+    col = col * (1.0 - cover) + lit;
   }
 
   outColor = vec4(col, 1.0);
