@@ -13,6 +13,8 @@ uniform float uUseSim;
 uniform sampler2D uSim;
 uniform vec2 uSimGrid;
 uniform float uSimCell;     // cell size, in exit radii
+uniform float uSimUp;       // how far the grid reaches upstream of the nozzle exit, in exit radii
+uniform float uSimLip;      // slope of the nozzle wall at the lip
 uniform float uSimGamma;
 uniform float uSimAmbT;     // ambient temperature over exit temperature
 uniform float uSimT0;       // stagnation temperature over exit temperature
@@ -84,7 +86,7 @@ float fbm(vec2 p) {
 // Density and temperature of the simulated gas at a point (in exit radii), relative to the nozzle exit.
 // Also returns the fraction of the gas that is exhaust rather than air.
 vec3 simGas(vec2 q) {
-  vec2 uv = clamp(q / (uSimGrid * uSimCell), vec2(0.0), vec2(1.0));
+  vec2 uv = clamp((q + vec2(uSimUp, 0.0)) / (uSimGrid * uSimCell), vec2(0.0), vec2(1.0));
   vec4 U = texture(uSim, uv);
   float rho = max(U.x, 1e-6);
   float p = max((uSimGamma - 1.0) * (U.w - 0.5 * (U.y * U.y + U.z * U.z) / rho), 1e-8);
@@ -139,7 +141,8 @@ void main() {
     float x = p.x;
     float y = abs(p.y);
 
-    if (x > -0.05) {
+    // The simulated plume also covers a strip beside the nozzle, upstream of its exit.
+    if (x > (uUseSim > 0.5 ? -uSimUp : -0.05)) {
       float t = uTime;
       float xs = max(x, 0.0);
 
@@ -197,8 +200,13 @@ void main() {
       if (uUseSim > 0.5) {
         // Fine turbulence the coarse grid cannot resolve: jiggle where we look.
         vec2 q = vec2(xs + (n2 - 0.5) * 0.14 * uTurb * min(1.0, xs * 0.25), y / (1.0 + 0.6 * wobble));
-        vec2 size = uSimGrid * uSimCell;
-        float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y);
+        // Beside the nozzle (x below zero) look at the gas exactly where it is.
+        if (x < 0.0) q = vec2(x, y);
+        vec2 size = uSimGrid * uSimCell - vec2(uSimUp, 0.0);
+        float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y)
+                       * smoothstep(-uSimUp, -uSimUp + 0.4, x);
+        // The nozzle itself is drawn separately; nothing shows through it.
+        if (x < 0.0 && y < 1.0 + uSimLip * x + 0.06) edgeFade = 0.0;
 
         // The plume is a round column and a camera sees right through it, so add up
         // the glow along the line of sight instead of showing a single slice.
@@ -229,7 +237,7 @@ void main() {
         }
         // Scaled so a path one exit radius long through the gas looks about as bright as the slice did.
         em = sum * (2.0 * depth / float(SAMPLES)) * 0.55;
-        em *= (0.85 + 0.3 * n2) * pow(axial, 0.5) * edgeFade;
+        em *= (0.85 + 0.3 * n2) * sqrt(exp(-xs / uLen * 2.3)) * edgeFade;
       }
 
       // Soft glow around the nozzle exit.

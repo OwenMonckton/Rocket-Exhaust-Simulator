@@ -49,8 +49,12 @@ export interface FluidSim {
   readonly texture: WebGLTexture;
   /** Exhaust density (density × exhaust fraction) */
   readonly scalarTexture: WebGLTexture;
-  /** Advance the simulation one display frame. `lengthRadii` is how many exit radii the grid spans downstream. */
-  step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null): void;
+  /** Advance the simulation one display frame. */
+  /**
+   * `lengthRadii` is the whole span of the grid in exit radii, of which the first `upstreamRadii`
+   * lie beside the nozzle, upstream of its exit plane.
+   */
+  step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii?: number): void;
   reset(): void;
 }
 
@@ -81,6 +85,7 @@ uniform vec2 uAmb;          // density, pressure
 uniform float uWallOn;      // 1 when a solid cone (a nozzle extension) stands in the flow
 uniform vec4 uWall;         // its inner surface: (x, r) at the upstream end, (x, r) at the downstream end
 uniform float uWallThick;
+uniform float uUpstream;    // how far the grid reaches upstream of the nozzle exit, in exit radii
 
 layout(location = 0) out vec4 outU;
 layout(location = 1) out vec4 outS;
@@ -105,33 +110,52 @@ vec4 ambient() {
   return vec4(uAmb.x, 0.0, 0.0, uAmb.y);
 }
 
-bool isNozzle(ivec2 c) {
-  return c.x < 0 && (float(c.y) + 0.5) * uDx < 1.0 && uFire > 0.02;
+// Where a cell is: distance downstream of the nozzle exit plane (negative means beside
+// the nozzle, upstream of its exit) and distance from the centreline.
+vec2 position(ivec2 c) {
+  return vec2((float(c.x) + 0.5) * uDx - uUpstream, (float(c.y) + 0.5) * uDx);
+}
+
+// Inner radius of the nozzle wall upstream of the exit: the bell narrows going forward.
+float nozzleRadius(float x) {
+  return max(0.3, 1.0 + uDiverge * x);
+}
+
+// Inside the nozzle itself. These cells are not simulated: they hold the exhaust as it arrives.
+bool inNozzle(ivec2 c) {
+  if (c.x < 0 || c.y < 0) return false;
+  vec2 p = position(c);
+  return p.x < 0.0 && p.y < nozzleRadius(p.x);
+}
+
+// The exhaust arriving at the nozzle exit, at radius r (as a fraction of the nozzle's radius).
+// A bell nozzle delivers higher pressure near its wall than on the centreline, with the gas
+// fanning slightly outward toward the lip. Every streamline has the same stagnation state,
+// so speed follows pressure.
+vec4 exhaustState(float r) {
+  float f = 1.0 + uProfile * (r * r - 0.5);
+  float temp = pow(f, (uGamma - 1.0) / uGamma);
+  float speed = sqrt(max(0.0, uExitSpeed * uExitSpeed + 2.0 * uGamma / (uGamma - 1.0) * (1.0 - temp)));
+  float angle = uDiverge * r;
+  return vec4(uFire * pow(f, 1.0 / uGamma), speed / sqrt(1.0 + angle * angle),
+              speed * angle / sqrt(1.0 + angle * angle), uFire * f);
 }
 
 // Primitive state of a cell, including the cells just outside the grid.
 // Also returns the exhaust fraction (0 = air, 1 = exhaust).
 vec4 cell(ivec2 c, out float frac) {
   frac = 0.0;
-  if (c.y >= uGrid.y) return ambient();
+  if (c.y >= uGrid.y || c.x < 0) return ambient();
   bool mirrored = false;
   if (c.y < 0) {          // centreline: mirror image
     c.y = -1 - c.y;
     mirrored = true;
   }
   vec4 w;
-  if (c.x < 0) {
-    if (isNozzle(c)) {
-      // The nozzle exit. A bell nozzle delivers higher pressure near its wall than
-      // on the centreline, with the gas fanning slightly outward toward the lip.
-      // Every streamline has the same stagnation state, so speed follows pressure.
-      float r = (float(c.y) + 0.5) * uDx;
-      float f = 1.0 + uProfile * (r * r - 0.5);
-      float temp = pow(f, (uGamma - 1.0) / uGamma);
-      float speed = sqrt(max(0.0, uExitSpeed * uExitSpeed + 2.0 * uGamma / (uGamma - 1.0) * (1.0 - temp)));
-      float angle = uDiverge * r;
-      w = vec4(uFire * pow(f, 1.0 / uGamma), speed / sqrt(1.0 + angle * angle),
-               speed * angle / sqrt(1.0 + angle * angle), uFire * f);
+  if (inNozzle(c)) {
+    if (uFire > 0.02) {
+      vec2 p = position(c);
+      w = exhaustState(p.y / nozzleRadius(p.x));
       frac = 1.0;
     } else {
       w = ambient();
@@ -207,20 +231,35 @@ vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d, float fa, float fb, float fc, floa
   return F;
 }
 
-// Is this cell inside the solid wall of a nozzle extension?
-bool solid(ivec2 c) {
-  if (uWallOn < 0.5 || c.x < 0 || c.y < 0) return false;
-  float x = (float(c.x) + 0.5) * uDx;
-  float r = (float(c.y) + 0.5) * uDx;
-  if (x < uWall.x || x > uWall.z) return false;
-  float inner = mix(uWall.y, uWall.w, (x - uWall.x) / max(1e-6, uWall.z - uWall.x));
-  return r >= inner && r <= inner + uWallThick;
+// The nozzle's own wall, beside the exit plane. Exhaust that spreads sideways hard enough
+// curls back around the lip and along the outside of it.
+bool solidNozzle(ivec2 c) {
+  if (c.x < 0 || c.y < 0) return false;
+  vec2 p = position(c);
+  if (p.x >= 0.0) return false;
+  float inner = nozzleRadius(p.x);
+  return p.y >= inner && p.y <= inner + uWallThick;
 }
 
-// Gas bounces off the wall: the part of its velocity pointing into the surface is reversed.
-// Using the cone's true slope here, not the grid's stair-steps, keeps the flow along it smooth.
-vec4 bounce(vec4 w) {
-  vec2 n = normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
+// The wall of a nozzle extension, wherever it currently is.
+bool solidExtension(ivec2 c) {
+  if (uWallOn < 0.5 || c.x < 0 || c.y < 0) return false;
+  vec2 p = position(c);
+  if (p.x < uWall.x || p.x > uWall.z) return false;
+  float inner = mix(uWall.y, uWall.w, (p.x - uWall.x) / max(1e-6, uWall.z - uWall.x));
+  return p.y >= inner && p.y <= inner + uWallThick;
+}
+
+bool solid(ivec2 c) {
+  return solidNozzle(c) || solidExtension(c);
+}
+
+// Gas bounces off a wall: the part of its velocity pointing into the surface is reversed.
+// Using the wall's true slope here, not the grid's stair-steps, keeps the flow along it smooth.
+vec4 bounce(vec4 w, ivec2 wallCell) {
+  vec2 n = solidNozzle(wallCell)
+    ? normalize(vec2(uDiverge, -1.0))
+    : normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
   w.yz -= 2.0 * dot(w.yz, n) * n;
   return w;
 }
@@ -234,6 +273,11 @@ void main() {
   }
   float f0, fxm2, fxm1, fxp1, fxp2, fym2, fym1, fyp1, fyp2;
   vec4 w0 = cell(c, f0);
+  if (inNozzle(c)) {
+    outU = toCons(w0);
+    outS = vec4(w0.x * f0, 0.0, 0.0, 1.0);
+    return;
+  }
   vec4 xm2 = cell(c + ivec2(-2, 0), fxm2);
   vec4 xm1 = cell(c + ivec2(-1, 0), fxm1);
   vec4 xp1 = cell(c + ivec2(1, 0), fxp1);
@@ -244,16 +288,23 @@ void main() {
   vec4 yp2 = cell(c + ivec2(0, 2), fyp2);
 
   // Where a neighbour is solid wall, replace it (and whatever lies beyond) with mirror images.
-  if (uWallOn > 0.5) {
-    if (solid(c + ivec2(-1, 0))) { xm1 = bounce(w0); fxm1 = f0; xm2 = bounce(xp1); fxm2 = fxp1; }
-    else if (solid(c + ivec2(-2, 0))) { xm2 = bounce(xm1); fxm2 = fxm1; }
-    if (solid(c + ivec2(1, 0))) { xp1 = bounce(w0); fxp1 = f0; xp2 = bounce(xm1); fxp2 = fxm1; }
-    else if (solid(c + ivec2(2, 0))) { xp2 = bounce(xp1); fxp2 = fxp1; }
-    if (solid(c + ivec2(0, -1))) { ym1 = bounce(w0); fym1 = f0; ym2 = bounce(yp1); fym2 = fyp1; }
-    else if (solid(c + ivec2(0, -2))) { ym2 = bounce(ym1); fym2 = fym1; }
-    if (solid(c + ivec2(0, 1))) { yp1 = bounce(w0); fyp1 = f0; yp2 = bounce(ym1); fyp2 = fym1; }
-    else if (solid(c + ivec2(0, 2))) { yp2 = bounce(yp1); fyp2 = fyp1; }
-  }
+  ivec2 n1 = c + ivec2(-1, 0);
+  ivec2 n2 = c + ivec2(-2, 0);
+  if (solid(n1)) { xm1 = bounce(w0, n1); fxm1 = f0; xm2 = bounce(xp1, n1); fxm2 = fxp1; }
+  else if (solid(n2)) { xm2 = bounce(xm1, n2); fxm2 = fxm1; }
+  n1 = c + ivec2(1, 0);
+  n2 = c + ivec2(2, 0);
+  if (solid(n1)) { xp1 = bounce(w0, n1); fxp1 = f0; xp2 = bounce(xm1, n1); fxp2 = fxm1; }
+  else if (solid(n2)) { xp2 = bounce(xp1, n2); fxp2 = fxp1; }
+  n1 = c + ivec2(0, -1);
+  n2 = c + ivec2(0, -2);
+  if (solid(n1)) { ym1 = bounce(w0, n1); fym1 = f0; ym2 = bounce(yp1, n1); fym2 = fyp1; }
+  else if (solid(n2)) { ym2 = bounce(ym1, n2); fym2 = fym1; }
+  n1 = c + ivec2(0, 1);
+  n2 = c + ivec2(0, 2);
+  if (solid(n1)) { yp1 = bounce(w0, n1); fyp1 = f0; yp2 = bounce(ym1, n1); fyp2 = fym1; }
+  else if (solid(n2)) { yp2 = bounce(yp1, n2); fyp2 = fyp1; }
+
   float sxL, sxR, syB, syT;
   vec4 fxL = faceFlux(xm2, xm1, w0, xp1, fxm2, fxm1, f0, fxp1, sxL);
   vec4 fxR = faceFlux(xm1, w0, xp1, xp2, fxm1, f0, fxp1, fxp2, sxR);
@@ -343,7 +394,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     prev: u('uPrev'), cur: u('uCur'), prevS: u('uPrevS'), curS: u('uCurS'), stage: u('uStage'),
     grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
-    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'),
+    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'),
   };
 
   const makeTexture = (format: number) => {
@@ -412,7 +463,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     reset() {
       needsReset = true;
     },
-    step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null) {
+    step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii = 0) {
       if (needsReset) {
         fill(inputs, lengthRadii);
         needsReset = false;
@@ -436,13 +487,12 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform1f(loc.profile, inputs.profile);
       gl.uniform1f(loc.exitSpeed, inputs.uExit);
       gl.uniform2f(loc.amb, inputs.rhoAmb, inputs.pAmb);
-      const hasWall = !!wall && wall.x1 > 0 && wall.x1 > wall.x0;
+      const hasWall = !!wall && wall.x1 > -upstreamRadii && wall.x1 > wall.x0;
       gl.uniform1f(loc.wallOn, hasWall ? 1 : 0);
-      if (hasWall) {
-        gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
-        // Thick enough that gas cannot leak through between neighbouring cells.
-        gl.uniform1f(loc.wallThick, Math.max(3 * dx, 0.05));
-      }
+      if (hasWall) gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+      // Walls are thick enough that gas cannot leak through between neighbouring cells.
+      gl.uniform1f(loc.wallThick, Math.max(3 * dx, 0.05));
+      gl.uniform1f(loc.upstream, upstreamRadii);
       gl.uniform1i(loc.prev, 0);
       gl.uniform1i(loc.cur, 1);
       gl.uniform1i(loc.prevS, 2);

@@ -26,7 +26,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip',
 ] as const;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -100,13 +100,16 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       if (lost) return;
       const useSim = !!simInputs && sim !== null && target.radiusPx > 0.5;
       let cell = 1;
+      let upstream = 0;
       if (useSim) {
         // Size the grid to cover the visible plume, whatever the zoom.
         const across = (canvas.width - target.exitX) / target.radiusPx;
         const up = (0.5 * canvas.height + Math.max(...target.offsetsPx.map(Math.abs))) / target.radiusPx;
         const length = Math.min(24, Math.max(4, across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
-        cell = length / SIM_NX;
-        sim!.step(simInputs!, length, target.wall);
+        // A strip beside the nozzle, upstream of its exit, for exhaust that curls back around the lip.
+        upstream = Math.min(2, 0.15 * length);
+        cell = (length + upstream) / SIM_NX;
+        sim!.step(simInputs!, length + upstream, target.wall, upstream);
       }
 
       gl.useProgram(program);
@@ -154,6 +157,8 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         gl.bindTexture(gl.TEXTURE_2D, sim!.texture);
         gl.uniform2f(u.uSimGrid, SIM_NX, SIM_NY);
         gl.uniform1f(u.uSimCell, cell);
+        gl.uniform1f(u.uSimUp, upstream);
+        gl.uniform1f(u.uSimLip, simInputs!.divergence);
         gl.uniform1f(u.uSimGamma, simInputs!.gamma);
         gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb);
         gl.uniform1f(u.uSimT0, simInputs!.t0);
