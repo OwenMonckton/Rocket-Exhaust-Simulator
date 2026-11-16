@@ -31,6 +31,9 @@ export interface PlumeParams {
   opacity: number;
   soot: number;
   smoke: number;
+  /** Glow where fuel-rich exhaust burns in the surrounding air (simulated plume only) */
+  afterburn: number;
+  afterburnColor: RGB;
   separated: boolean;
   skyTop: RGB;
   skyBottom: RGB;
@@ -69,6 +72,9 @@ export function simInputs(cfg: EngineConfig, r: SimResult, fire: number): SimInp
     rhoAmb: (pAmb * gasR * exitTemp) / (R_AIR * AIR_TEMP),
     fire: clamp(fire, 0, 1),
     t0,
+    // Slope of the bell wall at the lip (see engineProfile). A jet that has already torn off the wall leaves straighter and more evenly.
+    divergence: r.state === 'separated' ? 0.06 : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct,
+    profile: r.state === 'separated' ? 0 : 0.4,
   };
 }
 
@@ -124,6 +130,8 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     opacity,
     soot,
     smoke: look.smoke,
+    afterburn: look.afterburnStrength * clamp(0.35 + 0.9 * rich, 0, 1.2) * Math.sqrt(paFrac),
+    afterburnColor: look.afterburn,
     separated: r.state === 'separated',
     skyTop: mix3([0.16, 0.38, 0.74], [0.0, 0.0, 0.015], smooth(0, 45000, altM)),
     skyBottom: mix3([0.56, 0.74, 0.93], [0.008, 0.01, 0.03], smooth(4000, 60000, altM)),

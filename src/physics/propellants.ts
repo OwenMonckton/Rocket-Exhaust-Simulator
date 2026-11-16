@@ -32,6 +32,8 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       opacity: 1.0,
       soot: 0.45,
       smoke: 0.08,
+      afterburn: [1.0, 0.5, 0.14],
+      afterburnStrength: 0.8,
     },
   },
   hydrolox: {
@@ -61,6 +63,8 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       opacity: 0.42,
       soot: 0,
       smoke: 0,
+      afterburn: [1.0, 0.5, 0.36],
+      afterburnStrength: 1.0,
     },
   },
   methalox: {
@@ -89,6 +93,8 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       opacity: 0.6,
       soot: 0.04,
       smoke: 0,
+      afterburn: [1.0, 0.52, 0.42],
+      afterburnStrength: 0.6,
     },
   },
   hypergolic: {
@@ -117,6 +123,8 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       opacity: 0.7,
       soot: 0.15,
       smoke: 0.12,
+      afterburn: [0.9, 0.45, 0.2],
+      afterburnStrength: 0.5,
     },
   },
   solid: {
@@ -139,6 +147,8 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       opacity: 1.0,
       soot: 0.1,
       smoke: 1.0,
+      afterburn: [1.0, 0.7, 0.4],
+      afterburnStrength: 0.7,
     },
   },
 };

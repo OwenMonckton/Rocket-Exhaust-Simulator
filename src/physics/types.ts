@@ -25,6 +25,10 @@ export interface PlumeLook {
   soot: number;
   /** 0–1, trailing smoke (solids) */
   smoke: number;
+  /** Colour of unburnt fuel in the exhaust burning where it meets the air */
+  afterburn: RGB;
+  /** 0–1, how strongly this propellant afterburns */
+  afterburnStrength: number;
 }
 
 export interface Propellant {

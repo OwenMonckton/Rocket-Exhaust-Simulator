@@ -22,7 +22,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol',
 ] as const;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -132,7 +132,12 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
 
       gl.uniform1f(u.uUseSim, useSim ? 1 : 0);
       gl.uniform1i(u.uSim, 0);
+      gl.uniform1i(u.uSimS, 1);
+      gl.uniform1f(u.uAfter, p.afterburn);
+      gl.uniform3fv(u.uAfterCol, p.afterburnColor);
       if (useSim) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, sim!.scalarTexture);
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, sim!.texture);
         gl.uniform2f(u.uSimGrid, SIM_NX, SIM_NY);
@@ -140,6 +145,7 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         gl.uniform1f(u.uSimGamma, simInputs!.gamma);
         gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb);
         gl.uniform1f(u.uSimT0, simInputs!.t0);
+        gl.uniform1f(u.uSimAmbP, simInputs!.pAmb);
       }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },

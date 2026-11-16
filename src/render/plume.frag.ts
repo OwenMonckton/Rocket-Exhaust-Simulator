@@ -16,6 +16,10 @@ uniform float uSimCell;     // cell size, in exit radii
 uniform float uSimGamma;
 uniform float uSimAmbT;     // ambient temperature over exit temperature
 uniform float uSimT0;       // stagnation temperature over exit temperature
+uniform float uSimAmbP;     // ambient pressure over exit pressure
+uniform sampler2D uSimS;    // exhaust density
+uniform float uAfter;       // afterburning strength
+uniform vec3 uAfterCol;
 
 uniform vec2 uRes;
 uniform vec2 uExit;
@@ -72,15 +76,37 @@ float fbm(vec2 p) {
 }
 
 // Density and temperature of the simulated gas at a point (in exit radii), relative to the nozzle exit.
-vec2 simGas(vec2 q) {
-  vec2 g = clamp(q / uSimCell - 0.5, vec2(0.0), uSimGrid - 1.001);
-  ivec2 i = ivec2(floor(g));
-  vec2 f = fract(g);
-  vec4 U = mix(mix(texelFetch(uSim, i, 0), texelFetch(uSim, i + ivec2(1, 0), 0), f.x),
-               mix(texelFetch(uSim, i + ivec2(0, 1), 0), texelFetch(uSim, i + ivec2(1, 1), 0), f.x), f.y);
+// Also returns the fraction of the gas that is exhaust rather than air.
+vec3 simGas(vec2 q) {
+  vec2 uv = clamp(q / (uSimGrid * uSimCell), vec2(0.0), vec2(1.0));
+  vec4 U = texture(uSim, uv);
   float rho = max(U.x, 1e-4);
   float p = max((uSimGamma - 1.0) * (U.w - 0.5 * (U.y * U.y + U.z * U.z) / rho), 1e-5);
-  return vec2(rho, p / rho);
+  return vec3(rho, p / rho, clamp(texture(uSimS, uv).x / rho, 0.0, 1.0));
+}
+
+// Light given off by a small parcel of simulated gas.
+vec3 simGlow(vec3 gas) {
+  float temp = gas.y;
+  float exhaust = gas.z;
+  // 0 for cold gas, about a third for exhaust leaving the nozzle, 1 for gas brought to a stop.
+  float floorT = 2.0 * uSimAmbT;
+  float heat = clamp((temp - floorT) / max(0.1, uSimT0 - floorT), 0.0, 1.0);
+  float shock = smoothstep(0.5, 0.9, heat);
+  float dens = clamp(pow(gas.x, 0.55), 0.0, 2.2);
+  vec3 tint = mix(uEdge, uMid, smoothstep(0.15, 0.45, heat));
+  tint = mix(tint, uCore * 1.15, smoothstep(0.45, 0.85, heat));
+  float bright = smoothstep(0.0, 0.25, heat) * (0.42 + 1.7 * heat * heat);
+  // Gas squeezed above the outside pressure is where the diamonds are: let it glow.
+  float squeeze = smoothstep(1.15, 2.6, gas.x * temp / uSimAmbP) * smoothstep(0.1, 0.3, heat);
+  tint = mix(tint, uCore * 1.15, 0.55 * squeeze);
+  bright *= 1.0 + 1.3 * squeeze;
+  // Only exhaust glows; air heated by a passing shock stays dark.
+  vec3 glow = tint * bright * dens * exhaust * mix(uOpacity, 1.0, 0.6 * max(shock, squeeze));
+  // Afterburning: leftover fuel in the exhaust burns where it mixes with air.
+  float mixing = 4.0 * exhaust * (1.0 - exhaust) * smoothstep(0.04, 0.25, exhaust);
+  glow += uAfterCol * uAfter * mixing * (0.5 + 0.5 * smoothstep(0.0, 0.3, heat)) * 1.6;
+  return glow;
 }
 
 void main() {
@@ -155,21 +181,24 @@ void main() {
       if (uUseSim > 0.5) {
         // Fine turbulence the coarse grid cannot resolve: jiggle where we look.
         vec2 q = vec2(xs + (n2 - 0.5) * 0.14 * uTurb * min(1.0, xs * 0.25), y / (1.0 + 0.6 * wobble));
-        vec2 gas = simGas(q);
-        float temp = gas.y;
-        // Exhaust is hot, air is cold; gas squeezed by a shock is hotter still.
-        // 0 for air, about a third for exhaust leaving the nozzle, 1 for gas brought to a stop.
-        float floorT = 2.0 * uSimAmbT;
-        float heat = clamp((temp - floorT) / max(0.1, uSimT0 - floorT), 0.0, 1.0);
-        float shock = smoothstep(0.5, 0.9, heat);
-        float dens = clamp(pow(gas.x, 0.55), 0.0, 2.2);
         vec2 size = uSimGrid * uSimCell;
         float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y);
-        vec3 tint = mix(uEdge, uMid, smoothstep(0.15, 0.45, heat));
-        tint = mix(tint, uCore * 1.15, smoothstep(0.45, 0.85, heat));
-        float bright = smoothstep(0.0, 0.25, heat) * (0.35 + 1.5 * heat * heat);
-        em = tint * bright * dens;
-        em *= (0.85 + 0.3 * n2) * mix(uOpacity, 1.0, 0.6 * shock) * pow(axial, 0.5) * edgeFade;
+
+        // The plume is a round column and a camera sees right through it, so add up
+        // the glow along the line of sight instead of showing a single slice.
+        // Only look as far out as the plume can plausibly reach.
+        float reach = mix(min(size.y, max(1.6, 1.3 * uSettle) + 0.16 * xs), size.y, clamp(uBloom * 2.0, 0.0, 1.0));
+        float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
+        const int SAMPLES = 12;
+        float jitter = hash(frag + fract(uTime) * 61.0);
+        vec3 sum = vec3(0.0);
+        for (int i = 0; i < SAMPLES; i++) {
+          float z = (float(i) + jitter) / float(SAMPLES) * depth;
+          sum += simGlow(simGas(vec2(q.x, length(vec2(q.y, z)))));
+        }
+        // Scaled so a path one exit radius long through the gas looks about as bright as the slice did.
+        em = sum * (2.0 * depth / float(SAMPLES)) * 0.55;
+        em *= (0.85 + 0.3 * n2) * pow(axial, 0.5) * edgeFade;
       }
 
       // Soft glow around the nozzle exit.

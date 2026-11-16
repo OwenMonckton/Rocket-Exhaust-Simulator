@@ -29,6 +29,9 @@ export interface Runtime {
   setPlumeMode(mode: PlumeMode): void;
   /** False when this browser cannot run the gas simulation */
   readonly hasSim: boolean;
+  /** 1 is the default framing; smaller values shrink the engine to show more of the plume. Returns the zoom actually applied. */
+  setZoom(z: number): number;
+  getZoom(): number;
   /** False when WebGL2 is unavailable */
   readonly hasPlume: boolean;
 }
@@ -38,6 +41,8 @@ export type PlumeMode = 'drawn' | 'sim';
 const RAMP_UP_S = 1.0;
 const RAMP_DOWN_S = 0.6;
 const ASCENT_S = 30;
+export const ZOOM_MIN = 0.3;
+export const ZOOM_MAX = 1.4;
 
 export function createRuntime(
   store: Store,
@@ -57,6 +62,7 @@ export function createRuntime(
   let failT = 0;
   let overlay: FlowOverlay = 'none';
   let plumeMode: PlumeMode = 'drawn';
+  let zoom = 1;
   let lastGood: AppState = store.get();
   // Remember the most recent engine that would survive firing, for the Rebuild button.
   store.subscribe((s) => {
@@ -107,7 +113,7 @@ export function createRuntime(
 
     // Ease the zoom so resizing the engine doesn't make the view jump.
     const profile = engineProfile(state.config);
-    const target = viewTransform(profile, w, h);
+    const target = viewTransform(profile, w, h, zoom);
     if (!view) view = target;
     else {
       const k = Math.min(1, dt * 9);
@@ -182,6 +188,11 @@ export function createRuntime(
       firing = false;
       store.replace(lastGood);
     },
+    setZoom(z) {
+      zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+      return zoom;
+    },
+    getZoom: () => zoom,
     setOverlay(o) {
       overlay = o;
     },

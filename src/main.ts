@@ -71,7 +71,23 @@ if (!runtime.hasSim) {
   plumeMode.disabled = true;
   plumeMode.title = "This browser can't run the gas simulation.";
 }
-plumeMode.addEventListener('change', () => runtime.setPlumeMode(plumeMode.value as PlumeMode));
+plumeMode.addEventListener('change', () => {
+  const mode = plumeMode.value as PlumeMode;
+  runtime.setPlumeMode(mode);
+  // Real shock diamonds sit several nozzle widths apart, so the simulated plume needs a wider view.
+  runtime.setZoom(mode === 'sim' ? 0.5 : 1);
+});
+
+$('zoom-out').addEventListener('click', () => runtime.setZoom(runtime.getZoom() / 1.25));
+$('zoom-in').addEventListener('click', () => runtime.setZoom(runtime.getZoom() * 1.25));
+$('stage').addEventListener(
+  'wheel',
+  (e) => {
+    e.preventDefault();
+    runtime.setZoom(runtime.getZoom() * Math.exp(-e.deltaY * 0.0015));
+  },
+  { passive: false },
+);
 
 window.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement).tagName;

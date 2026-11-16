@@ -84,10 +84,10 @@ export function radiusAt(profile: EngineProfile, x: number): number {
   return p[p.length - 1].r;
 }
 
-/** Fit the engine into the left part of the stage, leaving room for the plume. */
-export function viewTransform(profile: EngineProfile, widthPx: number, heightPx: number): View {
+/** Fit the engine into the left part of the stage, leaving room for the plume. Zoom below 1 shrinks the engine to show more plume. */
+export function viewTransform(profile: EngineProfile, widthPx: number, heightPx: number, zoom = 1): View {
   // The injector head and feed lines sit behind x = 0, so reserve some margin for them.
   const margin = 0.06 * widthPx;
-  const ppm = Math.min((0.34 * widthPx) / profile.length, (0.55 * heightPx) / (2 * profile.maxRadius));
+  const ppm = zoom * Math.min((0.34 * widthPx) / profile.length, (0.55 * heightPx) / (2 * profile.maxRadius));
   return { ppm, originX: margin + 0.08 * profile.maxRadius * ppm, centreY: heightPx / 2 };
 }

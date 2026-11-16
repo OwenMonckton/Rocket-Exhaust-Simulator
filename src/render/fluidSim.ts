@@ -1,15 +1,18 @@
 // PROTOTYPE: a primitive compressible-gas solver for the plume, run on the GPU.
 //
 // Axisymmetric Euler equations on a uniform grid covering the region downstream
-// of the nozzle exit. Second order in space (MUSCL with a minmod limiter, HLL
-// fluxes) and in time (two-stage Runge-Kutta). Everything is in units of the
-// nozzle exit state: length in exit radii, density and pressure relative to the
-// exhaust at the exit. The nozzle exit is a fixed supersonic inflow on the left
-// edge; the surrounding air is held at ambient on the far edges.
+// of the nozzle exit, in finite-volume form (fluxes weighted by radius, so the
+// centreline needs no special treatment). Second order in space (MUSCL with a
+// van Leer limiter, HLLC fluxes) and in time (two-stage Runge-Kutta). A second
+// field tracks how much of the gas in each cell is exhaust rather than air.
+//
+// Everything is in units of the nozzle exit state: length in exit radii, density
+// and pressure relative to the average exhaust at the exit. The nozzle exit is a
+// fixed supersonic inflow on the left edge; the air is held at ambient.
 
-export const SIM_NX = 256;
-export const SIM_NY = 108;
-const STEPS_PER_FRAME = 40;
+export const SIM_NX = 384;
+export const SIM_NY = 162;
+const STEPS_PER_FRAME = 48;
 const CFL = 0.3;
 
 export interface SimInputs {
@@ -24,10 +27,17 @@ export interface SimInputs {
   fire: number;
   /** Stagnation temperature over exit temperature */
   t0: number;
+  /** Tangent of the flow angle at the nozzle lip: bell nozzles release the gas fanning slightly outward */
+  divergence: number;
+  /** How much the exit pressure rises from centreline to wall (0 = uniform), as bell nozzles do */
+  profile: number;
 }
 
 export interface FluidSim {
+  /** Gas state: density, momentum (x, r), energy */
   readonly texture: WebGLTexture;
+  /** Exhaust density (density × exhaust fraction) */
+  readonly scalarTexture: WebGLTexture;
   /** Advance the simulation one display frame. `lengthRadii` is how many exit radii the grid spans downstream. */
   step(inputs: SimInputs, lengthRadii: number): void;
   reset(): void;
@@ -42,8 +52,10 @@ const FRAG = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
-uniform sampler2D uPrev;   // state at the start of the time step
-uniform sampler2D uCur;    // state this stage advances
+uniform sampler2D uPrev;    // gas state at the start of the time step
+uniform sampler2D uCur;     // gas state this stage advances
+uniform sampler2D uPrevS;   // exhaust density, same two roles
+uniform sampler2D uCurS;
 uniform int uStage;
 uniform ivec2 uGrid;
 uniform float uDx;
@@ -52,10 +64,12 @@ uniform float uGamma;
 uniform float uRelax;
 uniform float uFire;
 uniform float uDiverge;
-uniform vec3 uInflow;      // density, velocity, pressure
-uniform vec2 uAmb;         // density, pressure
+uniform float uProfile;
+uniform float uExitSpeed;
+uniform vec2 uAmb;          // density, pressure
 
-out vec4 outU;
+layout(location = 0) out vec4 outU;
+layout(location = 1) out vec4 outS;
 
 const float RHO_MIN = 1e-4;
 const float P_MIN = 1e-5;
@@ -77,8 +91,14 @@ vec4 ambient() {
   return vec4(uAmb.x, 0.0, 0.0, uAmb.y);
 }
 
+bool isNozzle(ivec2 c) {
+  return c.x < 0 && (float(c.y) + 0.5) * uDx < 1.0 && uFire > 0.02;
+}
+
 // Primitive state of a cell, including the cells just outside the grid.
-vec4 cell(ivec2 c) {
+// Also returns the exhaust fraction (0 = air, 1 = exhaust).
+vec4 cell(ivec2 c, out float frac) {
+  frac = 0.0;
   if (c.y >= uGrid.y) return ambient();
   bool mirrored = false;
   if (c.y < 0) {          // centreline: mirror image
@@ -87,23 +107,40 @@ vec4 cell(ivec2 c) {
   }
   vec4 w;
   if (c.x < 0) {
-    float r = (float(c.y) + 0.5) * uDx;
-    if (r < 1.0 && uFire > 0.02) {
-      // The nozzle exit: supersonic exhaust, fanning out slightly toward the lip.
-      w = vec4(uInflow.x * uFire, uInflow.y, uInflow.y * uDiverge * r, uInflow.z * uFire);
+    if (isNozzle(c)) {
+      // The nozzle exit. A bell nozzle delivers higher pressure near its wall than
+      // on the centreline, with the gas fanning slightly outward toward the lip.
+      // Every streamline has the same stagnation state, so speed follows pressure.
+      float r = (float(c.y) + 0.5) * uDx;
+      float f = 1.0 + uProfile * (r * r - 0.5);
+      float temp = pow(f, (uGamma - 1.0) / uGamma);
+      float speed = sqrt(max(0.0, uExitSpeed * uExitSpeed + 2.0 * uGamma / (uGamma - 1.0) * (1.0 - temp)));
+      float angle = uDiverge * r;
+      w = vec4(uFire * pow(f, 1.0 / uGamma), speed / sqrt(1.0 + angle * angle),
+               speed * angle / sqrt(1.0 + angle * angle), uFire * f);
+      frac = 1.0;
     } else {
       w = ambient();
     }
   } else {
     c.x = min(c.x, uGrid.x - 1);   // far end: let the flow leave freely
     w = toPrim(texelFetch(uCur, c, 0));
+    frac = clamp(texelFetch(uCurS, c, 0).x / w.x, 0.0, 1.0);
   }
   if (mirrored) w.z = -w.z;
   return w;
 }
 
-vec4 minmod(vec4 a, vec4 b) {
-  return 0.5 * (sign(a) + sign(b)) * min(abs(a), abs(b));
+// Van Leer slope limiter: sharper than minmod, still free of overshoots.
+vec4 limited(vec4 a, vec4 b) {
+  vec4 ab = a * b;
+  vec4 same = step(vec4(1e-30), ab);   // 1 where both slopes point the same way
+  return same * 2.0 * ab / mix(vec4(1.0), a + b, same);
+}
+
+float limited1(float a, float b) {
+  float ab = a * b;
+  return ab > 1e-30 ? 2.0 * ab / (a + b) : 0.0;
 }
 
 vec4 floorState(vec4 w) {
@@ -112,8 +149,8 @@ vec4 floorState(vec4 w) {
   return w;
 }
 
-// HLL flux along the direction of the state's second component.
-vec4 hll(vec4 L, vec4 R) {
+// Flux along the direction of the state's second component.
+vec4 riemann(vec4 L, vec4 R) {
   float aL = sqrt(uGamma * L.w / L.x);
   float aR = sqrt(uGamma * R.w / R.x);
   float sL = min(L.y - aL, R.y - aR);
@@ -124,54 +161,100 @@ vec4 hll(vec4 L, vec4 R) {
   vec4 FR = vec4(UR.y, UR.y * R.y + R.w, UR.z * R.y, (UR.w + R.w) * R.y);
   if (sL >= 0.0) return FL;
   if (sR <= 0.0) return FR;
-  return (sR * FL - sL * FR + sL * sR * (UR - UL)) / (sR - sL);
+  vec4 smeared = (sR * FL - sL * FR + sL * sR * (UR - UL)) / (sR - sL);
+
+  // HLLC: also tracks the contact between the two gases, which keeps the edge
+  // of the jet sharp. That edge is what bounces the shocks back to make diamonds.
+  float mL = L.x * (sL - L.y);
+  float mR = R.x * (sR - R.y);
+  float sM = (R.w - L.w + mL * L.y - mR * R.y) / (mL - mR);
+  vec4 sharp;
+  if (sM >= 0.0) {
+    vec4 Us = (mL / (sL - sM)) * vec4(1.0, sM, L.z, UL.w / L.x + (sM - L.y) * (sM + L.w / mL));
+    sharp = FL + sL * (Us - UL);
+  } else {
+    vec4 Us = (mR / (sR - sM)) * vec4(1.0, sM, R.z, UR.w / R.x + (sM - R.y) * (sM + R.w / mR));
+    sharp = FR + sR * (Us - UR);
+  }
+  // Across a strong shock the sharp flux can go unstable, so fall back to the smeared one there.
+  float jump = abs(R.w - L.w) / min(L.w, R.w);
+  return mix(sharp, smeared, smoothstep(0.5, 2.5, jump));
 }
 
 // Flux through the face between cells b and c, given their outer neighbours a and d.
-vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d) {
-  vec4 L = floorState(b + 0.5 * minmod(b - a, c - b));
-  vec4 R = floorState(c - 0.5 * minmod(c - b, d - c));
-  return hll(L, R);
+// fa..fd are the exhaust fractions of the same cells; exhaustFlux is the exhaust carried across.
+vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d, float fa, float fb, float fc, float fd, out float exhaustFlux) {
+  vec4 L = floorState(b + 0.5 * limited(b - a, c - b));
+  vec4 R = floorState(c - 0.5 * limited(c - b, d - c));
+  vec4 F = riemann(L, R);
+  float fracL = fb + 0.5 * limited1(fb - fa, fc - fb);
+  float fracR = fc - 0.5 * limited1(fc - fb, fd - fc);
+  exhaustFlux = F.x * (F.x > 0.0 ? fracL : fracR);
+  return F;
 }
 
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
-  vec4 w0 = cell(c);
-  vec4 xm2 = cell(c + ivec2(-2, 0));
-  vec4 xm1 = cell(c + ivec2(-1, 0));
-  vec4 xp1 = cell(c + ivec2(1, 0));
-  vec4 xp2 = cell(c + ivec2(2, 0));
-  vec4 ym2 = cell(c + ivec2(0, -2));
-  vec4 ym1 = cell(c + ivec2(0, -1));
-  vec4 yp1 = cell(c + ivec2(0, 1));
-  vec4 yp2 = cell(c + ivec2(0, 2));
+  float f0, fxm2, fxm1, fxp1, fxp2, fym2, fym1, fyp1, fyp2;
+  vec4 w0 = cell(c, f0);
+  vec4 xm2 = cell(c + ivec2(-2, 0), fxm2);
+  vec4 xm1 = cell(c + ivec2(-1, 0), fxm1);
+  vec4 xp1 = cell(c + ivec2(1, 0), fxp1);
+  vec4 xp2 = cell(c + ivec2(2, 0), fxp2);
+  vec4 ym2 = cell(c + ivec2(0, -2), fym2);
+  vec4 ym1 = cell(c + ivec2(0, -1), fym1);
+  vec4 yp1 = cell(c + ivec2(0, 1), fyp1);
+  vec4 yp2 = cell(c + ivec2(0, 2), fyp2);
 
-  vec4 fxL = faceFlux(xm2, xm1, w0, xp1);
-  vec4 fxR = faceFlux(xm1, w0, xp1, xp2);
+  float sxL, sxR, syB, syT;
+  vec4 fxL = faceFlux(xm2, xm1, w0, xp1, fxm2, fxm1, f0, fxp1, sxL);
+  vec4 fxR = faceFlux(xm1, w0, xp1, xp2, fxm1, f0, fxp1, fxp2, sxR);
   // Radial direction: swap the velocity components, reuse the same flux, swap back.
-  vec4 fyL = faceFlux(ym2.xzyw, ym1.xzyw, w0.xzyw, yp1.xzyw).xzyw;
-  vec4 fyR = faceFlux(ym1.xzyw, w0.xzyw, yp1.xzyw, yp2.xzyw).xzyw;
+  vec4 fyB = faceFlux(ym2.xzyw, ym1.xzyw, w0.xzyw, yp1.xzyw, fym2, fym1, f0, fyp1, syB).xzyw;
+  vec4 fyT = faceFlux(ym1.xzyw, w0.xzyw, yp1.xzyw, yp2.xzyw, fym1, f0, fyp1, fyp2, syT).xzyw;
 
-  vec4 U0 = toCons(w0);
-  // Axisymmetric geometry: gas moving outward has more room to spread into.
-  float r = (float(c.y) + 0.5) * uDx;
-  vec4 H = vec4(w0.x * w0.z, w0.x * w0.y * w0.z, w0.x * w0.z * w0.z, w0.z * (U0.w + w0.w));
+  // Each cell is a ring around the centreline. Its outer face is larger than its
+  // inner one, and the pressure on its sloping sides pushes it outward.
+  float rB = float(c.y) * uDx;
+  float rT = rB + uDx;
+  float rC = rB + 0.5 * uDx;
+  float k1 = uDt / uDx;
+  float k2 = uDt / (rC * uDx);
 
-  vec4 U1 = U0 - (uDt / uDx) * (fxR - fxL + fyR - fyL) - uDt * H / r;
-  if (uStage == 1) U1 = 0.5 * texelFetch(uPrev, c, 0) + 0.5 * U1;
+  vec4 U1 = toCons(w0) - k1 * (fxR - fxL) - k2 * (rT * fyT - rB * fyB) + vec4(0.0, 0.0, uDt * w0.w / rC, 0.0);
+  float S1 = w0.x * f0 - k1 * (sxR - sxL) - k2 * (rT * syT - rB * syB);
+  if (uStage == 1) {
+    U1 = 0.5 * texelFetch(uPrev, c, 0) + 0.5 * U1;
+    S1 = 0.5 * texelFetch(uPrevS, c, 0).x + 0.5 * S1;
+  }
 
-  // Hold the surrounding air at ambient. Cold gas is air, hot gas is exhaust.
   vec4 w = toPrim(U1);
-  float tAmb = uAmb.y / uAmb.x;
-  float cold = 1.0 - smoothstep(1.6 * tAmb, 3.0 * tAmb, w.w / w.x);
-  float k = uFire > 0.02 ? uRelax * cold : 0.05;
-  w.x = mix(w.x, uAmb.x, k);
-  w.w = mix(w.w, uAmb.y, k);
-  if (uFire <= 0.02) w.yz *= 0.96;   // engine off: let everything settle
+  S1 = clamp(S1, 0.0, w.x);
+  float frac = S1 / w.x;
+  if (uFire > 0.02) {
+    // Hold the surrounding air at ambient, leaving anything containing exhaust alone.
+    float k = uRelax * (1.0 - smoothstep(0.01, 0.08, frac));
+    w.x = mix(w.x, uAmb.x, k);
+    w.w = mix(w.w, uAmb.y, k);
+    // Wisps of exhaust left drifting in still air disperse (the grid has no wind to carry them off).
+    float drifting = 1.0 - smoothstep(0.05, 0.2, length(w.yz) / uExitSpeed);
+    frac *= 1.0 - 0.02 * drifting;
+  } else {
+    // Engine off: let everything settle back to still air.
+    w.x = mix(w.x, uAmb.x, 0.05);
+    w.w = mix(w.w, uAmb.y, 0.05);
+    w.yz *= 0.96;
+    frac *= 0.95;
+  }
   U1 = toCons(w);
+  S1 = w.x * frac;
 
-  if (any(isnan(U1)) || any(isinf(U1))) U1 = toCons(ambient());
+  if (any(isnan(U1)) || any(isinf(U1)) || isnan(S1)) {
+    U1 = toCons(ambient());
+    S1 = 0.0;
+  }
   outU = U1;
+  outS = vec4(S1, 0.0, 0.0, 1.0);
 }
 `;
 
@@ -191,6 +274,8 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
  */
 export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
   if (!gl.getExtension('EXT_color_buffer_float')) return null;
+  // Smooth sampling when the plume is drawn; without it the plume just looks blockier.
+  const smooth = gl.getExtension('OES_texture_float_linear') !== null;
 
   let program: WebGLProgram;
   try {
@@ -207,36 +292,45 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
   }
   const u = (name: string) => gl.getUniformLocation(program, name);
   const loc = {
-    prev: u('uPrev'), cur: u('uCur'), stage: u('uStage'), grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'),
-    gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'), diverge: u('uDiverge'),
-    inflow: u('uInflow'), amb: u('uAmb'),
+    prev: u('uPrev'), cur: u('uCur'), prevS: u('uPrevS'), curS: u('uCurS'), stage: u('uStage'),
+    grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
+    diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
+  };
+
+  const makeTexture = (format: number) => {
+    const texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, format, SIM_NX, SIM_NY);
+    const filter = smooth ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
   };
 
   // Three states: start of step, after stage one, end of step.
+  let complete = true;
   const targets = [0, 1, 2].map(() => {
-    const texture = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, SIM_NX, SIM_NY);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const state = makeTexture(gl.RGBA32F);
+    const scalar = makeTexture(gl.R32F);
     const fbo = gl.createFramebuffer()!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-    return { texture, fbo };
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, state, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, scalar, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) complete = false;
+    return { state, scalar, fbo };
   });
-  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return null;
-  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!complete) return null;
 
   let needsReset = true;
   let current = 0;
 
-  const fillAmbient = (inputs: SimInputs, lengthRadii: number) => {
-    const data = new Float32Array(SIM_NX * SIM_NY * 4);
+  const fill = (inputs: SimInputs, lengthRadii: number) => {
+    const state = new Float32Array(SIM_NX * SIM_NY * 4);
+    const scalar = new Float32Array(SIM_NX * SIM_NY);
     const energy = inputs.pAmb / (inputs.gamma - 1);
     // If the engine is already burning, start with a column of exhaust so the plume forms quickly.
     const burning = inputs.fire > 0.5;
@@ -245,24 +339,33 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     for (let j = 0; j < SIM_NY; j++) {
       const inJet = burning && j < jetRows;
       for (let i = 0; i < SIM_NX; i++) {
-        const k = (j * SIM_NX + i) * 4;
-        data[k] = inJet ? 1 : inputs.rhoAmb;
-        data[k + 1] = inJet ? inputs.uExit : 0;
-        data[k + 3] = inJet ? jetEnergy : energy;
+        const n = j * SIM_NX + i;
+        state[n * 4] = inJet ? 1 : inputs.rhoAmb;
+        state[n * 4 + 1] = inJet ? inputs.uExit : 0;
+        state[n * 4 + 3] = inJet ? jetEnergy : energy;
+        scalar[n] = inJet ? 1 : 0;
       }
     }
-    gl.bindTexture(gl.TEXTURE_2D, targets[current].texture);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SIM_NX, SIM_NY, gl.RGBA, gl.FLOAT, data);
+    gl.bindTexture(gl.TEXTURE_2D, targets[current].state);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SIM_NX, SIM_NY, gl.RGBA, gl.FLOAT, state);
+    gl.bindTexture(gl.TEXTURE_2D, targets[current].scalar);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SIM_NX, SIM_NY, gl.RED, gl.FLOAT, scalar);
+  };
+
+  const bind = (unit: number, texture: WebGLTexture | null) => {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
   };
 
   const sim = {
-    texture: targets[0].texture,
+    texture: targets[0].state,
+    scalarTexture: targets[0].scalar,
     reset() {
       needsReset = true;
     },
     step(inputs: SimInputs, lengthRadii: number) {
       if (needsReset) {
-        fillAmbient(inputs, lengthRadii);
+        fill(inputs, lengthRadii);
         needsReset = false;
       }
       const g = inputs.gamma;
@@ -278,38 +381,41 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform1f(loc.dx, dx);
       gl.uniform1f(loc.dt, dt);
       gl.uniform1f(loc.gamma, g);
-      gl.uniform1f(loc.relax, 0.012);
+      gl.uniform1f(loc.relax, 0.02);
       gl.uniform1f(loc.fire, inputs.fire);
-      gl.uniform1f(loc.diverge, 0.12);
-      gl.uniform3f(loc.inflow, 1, inputs.uExit, 1);
+      gl.uniform1f(loc.diverge, inputs.divergence);
+      gl.uniform1f(loc.profile, inputs.profile);
+      gl.uniform1f(loc.exitSpeed, inputs.uExit);
       gl.uniform2f(loc.amb, inputs.rhoAmb, inputs.pAmb);
       gl.uniform1i(loc.prev, 0);
       gl.uniform1i(loc.cur, 1);
+      gl.uniform1i(loc.prevS, 2);
+      gl.uniform1i(loc.curS, 3);
 
       for (let n = 0; n < STEPS_PER_FRAME; n++) {
         const a = targets[current];
         const b = targets[(current + 1) % 3];
         const c = targets[(current + 2) % 3];
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, a.texture);
+        bind(0, a.state);
+        bind(2, a.scalar);
         // Stage one: a -> b
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, a.texture);
+        bind(1, a.state);
+        bind(3, a.scalar);
         gl.bindFramebuffer(gl.FRAMEBUFFER, b.fbo);
         gl.uniform1i(loc.stage, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         // Stage two: (a, b) -> c
-        gl.bindTexture(gl.TEXTURE_2D, b.texture);
+        bind(1, b.state);
+        bind(3, b.scalar);
         gl.bindFramebuffer(gl.FRAMEBUFFER, c.fbo);
         gl.uniform1i(loc.stage, 1);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         current = (current + 2) % 3;
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0);
-      sim.texture = targets[current].texture;
+      for (const unit of [3, 2, 1, 0]) bind(unit, null);
+      sim.texture = targets[current].state;
+      sim.scalarTexture = targets[current].scalar;
     },
   };
   return sim;
