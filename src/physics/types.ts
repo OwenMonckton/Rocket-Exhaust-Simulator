@@ -29,6 +29,8 @@ export interface PlumeLook {
   afterburn: RGB;
   /** 0–1, how strongly this propellant afterburns */
   afterburnStrength: number;
+  /** 0–1, glowing solid particles carried in the exhaust (alumina in solids, soot in kerosene) */
+  particles: number;
 }
 
 export interface Propellant {

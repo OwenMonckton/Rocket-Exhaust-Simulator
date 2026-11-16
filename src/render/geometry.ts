@@ -88,6 +88,14 @@ export function radiusAt(profile: EngineProfile, x: number): number {
 export function viewTransform(profile: EngineProfile, widthPx: number, heightPx: number, zoom = 1): View {
   // The injector head and feed lines sit behind x = 0, so reserve some margin for them.
   const margin = 0.06 * widthPx;
-  const ppm = zoom * Math.min((0.34 * widthPx) / profile.length, (0.55 * heightPx) / (2 * profile.maxRadius));
-  return { ppm, originX: margin + 0.08 * profile.maxRadius * ppm, centreY: heightPx / 2 };
+  const fit = zoom * Math.min((0.34 * widthPx) / profile.length, (0.55 * heightPx) / (2 * profile.maxRadius));
+  // A long engine with a small nozzle (a solid booster) would leave the plume only a few
+  // pixels wide, so keep the nozzle exit a sensible size and let the front of the engine
+  // run off the left edge instead.
+  const exitRadius = profile.points[profile.points.length - 1].r;
+  const minExitPx = heightPx * (0.03 + 0.04 * Math.min(zoom, 1));
+  const ppm = Math.max(fit, minExitPx / exitRadius);
+  const exitLimit = margin + 0.36 * widthPx;
+  const originX = Math.min(margin + 0.08 * profile.maxRadius * ppm, exitLimit - profile.length * ppm);
+  return { ppm, originX, centreY: heightPx / 2 };
 }

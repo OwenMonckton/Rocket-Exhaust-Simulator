@@ -20,6 +20,7 @@ uniform float uSimAmbP;     // ambient pressure over exit pressure
 uniform sampler2D uSimS;    // exhaust density
 uniform float uAfter;       // afterburning strength
 uniform vec3 uAfterCol;
+uniform float uParticles;   // glowing particles carried in the exhaust
 
 uniform vec2 uRes;
 uniform vec2 uExit;
@@ -106,6 +107,8 @@ vec3 simGlow(vec3 gas) {
   // Afterburning: leftover fuel in the exhaust burns where it mixes with air.
   float mixing = 4.0 * exhaust * (1.0 - exhaust) * smoothstep(0.04, 0.25, exhaust);
   glow += uAfterCol * uAfter * mixing * (0.5 + 0.5 * smoothstep(0.0, 0.3, heat)) * 1.6;
+  // Solid particles in the exhaust stay incandescent after the gas around them has cooled.
+  glow += mix(uMid, uCore, 0.6) * uParticles * exhaust * clamp(pow(gas.x, 0.5), 0.0, 1.6) * 1.25;
   return glow;
 }
 
@@ -213,6 +216,24 @@ void main() {
         float Rs = R * 1.25 + xs * 0.2;
         float sn = fbm(vec2(xs * 0.55 - t * 2.6, p.y * 0.9 + 11.0));
         float sm = falloff(0.25, 1.1, y / Rs) * smoothstep(1.2, 6.0, xs) * smoothstep(0.25, 0.75, sn);
+        // Simulated plume: the smoke is wherever the simulation says the exhaust went.
+        if (uUseSim > 0.5) {
+          // Smoke billows outward as it drifts downstream, which the gas solver alone does not capture.
+          vec2 size = uSimGrid * uSimCell;
+          float widen = 1.0 + 0.1 * xs * (0.5 + sn);
+          float ys = y / widen;
+          float reachS = min(size.y, 1.8 + 0.16 * xs);
+          float depthS = sqrt(max(0.0, reachS * reachS - ys * ys));
+          float amount = 0.0;
+          for (int i = 0; i < 5; i++) {
+            float z = (float(i) + 0.5) / 5.0 * depthS;
+            vec3 gas = simGas(vec2(xs, length(vec2(ys, z))));
+            amount += gas.x * gas.z;
+          }
+          amount *= 2.0 * depthS / 5.0 / widen;
+          sm = (1.0 - exp(-amount * 1.6)) * smoothstep(0.4, 3.0, xs) * (0.5 + 0.5 * sn)
+             * falloff(size.x - 1.2, size.x - 0.1, xs);
+        }
         sm *= clamp(smokeAmt, 0.0, 1.0) * uIntensity * thin * 0.9;
         float skyLight = 0.25 + 0.75 * dot(uSkyBottom, vec3(0.33));
         vec3 smokeCol = mix(vec3(0.42), vec3(0.9), sn) * skyLight + uMid * 0.25 * axial;

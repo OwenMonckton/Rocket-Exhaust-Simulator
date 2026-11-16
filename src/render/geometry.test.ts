@@ -29,6 +29,18 @@ describe('engine profile', () => {
     const long = engineProfile({ ...cfg, nozzleLenPct: 100 });
     expect(long.length).toBeGreaterThan(short.length);
   });
+  it('keeps a small nozzle big enough to see, cropping the front of a long engine', () => {
+    const solid = PRESETS.find((p) => p.id === 'solid-booster')!;
+    const prof = engineProfile(solid.config);
+    for (const zoom of [1, 0.5, 0.3]) {
+      const v = viewTransform(prof, 1200, 600, zoom);
+      expect((solid.config.exitDia / 2) * v.ppm).toBeGreaterThanOrEqual(600 * 0.03);
+      expect(v.originX + prof.length * v.ppm).toBeLessThan(0.5 * 1200);
+    }
+    // Ordinary engines are unaffected and stay fully on screen.
+    const merlin = engineProfile(PRESETS[0].config);
+    expect(viewTransform(merlin, 1200, 600).originX).toBeGreaterThan(0);
+  });
   it('fits the engine in the left of the stage', () => {
     for (const p of PRESETS) {
       const prof = engineProfile(p.config);

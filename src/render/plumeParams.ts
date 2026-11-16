@@ -34,6 +34,8 @@ export interface PlumeParams {
   /** Glow where fuel-rich exhaust burns in the surrounding air (simulated plume only) */
   afterburn: number;
   afterburnColor: RGB;
+  /** Glowing particles in the exhaust, which stay bright where plain gas would cool and fade (simulated plume only) */
+  particles: number;
   separated: boolean;
   skyTop: RGB;
   skyBottom: RGB;
@@ -134,6 +136,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     smoke: look.smoke * air,
     afterburn: look.afterburnStrength * clamp(0.35 + 0.9 * rich, 0, 1.2) * Math.sqrt(paFrac),
     afterburnColor: look.afterburn,
+    particles: look.particles * (rich > 0 ? 1 : 1 + 0.6 * rich),
     separated: r.state === 'separated',
     skyTop: mix3([0.16, 0.38, 0.74], [0.0, 0.0, 0.015], smooth(0, 45000, altM)),
     skyBottom: mix3([0.56, 0.74, 0.93], [0.008, 0.01, 0.03], smooth(4000, 60000, altM)),
