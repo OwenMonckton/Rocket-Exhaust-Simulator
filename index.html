@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rocket Engine Simulator</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Rocket Engine Simulator</h1>
+      <label class="preset" title="Start from a real engine, then tweak it.">
+        <span>Engine</span>
+        <select id="preset"></select>
+      </label>
+      <button id="reset" title="Undo your changes and go back to the real engine.">Reset to stock</button>
+      <span id="blurb"></span>
+      <span class="spacer"></span>
+      <label class="preset">
+        <span>Show inside</span>
+        <select id="overlay">
+          <option value="none">Flame</option>
+          <option value="mach">Gas speed</option>
+          <option value="temp">Gas temperature</option>
+        </select>
+      </label>
+      <button id="sound" aria-pressed="false" title="Turn the engine rumble on or off.">Sound off</button>
+      <button id="share" title="Copy a link to this exact engine.">Share</button>
+    </header>
+    <aside>
+      <div id="controls"></div>
+      <div class="actions">
+        <button id="ascent">▲ Ascent</button>
+        <button id="fire" class="primary">Fire</button>
+      </div>
+    </aside>
+    <main>
+      <div id="stage">
+        <canvas id="gl"></canvas>
+        <canvas id="overlay-canvas"></canvas>
+        <div id="nogl" hidden>
+          Your browser doesn't support WebGL2, so the plume can't be drawn. The engine and the numbers still work.
+        </div>
+        <div id="failure" hidden>
+          <h2></h2>
+          <p></p>
+          <button id="rebuild" class="primary">Rebuild engine</button>
+        </div>
+        <div id="toast" hidden></div>
+      </div>
+      <section id="readouts"></section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

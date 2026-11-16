@@ -1,0 +1,348 @@
+import { areaRatio, machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
+import { PROPELLANTS } from '../physics/propellants';
+import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
+import { engineProfile, radiusAt, type EngineProfile, type View } from './geometry';
+
+export type FlowOverlay = 'none' | 'mach' | 'temp';
+
+export interface EngineAnim {
+  /** 0–1 ignition ramp */
+  fire: number;
+  timeS: number;
+  overlay: FlowOverlay;
+  failure: Failure;
+  /** Seconds since the failure happened */
+  failT: number;
+}
+
+const css = (c: RGB, a = 1) =>
+  `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`;
+
+const lerp3 = (a: RGB, b: RGB, t: number): RGB => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+  a[2] + (b[2] - a[2]) * t,
+];
+
+/** Blue → cyan → green → yellow → red. */
+function heatMap(t: number): RGB {
+  const stops: RGB[] = [
+    [0.1, 0.2, 0.75],
+    [0.1, 0.7, 0.9],
+    [0.2, 0.8, 0.3],
+    [0.98, 0.85, 0.2],
+    [0.92, 0.2, 0.15],
+  ];
+  const v = Math.min(0.9999, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.floor(v);
+  return lerp3(stops[i], stops[i + 1], v - i);
+}
+
+function localMach(profile: EngineProfile, x: number, throatR: number, g: number): number {
+  const ratio = (radiusAt(profile, x) / throatR) ** 2;
+  return x < profile.throatX ? subsonicMachFromAreaRatio(ratio, g) : machFromAreaRatio(ratio, g);
+}
+
+function niceLength(target: number): number {
+  const pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const m = target / pow;
+  return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * pow;
+}
+
+/** Deterministic pseudo-random number in 0–1. */
+const rand = (n: number) => {
+  const s = Math.sin(n * 127.1) * 43758.5453;
+  return s - Math.floor(s);
+};
+
+export function drawEngine(
+  ctx: CanvasRenderingContext2D,
+  cfg: EngineConfig,
+  result: SimResult,
+  view: View,
+  anim: EngineAnim,
+  widthPx: number,
+  heightPx: number,
+): void {
+  ctx.clearRect(0, 0, widthPx, heightPx);
+  const profile = engineProfile(cfg);
+  const prop = PROPELLANTS[cfg.propellant];
+  const isSolid = cfg.propellant === 'solid';
+  const pts = profile.points;
+  const rc = cfg.chamberDia / 2;
+  const rt = cfg.throatDia / 2;
+  const ppm = view.ppm;
+  const X = (x: number) => view.originX + x * ppm;
+  const cy = view.centreY;
+
+  ctx.save();
+  const shake = anim.fire * (0.35 + 3.2 * result.shudder + (result.rough ? 0.7 : 0));
+  if (shake > 0.01) {
+    ctx.translate(
+      (rand(Math.floor(anim.timeS * 60)) - 0.5) * 2 * shake,
+      (rand(Math.floor(anim.timeS * 60) + 99) - 0.5) * 2 * shake,
+    );
+  }
+
+  const wallPx = Math.min(Math.max(cfg.wall * ppm, 3), Math.max(3, 0.3 * rc * ppm));
+  const wallAt = (x: number) => {
+    if (x <= profile.throatX) return wallPx;
+    const t = (x - profile.throatX) / Math.max(1e-9, profile.exitX - profile.throatX);
+    return wallPx * (1 - 0.6 * t);
+  };
+
+  // --- Interior cavity -----------------------------------------------------
+  const cavity = (clipR?: (x: number, r: number) => number) => {
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const r = clipR ? clipR(p.x, p.r) : p.r;
+      if (i === 0) ctx.moveTo(X(p.x), cy - r * ppm);
+      else ctx.lineTo(X(p.x), cy - r * ppm);
+    });
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const r = clipR ? clipR(pts[i].x, pts[i].r) : pts[i].r;
+      ctx.lineTo(X(pts[i].x), cy + r * ppm);
+    }
+    ctx.closePath();
+  };
+  cavity();
+  ctx.fillStyle = '#0d0f14';
+  ctx.fill();
+
+  // Solid propellant grain: fills the case, leaving a bore down the middle.
+  const boreR = 0.36 * rc;
+  if (isSolid) {
+    const grainEnd = cfg.chamberLen * 0.97;
+    for (const sign of [-1, 1]) {
+      ctx.beginPath();
+      ctx.rect(X(0), sign < 0 ? cy - rc * ppm : cy + boreR * ppm, grainEnd * ppm, (rc - boreR) * ppm);
+      ctx.fillStyle = '#74685a';
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(40,34,28,0.5)';
+    for (let i = 0; i < 160; i++) {
+      const gx = X(rand(i) * grainEnd);
+      const gr = boreR + rand(i + 500) * (rc - boreR);
+      ctx.fillRect(gx, cy + (i % 2 ? gr : -gr) * ppm, 1.5, 1.5);
+    }
+  }
+
+  // --- Hot gas inside the engine ------------------------------------------
+  if (anim.fire > 0.01 && !anim.failure) {
+    const separated = result.state === 'separated';
+    const rEff = result.effectiveExitDia / 2;
+    const jet = (x: number, r: number) => {
+      let out = r;
+      if (isSolid && x < cfg.chamberLen * 0.97) out = Math.min(out, boreR);
+      if (separated && x > profile.throatX && r > rEff) {
+        out = rEff * (1 + 0.05 * Math.sin(x * 40 + anim.timeS * 30));
+      }
+      return out;
+    };
+    cavity(jet);
+    const grad = ctx.createLinearGradient(X(0), 0, X(profile.exitX), 0);
+    const look = prop.look;
+    const N = 14;
+    const g = result.gamma;
+    const exitM = machFromAreaRatio(result.expansionRatio, g);
+    for (let i = 0; i <= N; i++) {
+      const f = i / N;
+      const x = f * profile.exitX;
+      let c: RGB;
+      let a: number;
+      if (anim.overlay === 'none') {
+        const t = Math.min(1, Math.max(0, (x - profile.chamberEndX) / (profile.exitX - profile.chamberEndX)));
+        c = lerp3(lerp3(look.core, [1, 1, 1], 0.35), look.mid, Math.pow(t, 0.7));
+        a = (0.97 - 0.25 * t) * (0.6 + 0.4 * Math.min(1, look.opacity + 0.35));
+      } else {
+        const m = Math.min(localMach(profile, x, rt, g), result.exitMach);
+        if (anim.overlay === 'mach') c = heatMap(m / Math.max(1.5, exitM));
+        else {
+          const tRatio = 1 / (1 + ((g - 1) / 2) * m * m);
+          const tExit = 1 / (1 + ((g - 1) / 2) * exitM * exitM);
+          c = heatMap((tRatio - tExit) / Math.max(1e-6, 1 - tExit));
+        }
+        a = 0.95;
+      }
+      const flicker = anim.overlay === 'none' ? 0.94 + 0.06 * Math.sin(anim.timeS * 47 + i * 1.7) : 1;
+      grad.addColorStop(f, css(c, a * anim.fire * flicker));
+    }
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    if (anim.overlay === 'none') {
+      // Darker boundary layer along the walls makes the gas read as a volume.
+      cavity(jet);
+      const edge = ctx.createLinearGradient(0, cy - profile.maxRadius * ppm, 0, cy + profile.maxRadius * ppm);
+      edge.addColorStop(0, 'rgba(0,0,0,0.5)');
+      edge.addColorStop(0.5, 'rgba(0,0,0,0)');
+      edge.addColorStop(1, 'rgba(0,0,0,0.5)');
+      ctx.fillStyle = edge;
+      ctx.globalAlpha = 0.5 * anim.fire;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // --- Walls ---------------------------------------------------------------
+  for (const sign of [-1, 1]) {
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const y = cy + sign * p.r * ppm;
+      if (i === 0) ctx.moveTo(X(p.x), y);
+      else ctx.lineTo(X(p.x), y);
+    });
+    for (let i = pts.length - 1; i >= 0; i--) {
+      ctx.lineTo(X(pts[i].x), cy + sign * (pts[i].r * ppm + wallAt(pts[i].x)));
+    }
+    ctx.closePath();
+    const top = cy + sign * (profile.maxRadius * ppm + wallPx);
+    const metal = ctx.createLinearGradient(0, cy, 0, top);
+    metal.addColorStop(0, '#565d69');
+    metal.addColorStop(1, '#a9b1bd');
+    ctx.fillStyle = metal;
+    ctx.fill();
+    ctx.strokeStyle = '#1b1e25';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Wall glows where it is being cooked.
+    const heat = Math.max(result.limits.heating, result.limits.structural * 0.6);
+    if (anim.fire > 0.05 && heat > 0.6) {
+      const tx = X(profile.throatX);
+      const glow = ctx.createRadialGradient(tx, cy + sign * rt * ppm, 0, tx, cy + sign * rt * ppm, 6 * wallPx + 0.6 * rt * ppm);
+      glow.addColorStop(0, `rgba(255,120,30,${Math.min(0.9, (heat - 0.6) * 2) * anim.fire})`);
+      glow.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, widthPx, heightPx);
+      ctx.restore();
+    }
+  }
+
+  // --- Injector head / forward dome ---------------------------------------
+  const headW = Math.max(8, 0.16 * rc * ppm + wallPx);
+  const headH = rc * ppm + wallPx;
+  ctx.fillStyle = '#7b838f';
+  ctx.strokeStyle = '#1b1e25';
+  ctx.beginPath();
+  if (isSolid) {
+    ctx.ellipse(X(0), cy, headW * 1.6, headH, 0, Math.PI / 2, (3 * Math.PI) / 2);
+  } else {
+    ctx.roundRect(X(0) - headW, cy - headH, headW, 2 * headH, [headW * 0.45, 0, 0, headW * 0.45]);
+  }
+  ctx.fill();
+  ctx.stroke();
+  if (!isSolid) {
+    // Injector orifices and the two propellant feed lines.
+    const holes = Math.max(3, Math.min(11, Math.round((rc * ppm) / 9)));
+    for (let i = 0; i < holes; i++) {
+      const hy = cy + ((i + 0.5) / holes - 0.5) * 2 * rc * ppm * 0.9;
+      ctx.fillStyle = i % 2 ? '#4f8fd6' : '#d6a04f';
+      ctx.fillRect(X(0) - headW * 0.55, hy - 1, headW * 0.55, 2);
+    }
+    const pipe = Math.max(4, 0.22 * rc * ppm);
+    ctx.fillStyle = '#4f8fd6';
+    ctx.fillRect(X(0) - headW - pipe * 1.6, cy - headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
+    ctx.fillStyle = '#d6a04f';
+    ctx.fillRect(X(0) - headW - pipe * 1.6, cy + headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
+  }
+
+  // Centreline.
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.setLineDash([10, 5, 2, 5]);
+  ctx.beginPath();
+  ctx.moveTo(X(0) - headW * 2.5, cy);
+  ctx.lineTo(X(profile.exitX) + 14, cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // --- Failure -------------------------------------------------------------
+  if (anim.failure) {
+    const fx = X(anim.failure === 'burnthrough' ? profile.throatX : cfg.chamberLen * 0.55);
+    const fr = (anim.failure === 'burnthrough' ? rt : rc) * ppm;
+    const size = Math.max(40, profile.maxRadius * ppm);
+    for (const sign of anim.failure === 'burnthrough' ? [-1] : [-1, 1]) {
+      const fy = cy + sign * fr;
+      // Jagged hole torn in the wall.
+      ctx.beginPath();
+      const spikes = 11;
+      for (let i = 0; i < spikes; i++) {
+        const a = (i / spikes) * Math.PI * 2;
+        const rad = (0.22 + 0.2 * rand(i + (sign > 0 ? 40 : 0))) * size * (i % 2 ? 0.55 : 1);
+        ctx.lineTo(fx + Math.cos(a) * rad, fy + Math.sin(a) * rad * 0.7);
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#090a0d';
+      ctx.fill();
+      const scorch = ctx.createRadialGradient(fx, fy, 0, fx, fy, size * 0.9);
+      scorch.addColorStop(0, 'rgba(0,0,0,0.75)');
+      scorch.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = scorch;
+      ctx.fillRect(fx - size, fy - size, 2 * size, 2 * size);
+    }
+    // Fireball and debris.
+    const t = anim.failT;
+    if (t < 1.6) {
+      const grow = 1 - Math.exp(-t * 4);
+      const fade = Math.max(0, 1 - t / 1.6);
+      const ball = ctx.createRadialGradient(fx, cy, 0, fx, cy, size * (0.6 + 3.2 * grow));
+      ball.addColorStop(0, `rgba(255,255,235,${fade})`);
+      ball.addColorStop(0.35, `rgba(255,190,70,${0.85 * fade})`);
+      ball.addColorStop(0.7, `rgba(230,80,20,${0.45 * fade})`);
+      ball.addColorStop(1, 'rgba(120,30,10,0)');
+      ctx.fillStyle = ball;
+      ctx.fillRect(0, 0, widthPx, heightPx);
+      ctx.fillStyle = `rgba(40,40,45,${fade})`;
+      for (let i = 0; i < 26; i++) {
+        const a = rand(i + 7) * Math.PI * 2;
+        const speed = (0.6 + rand(i + 31)) * size * 3.2;
+        ctx.save();
+        ctx.translate(fx + Math.cos(a) * speed * t, cy + Math.sin(a) * speed * t + 60 * t * t);
+        ctx.rotate(t * 9 * (rand(i) - 0.5));
+        ctx.fillRect(-4, -2, 5 + 7 * rand(i + 3), 3 + 3 * rand(i + 5));
+        ctx.restore();
+      }
+    }
+  }
+  ctx.restore();
+
+  // --- Scale bar and overlay legend (not shaken) ---------------------------
+  const barM = niceLength(110 / ppm);
+  const barPx = barM * ppm;
+  const bx = 18;
+  const by = heightPx - 20;
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx, by - 5);
+  ctx.lineTo(bx, by);
+  ctx.lineTo(bx + barPx, by);
+  ctx.lineTo(bx + barPx, by - 5);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(barM >= 1 ? `${barM} m` : `${Math.round(barM * 100)} cm`, bx + barPx + 8, by + 4);
+
+  if (anim.overlay !== 'none') {
+    const lx = 18;
+    const ly = 18;
+    const lw = 150;
+    const legend = ctx.createLinearGradient(lx, 0, lx + lw, 0);
+    for (let i = 0; i <= 8; i++) legend.addColorStop(i / 8, css(heatMap(i / 8)));
+    ctx.fillStyle = legend;
+    ctx.fillRect(lx, ly, lw, 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.textBaseline = 'top';
+    const exitM = machFromAreaRatio(Math.max(1.0001, areaRatio(result.exitMach, result.gamma)), result.gamma);
+    if (anim.overlay === 'mach') {
+      ctx.fillText('Gas speed: slow', lx, ly + 14);
+      ctx.fillText(`Mach ${exitM.toFixed(1)}`, lx + lw + 8, ly - 2);
+    } else {
+      ctx.fillText('Gas temperature: cooler', lx, ly + 14);
+      ctx.fillText(`${Math.round(result.tc)} K`, lx + lw + 8, ly - 2);
+    }
+  }
+}
