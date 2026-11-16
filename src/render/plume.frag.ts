@@ -210,12 +210,20 @@ void main() {
           reach = min(reach, mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x)) + 0.05);
         }
         float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
-        const int SAMPLES = 12;
-        float jitter = hash(frag + fract(uTime) * 61.0);
+        const int SAMPLES = 16;
+        // Each pixel starts its samples at a slightly different depth so the steps don't show
+        // as bands. A smooth, ordered pattern is used for that offset (interleaved gradient
+        // noise) because a random one shows up as speckle; it shifts every frame so what is
+        // left averages away.
+        float jitter = fract(52.9829189 * fract(dot(frag, vec2(0.06711056, 0.00583715)))
+                             + 0.61803399 * floor(uTime * 60.0));
         vec3 sum = vec3(0.0);
         for (int i = 0; i < SAMPLES; i++) {
-          float z = (float(i) + jitter) / float(SAMPLES) * depth;
-          sum += simGlow(simGas(vec2(q.x, length(vec2(q.y, z)))));
+          // Samples crowd toward the middle of the plume, where the gas is densest and brightest,
+          // and each is weighted by the stretch of depth it stands for.
+          float s = (float(i) + jitter) / float(SAMPLES);
+          float z = depth * s * s;
+          sum += simGlow(simGas(vec2(q.x, length(vec2(q.y, z))))) * (2.0 * s);
         }
         // Scaled so a path one exit radius long through the gas looks about as bright as the slice did.
         em = sum * (2.0 * depth / float(SAMPLES)) * 0.55;
