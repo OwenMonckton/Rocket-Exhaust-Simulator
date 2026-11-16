@@ -67,16 +67,21 @@ $<HTMLSelectElement>('overlay').addEventListener('change', (e) =>
 );
 
 const plumeMode = $<HTMLSelectElement>('plume-mode');
-if (!runtime.hasSim) {
-  plumeMode.disabled = true;
-  plumeMode.title = "This browser can't run the gas simulation.";
-}
-plumeMode.addEventListener('change', () => {
-  const mode = plumeMode.value as PlumeMode;
+const applyPlumeMode = (mode: PlumeMode) => {
+  plumeMode.value = mode;
   runtime.setPlumeMode(mode);
   // Real shock diamonds sit several nozzle widths apart, so the simulated plume needs a wider view.
   runtime.setZoom(mode === 'sim' ? 0.5 : 1);
-});
+};
+if (runtime.hasSim) {
+  // The simulated plume is the default wherever the browser can run it.
+  applyPlumeMode('sim');
+} else {
+  applyPlumeMode('drawn');
+  plumeMode.disabled = true;
+  plumeMode.title = "This browser can't run the gas simulation, so the plume is drawn instead.";
+}
+plumeMode.addEventListener('change', () => applyPlumeMode(plumeMode.value as PlumeMode));
 
 $('zoom-out').addEventListener('click', () => runtime.setZoom(runtime.getZoom() / 1.25));
 $('zoom-in').addEventListener('click', () => runtime.setZoom(runtime.getZoom() * 1.25));
