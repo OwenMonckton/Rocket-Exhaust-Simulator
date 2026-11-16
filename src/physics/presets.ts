@@ -72,9 +72,9 @@ const SPECS: Spec[] = [
   {
     id: 'rd-180',
     name: 'RD-180',
-    blurb: 'Russian engine used on Atlas V. Very high pressure kerolox (drawn here as one chamber).',
+    blurb: 'Russian engine used on Atlas V: half an RD-170. One turbopump feeds two very high pressure chambers.',
     propellant: 'kerolox', pcBar: 257, of: 2.72, eps: 36.9, contraction: 1.6, lStar: 1.1,
-    nozzleLenPct: 80, structural: 0.8,
+    nozzleLenPct: 80, structural: 0.8, chambers: 2,
     published: { thrustKN: 3830, atVacuum: false, ispSL: 311, ispVac: 338 },
   },
   {

@@ -85,7 +85,12 @@ describe('presets', () => {
     expect(all.limits).toEqual(one.limits);
     // Four small chambers are far less prone to instability than one big one of the same thrust.
     expect(all.limits.instability).toBeLessThan(0.3);
-    expect(PRESETS.filter((p) => p.config.chambers > 1).map((p) => p.id)).toEqual(['rd-170']);
+    expect(PRESETS.filter((p) => p.config.chambers > 1).map((p) => p.id)).toEqual(['rd-180', 'rd-170']);
+    // The RD-180 is half an RD-170: two chambers of nearly the same size.
+    const rd180 = getPreset('rd-180')!.config;
+    expect(rd180.chambers).toBe(2);
+    expect(Math.abs(rd180.chamberDia - rd170.chamberDia) / rd170.chamberDia).toBeLessThan(0.05);
+    expect(Math.abs(rd180.exitDia - rd170.exitDia) / rd170.exitDia).toBeLessThan(0.05);
   });
 
   it('has a default preset', () => {
