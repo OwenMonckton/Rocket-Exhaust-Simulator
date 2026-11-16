@@ -86,8 +86,8 @@ float fbm(vec2 p) {
 vec3 simGas(vec2 q) {
   vec2 uv = clamp(q / (uSimGrid * uSimCell), vec2(0.0), vec2(1.0));
   vec4 U = texture(uSim, uv);
-  float rho = max(U.x, 1e-4);
-  float p = max((uSimGamma - 1.0) * (U.w - 0.5 * (U.y * U.y + U.z * U.z) / rho), 1e-5);
+  float rho = max(U.x, 1e-6);
+  float p = max((uSimGamma - 1.0) * (U.w - 0.5 * (U.y * U.y + U.z * U.z) / rho), 1e-8);
   return vec3(rho, p / rho, clamp(texture(uSimS, uv).x / rho, 0.0, 1.0));
 }
 
@@ -115,7 +115,8 @@ vec3 simGlow(vec3 gas) {
   float mixing = 4.0 * exhaust * (1.0 - exhaust) * smoothstep(0.04, 0.25, exhaust);
   glow += uAfterCol * uAfter * mixing * (0.5 + 0.5 * smoothstep(0.0, 0.3, heat)) * 1.6;
   // Solid particles in the exhaust stay incandescent after the gas around them has cooled.
-  glow += mix(uMid, uCore, 0.6) * uParticles * exhaust * clamp(pow(gas.x, 0.5), 0.0, 1.6) * 1.25;
+  // Their glow is in proportion to how many there are, so it thins out as the exhaust spreads.
+  glow += mix(uMid, uCore, 0.6) * uParticles * exhaust * clamp(gas.x, 0.0, 1.6) * 1.25;
   return glow;
 }
 

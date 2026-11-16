@@ -19,7 +19,7 @@ export interface SimInputs {
   gamma: number;
   /** Exit velocity in solver units: exit Mach × sqrt(gamma) */
   uExit: number;
-  /** Ambient pressure over exit pressure (floored: the solver cannot reach a true vacuum) */
+  /** Ambient pressure over exit pressure (floored at VACUUM_FLOOR: the solver cannot reach a true vacuum) */
   pAmb: number;
   /** Ambient density over exhaust density at the exit */
   rhoAmb: number;
@@ -85,8 +85,8 @@ uniform float uWallThick;
 layout(location = 0) out vec4 outU;
 layout(location = 1) out vec4 outS;
 
-const float RHO_MIN = 1e-4;
-const float P_MIN = 1e-5;
+const float RHO_MIN = 1e-6;
+const float P_MIN = 1e-8;
 
 // Conserved (rho, rho*u, rho*v, E) <-> primitive (rho, u, v, p).
 vec4 toPrim(vec4 U) {

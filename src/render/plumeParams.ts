@@ -55,6 +55,13 @@ const mix3 = (a: RGB, b: RGB, t: number): RGB => [
 
 const OX_RICH_TINT: RGB = [0.86, 0.92, 1.0];
 
+/**
+ * The solver cannot reach a true vacuum: the surroundings never get thinner than this fraction of
+ * the exhaust's exit pressure. The lower it is, the further each plume can fan out before the
+ * leftover gas hems it in, and the more the engines differ from one another in vacuum.
+ */
+export const VACUUM_FLOOR = 1 / 20000;
+
 const R_AIR = 287.05;
 /** One representative air temperature (K); the solver only needs air to be cold and dense next to exhaust. */
 const AIR_TEMP = 250;
@@ -97,8 +104,7 @@ export function simInputs(
   const separated = start ? start.flow.separated : r.state === 'separated';
   const t0 = 1 + ((g - 1) / 2) * mach * mach;
   const exitTemp = r.tc / t0;
-  // The solver cannot reach a true vacuum, so the air never gets thinner than 1/400 of the exhaust pressure.
-  const pAmb = r.pa > 0 ? clamp(r.pa / pressure, 1 / 400, 20) : 1 / 400;
+  const pAmb = r.pa > 0 ? clamp(r.pa / pressure, VACUUM_FLOOR, 20) : VACUUM_FLOOR;
   const gasR = gasProps(cfg.propellant, cfg.mixtureRatio).R;
   // Slope of the bell wall at the lip (see engineProfile).
   const lipSlope = start ? start.wallSlope : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
