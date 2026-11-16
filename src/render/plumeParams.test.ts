@@ -44,6 +44,18 @@ describe('plume parameters', () => {
     expect(rich.soot).toBeGreaterThan(lean.soot);
     expect(lean.soot).toBe(0);
   });
+  it('has no soot or smoke in vacuum, and less of both as the air thins', () => {
+    for (const id of ['merlin-1d', 'solid-booster']) {
+      const ground = at(id, 0, { mixtureRatio: 1.9 });
+      const high = at(id, 30, { mixtureRatio: 1.9 });
+      const vacuum = at(id, 100, { mixtureRatio: 1.9 });
+      expect(vacuum.soot).toBe(0);
+      expect(vacuum.smoke).toBe(0);
+      expect(high.soot).toBeLessThan(ground.soot);
+      expect(high.smoke).toBeLessThan(ground.smoke);
+      expect(ground.smoke).toBeGreaterThan(0);
+    }
+  });
   it('is dark when not firing and gives every propellant a different colour', () => {
     expect(at('merlin-1d', 0, {}, 0).intensity).toBe(0);
     const mids = ['merlin-1d', 'rs-25', 'raptor-2', 'solid-booster'].map((id) => at(id, 0).mid.join(','));

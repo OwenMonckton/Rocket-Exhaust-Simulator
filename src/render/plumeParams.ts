@@ -107,7 +107,9 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     mid = mix3(mid, OX_RICH_TINT, -0.5 * rich);
     opacity *= 1 + 0.25 * rich;
   }
-  const soot = look.soot * clamp(0.4 + 1.2 * rich, 0, 2);
+  // Soot and smoke only billow where there is air to hold them up; in vacuum there is nothing to see.
+  const air = Math.pow(paFrac, 0.4);
+  const soot = look.soot * clamp(0.4 + 1.2 * rich, 0, 2) * air;
 
   const throttle = prop.throttleable ? flight.throttle : 1;
   const altM = flight.altitudeKm * 1000;
@@ -129,7 +131,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     edge,
     opacity,
     soot,
-    smoke: look.smoke,
+    smoke: look.smoke * air,
     afterburn: look.afterburnStrength * clamp(0.35 + 0.9 * rich, 0, 1.2) * Math.sqrt(paFrac),
     afterburnColor: look.afterburn,
     separated: r.state === 'separated',
