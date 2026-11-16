@@ -111,7 +111,8 @@ const SPECS: Spec[] = [
     id: 'nswr',
     name: 'Nuclear salt water',
     blurb: "Robert Zubrin's 1991 concept, never built: uranium salt water fissions continuously in the nozzle, giving huge thrust and huge efficiency at once.",
-    propellant: 'saltwater', pcBar: 100, of: 470000, eps: 40, contraction: 2.2, lStar: 1.0,
+    // No combustion chamber: a feed pipe barely wider than the throat opens straight into the nozzle.
+    propellant: 'saltwater', pcBar: 100, of: 470000, eps: 40, contraction: 1.12, lStar: 4.0,
     nozzleLenPct: 80, structural: 0.5,
     published: { thrustKN: 12900, atVacuum: true, ispVac: 6730 },
   },

@@ -59,6 +59,19 @@ const rand = (n: number) => {
 
 const OX_COLOUR = '#4f8fd6';
 const FUEL_COLOUR = '#d6a04f';
+/** Unreacted nuclear salt water. */
+const SALT_WATER: RGB = [0.1, 0.58, 0.62];
+
+/** The bundle of thin tubes a nuclear salt-water rocket keeps its fuel in. */
+function drawTubeBundle(ctx: CanvasRenderingContext2D, x0: number, x1: number, top: number, height: number): void {
+  ctx.fillStyle = '#161d3a';
+  ctx.fillRect(x0, top, x1 - x0, height);
+  const tubes = Math.max(5, Math.min(24, Math.round(height / 5)));
+  ctx.fillStyle = 'rgba(120,100,200,0.85)';
+  for (let i = 0; i < tubes; i++) {
+    ctx.fillRect(x0, top + ((i + 0.5) / tubes) * height - 0.5, x1 - x0, 1);
+  }
+}
 
 /** The turbopump shared by a multi-chamber engine, with its feed lines to each chamber's injector. */
 function drawTurbopump(
@@ -175,8 +188,9 @@ export function drawEngine(
   const isSolid = cfg.propellant === 'solid';
   const isNuclear = cfg.propellant === 'nuclear';
   // Engines fed a single propellant: hydrogen for nuclear thermal, uranium salt water otherwise.
-  const singleFeed = isNuclear || cfg.propellant === 'saltwater';
-  const feedColour = cfg.propellant === 'saltwater' ? '#9ad64f' : OX_COLOUR;
+  const isSaltwater = cfg.propellant === 'saltwater';
+  const singleFeed = isNuclear || isSaltwater;
+  const feedColour = isSaltwater ? '#9ad64f' : OX_COLOUR;
   const pts = profile.points;
   const rc = cfg.chamberDia / 2;
   const rt = cfg.throatDia / 2;
@@ -228,6 +242,21 @@ export function drawEngine(
   ctx.fillStyle = '#0d0f14';
   ctx.fill();
 
+  // Nuclear salt water: the fuel waits in a bundle of thin neutron-absorbing tubes, so it
+  // cannot start reacting early, then runs down a single pipe that opens into the nozzle.
+  if (isSaltwater) {
+    const top = cy - rc * ppm;
+    const height = 2 * rc * ppm;
+    const bundleEnd = X(cfg.chamberLen * 0.45);
+    ctx.save();
+    cavity();
+    ctx.clip();
+    ctx.fillStyle = css(SALT_WATER, 0.92);
+    ctx.fillRect(X(0), top, X(profile.throatX) - X(0), height);
+    drawTubeBundle(ctx, X(0), bundleEnd, top, height);
+    ctx.restore();
+  }
+
   // Solid propellant grain: fills the case, leaving a bore down the middle.
   const boreR = 0.36 * rc;
   if (isSolid) {
@@ -273,6 +302,15 @@ export function drawEngine(
         const t = Math.min(1, Math.max(0, (x - profile.chamberEndX) / (profile.exitX - profile.chamberEndX)));
         c = lerp3(lerp3(look.core, [1, 1, 1], 0.35), look.mid, Math.pow(t, 0.7));
         a = (0.97 - 0.25 * t) * (0.6 + 0.4 * Math.min(1, look.opacity + 0.35));
+        if (isSaltwater) {
+          // Unreacted fuel is teal in the pipe. Past the pipe's mouth it turns into exhaust
+          // as it reacts, over the first half of the bell.
+          const along = (x - profile.throatX) / (profile.exitX - profile.throatX);
+          const reacted = Math.min(1, Math.max(0, along / 0.7));
+          c = lerp3(SALT_WATER, lerp3(look.core, look.mid, 0.3), reacted * reacted * (3 - 2 * reacted));
+          // Nothing glows in the pipe itself: the fuel and its tubes are already drawn there.
+          a = 0.95 * Math.min(1, Math.max(0, along / 0.06));
+        }
       } else {
         const m = Math.min(localMach(profile, x, rt, g), result.exitMach);
         if (anim.overlay === 'mach') c = heatMap(m / Math.max(1.5, exitM));
@@ -300,6 +338,46 @@ export function drawEngine(
       ctx.globalAlpha = 0.5 * anim.fire;
       ctx.fill();
       ctx.globalAlpha = 1;
+    }
+
+    if (isSaltwater && anim.overlay === 'none') {
+      // The reaction zone: fission takes off just past the mouth of the pipe, on the centreline.
+      const length = 0.44 * (profile.exitX - profile.throatX) * ppm;
+      const half = 1.6 * rt * ppm;
+      const pulse = 0.92 + 0.08 * Math.sin(anim.timeS * 31) + 0.05 * Math.sin(anim.timeS * 77);
+      ctx.save();
+      cavity(jet);
+      ctx.clip();
+      ctx.translate(X(profile.throatX) + length * 0.5, cy);
+      ctx.scale(length / (2 * half), 1);
+      const zone = ctx.createRadialGradient(0, 0, 0, 0, 0, half * 1.25 * pulse);
+      zone.addColorStop(0, `rgba(255,228,205,${0.95 * anim.fire})`);
+      zone.addColorStop(0.45, `rgba(255,112,72,${0.85 * anim.fire})`);
+      zone.addColorStop(1, 'rgba(255,60,40,0)');
+      ctx.fillStyle = zone;
+      ctx.fillRect(-2 * half, -2 * half, 4 * half, 4 * half);
+      ctx.restore();
+    }
+  }
+
+  // Nuclear salt water: a film of plain water runs down the inside of the nozzle wall to keep
+  // the reaction off it.
+  if (isSaltwater && !anim.failure) {
+    const bell = pts.filter((p) => p.x >= profile.throatX);
+    const flowing = 0.3 + 0.7 * anim.fire;
+    const film = ctx.createLinearGradient(X(profile.throatX), 0, X(profile.exitX), 0);
+    film.addColorStop(0, `rgba(70,150,255,${0.95 * flowing})`);
+    film.addColorStop(1, `rgba(70,150,255,${0.3 * flowing})`);
+    ctx.strokeStyle = film;
+    ctx.lineWidth = Math.max(2, 0.035 * profile.maxRadius * ppm);
+    for (const sign of [-1, 1]) {
+      ctx.beginPath();
+      bell.forEach((p, i) => {
+        const y = cy + sign * (p.r * ppm - ctx.lineWidth / 2);
+        if (i === 0) ctx.moveTo(X(p.x), y);
+        else ctx.lineTo(X(p.x), y);
+      });
+      ctx.stroke();
     }
   }
 
@@ -421,6 +499,32 @@ export function drawEngine(
   // --- Injector head / forward dome ---------------------------------------
   const headW =Math.max(8, 0.16 * rc * ppm + wallPx);
   const headH = rc * ppm + wallPx;
+  if (isSaltwater) {
+    // No injector: the tube bundle and its pipe simply carry on forward to the tank.
+    const left = -20;
+    drawTubeBundle(ctx, left, X(0) + 1, cy - rc * ppm, 2 * rc * ppm);
+    ctx.fillStyle = '#8f97a3';
+    ctx.strokeStyle = '#1b1e25';
+    ctx.lineWidth = 1;
+    for (const sign of [-1, 1]) {
+      const y = sign < 0 ? cy - rc * ppm - wallPx : cy + rc * ppm;
+      ctx.fillRect(left, y, X(0) - left + 1, wallPx);
+      ctx.strokeRect(left, y, X(0) - left + 1, wallPx);
+    }
+    // Water manifolds at the base of the bell, feeding the film that protects the nozzle wall.
+    const boxW = Math.max(12, 1.3 * rt * ppm);
+    const boxH = Math.max(7, 0.65 * rt * ppm);
+    for (const sign of [-1, 1]) {
+      const inner = cy + sign * (rt * ppm + wallPx);
+      const y = sign < 0 ? inner - boxH : inner;
+      const water = ctx.createLinearGradient(0, y, 0, y + boxH);
+      water.addColorStop(0, '#2f7de0');
+      water.addColorStop(1, '#5aa6ff');
+      ctx.fillStyle = water;
+      ctx.fillRect(X(profile.throatX) - boxW, y, boxW * 1.1, boxH);
+      ctx.strokeRect(X(profile.throatX) - boxW, y, boxW * 1.1, boxH);
+    }
+  } else {
   ctx.fillStyle = '#7b838f';
   ctx.strokeStyle = '#1b1e25';
   ctx.beginPath();
@@ -451,6 +555,7 @@ export function drawEngine(
       ctx.fillStyle = '#d6a04f';
       ctx.fillRect(X(0) - headW - pipe * 1.6, cy + headH * 0.55 - pipe / 2, pipe * 1.6, pipe);
     }
+  }
   }
 
   // Centreline.
