@@ -1,3 +1,4 @@
+import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs } from './fluidSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
 import type { PlumeParams } from './plumeParams';
 
@@ -9,14 +10,19 @@ export interface PlumeTarget {
 }
 
 export interface PlumeRenderer {
-  draw(p: PlumeParams, target: PlumeTarget, timeS: number): void;
+  /** Pass `sim` to draw the plume from the gas simulation instead of the hand-shaped model. */
+  draw(p: PlumeParams, target: PlumeTarget, timeS: number, sim?: SimInputs | null): void;
   resize(widthPx: number, heightPx: number): void;
+  /** Start the gas simulation again from still air. */
+  resetSim(): void;
+  /** False when this browser cannot run the gas simulation */
+  readonly simAvailable: boolean;
 }
 
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0',
 ] as const;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -35,24 +41,27 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
   if (!gl) return null;
 
   let u: Record<string, WebGLUniformLocation | null> = {};
+  let program: WebGLProgram | null = null;
+  let sim: FluidSim | null = null;
+
   const build = (): boolean => {
     try {
-      const program = gl.createProgram()!;
+      program = gl.createProgram()!;
       gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER));
       gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER));
       gl.linkProgram(program);
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         throw new Error(gl.getProgramInfoLog(program) ?? 'program link failed');
       }
-      gl.useProgram(program);
+      // One full-screen triangle at attribute 0, shared by the plume and the simulation.
       const buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-      const loc = gl.getAttribLocation(program, 'aPos');
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       u = {};
       for (const name of UNIFORMS) u[name] = gl.getUniformLocation(program, name);
+      sim = createFluidSim(gl);
       return true;
     } catch (err) {
       console.error('Plume shader failed to build', err);
@@ -71,14 +80,32 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
   });
 
   return {
+    get simAvailable() {
+      return sim !== null;
+    },
+    resetSim() {
+      sim?.reset();
+    },
     resize(widthPx, heightPx) {
       if (canvas.width !== widthPx || canvas.height !== heightPx) {
         canvas.width = widthPx;
         canvas.height = heightPx;
       }
     },
-    draw(p, target, timeS) {
+    draw(p, target, timeS, simInputs) {
       if (lost) return;
+      const useSim = !!simInputs && sim !== null && target.radiusPx > 0.5;
+      let cell = 1;
+      if (useSim) {
+        // Size the grid to cover the visible plume, whatever the zoom.
+        const across = (canvas.width - target.exitX) / target.radiusPx;
+        const up = (0.5 * canvas.height) / target.radiusPx;
+        const length = Math.min(30, Math.max(4, across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
+        cell = length / SIM_NX;
+        sim!.step(simInputs!, length);
+      }
+
+      gl.useProgram(program);
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.uniform2f(u.uRes, canvas.width, canvas.height);
       gl.uniform2f(u.uExit, target.exitX, target.exitY);
@@ -102,6 +129,18 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       gl.uniform3fv(u.uEdge, p.edge);
       gl.uniform3fv(u.uSkyTop, p.skyTop);
       gl.uniform3fv(u.uSkyBottom, p.skyBottom);
+
+      gl.uniform1f(u.uUseSim, useSim ? 1 : 0);
+      gl.uniform1i(u.uSim, 0);
+      if (useSim) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, sim!.texture);
+        gl.uniform2f(u.uSimGrid, SIM_NX, SIM_NY);
+        gl.uniform1f(u.uSimCell, cell);
+        gl.uniform1f(u.uSimGamma, simInputs!.gamma);
+        gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb);
+        gl.uniform1f(u.uSimT0, simInputs!.t0);
+      }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
   };

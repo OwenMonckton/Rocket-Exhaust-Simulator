@@ -1,11 +1,21 @@
 export const VERTEX_SHADER = `#version 300 es
-in vec2 aPos;
+layout(location = 0) in vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
 // Sky plus plume. Plume space: x downstream and y radial, both in exit radii.
 export const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
+precision highp sampler2D;
+
+// Prototype: plume drawn from the gas simulation instead of the hand-shaped model.
+uniform float uUseSim;
+uniform sampler2D uSim;
+uniform vec2 uSimGrid;
+uniform float uSimCell;     // cell size, in exit radii
+uniform float uSimGamma;
+uniform float uSimAmbT;     // ambient temperature over exit temperature
+uniform float uSimT0;       // stagnation temperature over exit temperature
 
 uniform vec2 uRes;
 uniform vec2 uExit;
@@ -61,6 +71,18 @@ float fbm(vec2 p) {
   return v;
 }
 
+// Density and temperature of the simulated gas at a point (in exit radii), relative to the nozzle exit.
+vec2 simGas(vec2 q) {
+  vec2 g = clamp(q / uSimCell - 0.5, vec2(0.0), uSimGrid - 1.001);
+  ivec2 i = ivec2(floor(g));
+  vec2 f = fract(g);
+  vec4 U = mix(mix(texelFetch(uSim, i, 0), texelFetch(uSim, i + ivec2(1, 0), 0), f.x),
+               mix(texelFetch(uSim, i + ivec2(0, 1), 0), texelFetch(uSim, i + ivec2(1, 1), 0), f.x), f.y);
+  float rho = max(U.x, 1e-4);
+  float p = max((uSimGamma - 1.0) * (U.w - 0.5 * (U.y * U.y + U.z * U.z) / rho), 1e-5);
+  return vec2(rho, p / rho);
+}
+
 void main() {
   vec2 frag = gl_FragCoord.xy;
   vec2 uv = frag / uRes;
@@ -81,8 +103,11 @@ void main() {
 
       // Jet boundary: oscillates through shock cells at low altitude, fans out in vacuum.
       float c = xs / uSpacing;
-      float osc = cos(6.28318 * c) * exp(-c / 3.0);
-      float rShock = mix(uSettle, 1.0, osc);
+      // The jet closes in (or opens out) to its settled width within the first
+      // shock cell, then ripples gently about it as the cells repeat.
+      float settle = mix(uSettle, 1.0, exp(-c * 3.0));
+      float ripple = -cos(6.28318 * (c - uPhase + 0.5)) * (1.0 - exp(-c * 4.0)) * exp(-c / 2.5);
+      float rShock = settle * (1.0 + 0.13 * uDiamond * ripple);
       float rFan = max(1.0 + (uSettle - 1.0) * (1.0 - exp(-xs / 1.5)), 1.0 + xs * 0.95);
       float rJet = mix(rShock, rFan, uBloom);
       float R = rJet + xs * 0.04 * (1.0 + uTurb);
@@ -113,9 +138,39 @@ void main() {
       float ph = c - uPhase;
       float k = floor(ph + 0.5);
       float d = ph - k;
-      float dia = smoothstep(0.0, 0.3, 0.72 * (1.0 - 2.5 * abs(d)) - y / max(0.2, rShock));
-      dia *= step(-0.5, k) * exp(-k * 0.42) * uDiamond * start;
-      em += (uCore * 1.15 + 0.12) * dia * (0.8 + 0.4 * n2) * max(uOpacity, 0.8);
+      float yj = y / max(0.2, rShock);
+      // A soft-edged diamond with a hot centre, wrapped in a wider glow.
+      float dia = smoothstep(0.0, 0.75, 0.95 * (1.0 - 2.3 * abs(d)) - yj);
+      dia = dia * dia * 1.6 + 0.35 * exp(-pow(d / 0.2, 2.0) - pow(yj / 0.6, 2.0));
+      // The first diamond (the Mach disk) is by far the brightest.
+      dia *= step(-0.5, k) * exp(-k * 0.7) * uDiamond * start;
+      em += (uCore * 1.1 + 0.1) * dia * (0.75 + 0.5 * n2) * max(uOpacity, 0.8);
+
+      // Criss-crossing shock waves that run from the nozzle lip to each diamond.
+      float tri = abs(1.0 - 2.0 * fract(c - uPhase + 0.5));
+      float lines = exp(-pow((yj - tri) / 0.11, 2.0)) * falloff(0.9, 1.05, rr);
+      lines *= exp(-c * 1.3) * uDiamond * start * (0.5 + n2);
+      em += uCore * lines * 0.2 * max(uOpacity, 0.6);
+
+      if (uUseSim > 0.5) {
+        // Fine turbulence the coarse grid cannot resolve: jiggle where we look.
+        vec2 q = vec2(xs + (n2 - 0.5) * 0.14 * uTurb * min(1.0, xs * 0.25), y / (1.0 + 0.6 * wobble));
+        vec2 gas = simGas(q);
+        float temp = gas.y;
+        // Exhaust is hot, air is cold; gas squeezed by a shock is hotter still.
+        // 0 for air, about a third for exhaust leaving the nozzle, 1 for gas brought to a stop.
+        float floorT = 2.0 * uSimAmbT;
+        float heat = clamp((temp - floorT) / max(0.1, uSimT0 - floorT), 0.0, 1.0);
+        float shock = smoothstep(0.5, 0.9, heat);
+        float dens = clamp(pow(gas.x, 0.55), 0.0, 2.2);
+        vec2 size = uSimGrid * uSimCell;
+        float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y);
+        vec3 tint = mix(uEdge, uMid, smoothstep(0.15, 0.45, heat));
+        tint = mix(tint, uCore * 1.15, smoothstep(0.45, 0.85, heat));
+        float bright = smoothstep(0.0, 0.25, heat) * (0.35 + 1.5 * heat * heat);
+        em = tint * bright * dens;
+        em *= (0.85 + 0.3 * n2) * mix(uOpacity, 1.0, 0.6 * shock) * pow(axial, 0.5) * edgeFade;
+      }
 
       // Soft glow around the nozzle exit.
       float halo = exp(-length(vec2(xs * 0.35, max(0.0, y - 0.8))) * 2.4) * start;

@@ -7,7 +7,7 @@ import type { Failure, SimResult } from '../physics/types';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { engineProfile, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer } from '../render/plume';
-import { plumeParams } from '../render/plumeParams';
+import { plumeParams, simInputs } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
 
 export interface FrameInfo {
@@ -25,9 +25,15 @@ export interface Runtime {
   rebuild(): void;
   setOverlay(o: FlowOverlay): void;
   setMuted(m: boolean): void;
+  /** Prototype: draw the plume from the gas simulation instead of the hand-shaped model. */
+  setPlumeMode(mode: PlumeMode): void;
+  /** False when this browser cannot run the gas simulation */
+  readonly hasSim: boolean;
   /** False when WebGL2 is unavailable */
   readonly hasPlume: boolean;
 }
+
+export type PlumeMode = 'drawn' | 'sim';
 
 const RAMP_UP_S = 1.0;
 const RAMP_DOWN_S = 0.6;
@@ -50,6 +56,7 @@ export function createRuntime(
   let failure: Failure = null;
   let failT = 0;
   let overlay: FlowOverlay = 'none';
+  let plumeMode: PlumeMode = 'drawn';
   let lastGood: AppState = store.get();
   // Remember the most recent engine that would survive firing, for the Rebuild button.
   store.subscribe((s) => {
@@ -120,6 +127,7 @@ export function createRuntime(
         radiusPx: params.exitRadiusM * view.ppm * dpr,
       },
       timeS,
+      plumeMode === 'sim' ? simInputs(state.config, result, fire) : null,
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -147,6 +155,11 @@ export function createRuntime(
 
   return {
     hasPlume: plume !== null,
+    hasSim: plume?.simAvailable ?? false,
+    setPlumeMode(mode) {
+      if (mode === 'sim' && plumeMode !== 'sim') plume?.resetSim();
+      plumeMode = mode;
+    },
     toggleFire() {
       if (failure) return;
       firing = !firing;

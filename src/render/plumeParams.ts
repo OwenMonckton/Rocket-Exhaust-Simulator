@@ -1,7 +1,8 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { machFromPressureRatio } from '../physics/nozzle';
-import { PROPELLANTS, richness } from '../physics/propellants';
+import { PROPELLANTS, gasProps, richness } from '../physics/propellants';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
+import type { SimInputs } from './fluidSim';
 
 export interface PlumeParams {
   /** Exit pressure over ambient pressure, capped to 0.05–400 */
@@ -48,6 +49,28 @@ const mix3 = (a: RGB, b: RGB, t: number): RGB => [
 ];
 
 const OX_RICH_TINT: RGB = [0.86, 0.92, 1.0];
+
+const R_AIR = 287.05;
+/** One representative air temperature (K); the solver only needs air to be cold and dense next to exhaust. */
+const AIR_TEMP = 250;
+
+/** Boundary conditions for the prototype gas simulation, in units of the nozzle exit state. */
+export function simInputs(cfg: EngineConfig, r: SimResult, fire: number): SimInputs {
+  const g = r.gamma;
+  const t0 = 1 + ((g - 1) / 2) * r.exitMach * r.exitMach;
+  const exitTemp = r.tc / t0;
+  // The solver cannot reach a true vacuum, so the air never gets thinner than 1/400 of the exhaust pressure.
+  const pAmb = r.pa > 0 ? clamp(r.pa / r.pe, 1 / 400, 20) : 1 / 400;
+  const gasR = gasProps(cfg.propellant, cfg.mixtureRatio).R;
+  return {
+    gamma: g,
+    uExit: r.exitMach * Math.sqrt(g),
+    pAmb,
+    rhoAmb: (pAmb * gasR * exitTemp) / (R_AIR * AIR_TEMP),
+    fire: clamp(fire, 0, 1),
+    t0,
+  };
+}
 
 /** Turn the physics result into what the plume should look like. `fire` is the 0–1 ignition ramp. */
 export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState, fire: number): PlumeParams {

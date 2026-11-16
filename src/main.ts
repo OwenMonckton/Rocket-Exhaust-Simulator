@@ -1,6 +1,6 @@
 import { getPreset } from './physics/presets';
 import type { FlowOverlay } from './render/engineView';
-import { createRuntime } from './sim/runtime';
+import { createRuntime, type PlumeMode } from './sim/runtime';
 import { decodeState, encodeState } from './state/share';
 import { createStore, defaultState, isModified } from './state/store';
 import { createControls, fillPresetSelect } from './ui/controls';
@@ -65,6 +65,13 @@ $<HTMLSelectElement>('overlay').title = TIPS.overlay;
 $<HTMLSelectElement>('overlay').addEventListener('change', (e) =>
   runtime.setOverlay((e.target as HTMLSelectElement).value as FlowOverlay),
 );
+
+const plumeMode = $<HTMLSelectElement>('plume-mode');
+if (!runtime.hasSim) {
+  plumeMode.disabled = true;
+  plumeMode.title = "This browser can't run the gas simulation.";
+}
+plumeMode.addEventListener('change', () => runtime.setPlumeMode(plumeMode.value as PlumeMode));
 
 window.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement).tagName;
