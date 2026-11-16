@@ -206,7 +206,7 @@ void main() {
         float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y)
                        * smoothstep(-uSimUp, -uSimUp + 0.4, x);
         // The nozzle itself is drawn separately; nothing shows through it.
-        if (x < 0.0 && y < 1.0 + uSimLip * x + 0.06) edgeFade = 0.0;
+        if (x < 0.0 && y < 1.0 + uSimLip * x + 0.02) edgeFade = 0.0;
 
         // The plume is a round column and a camera sees right through it, so add up
         // the glow along the line of sight instead of showing a single slice.

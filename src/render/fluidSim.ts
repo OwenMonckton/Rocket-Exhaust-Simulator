@@ -231,16 +231,6 @@ vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d, float fa, float fb, float fc, floa
   return F;
 }
 
-// The nozzle's own wall, beside the exit plane. Exhaust that spreads sideways hard enough
-// curls back around the lip and along the outside of it.
-bool solidNozzle(ivec2 c) {
-  if (c.x < 0 || c.y < 0) return false;
-  vec2 p = position(c);
-  if (p.x >= 0.0) return false;
-  float inner = nozzleRadius(p.x);
-  return p.y >= inner && p.y <= inner + uWallThick;
-}
-
 // The wall of a nozzle extension, wherever it currently is.
 bool solidExtension(ivec2 c) {
   if (uWallOn < 0.5 || c.x < 0 || c.y < 0) return false;
@@ -250,14 +240,18 @@ bool solidExtension(ivec2 c) {
   return p.y >= inner && p.y <= inner + uWallThick;
 }
 
-bool solid(ivec2 c) {
-  return solidNozzle(c) || solidExtension(c);
+// Is the way from cell c into its neighbour blocked by a wall?
+// Gas beside the nozzle, upstream of its exit, meets the outside of the nozzle wall: from
+// there the nozzle is a solid surface with no thickness. Gas downstream of the exit sees
+// the same cells as the exhaust arriving.
+bool blocked(ivec2 c, ivec2 neighbour) {
+  return solidExtension(neighbour) || (position(c).x < 0.0 && inNozzle(neighbour));
 }
 
 // Gas bounces off a wall: the part of its velocity pointing into the surface is reversed.
 // Using the wall's true slope here, not the grid's stair-steps, keeps the flow along it smooth.
 vec4 bounce(vec4 w, ivec2 wallCell) {
-  vec2 n = solidNozzle(wallCell)
+  vec2 n = inNozzle(wallCell)
     ? normalize(vec2(uDiverge, -1.0))
     : normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
   w.yz -= 2.0 * dot(w.yz, n) * n;
@@ -266,7 +260,7 @@ vec4 bounce(vec4 w, ivec2 wallCell) {
 
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
-  if (solid(c)) {
+  if (solidExtension(c)) {
     outU = toCons(ambient());
     outS = vec4(0.0, 0.0, 0.0, 1.0);
     return;
@@ -290,20 +284,20 @@ void main() {
   // Where a neighbour is solid wall, replace it (and whatever lies beyond) with mirror images.
   ivec2 n1 = c + ivec2(-1, 0);
   ivec2 n2 = c + ivec2(-2, 0);
-  if (solid(n1)) { xm1 = bounce(w0, n1); fxm1 = f0; xm2 = bounce(xp1, n1); fxm2 = fxp1; }
-  else if (solid(n2)) { xm2 = bounce(xm1, n2); fxm2 = fxm1; }
+  if (blocked(c, n1)) { xm1 = bounce(w0, n1); fxm1 = f0; xm2 = bounce(xp1, n1); fxm2 = fxp1; }
+  else if (blocked(c, n2)) { xm2 = bounce(xm1, n2); fxm2 = fxm1; }
   n1 = c + ivec2(1, 0);
   n2 = c + ivec2(2, 0);
-  if (solid(n1)) { xp1 = bounce(w0, n1); fxp1 = f0; xp2 = bounce(xm1, n1); fxp2 = fxm1; }
-  else if (solid(n2)) { xp2 = bounce(xp1, n2); fxp2 = fxp1; }
+  if (blocked(c, n1)) { xp1 = bounce(w0, n1); fxp1 = f0; xp2 = bounce(xm1, n1); fxp2 = fxm1; }
+  else if (blocked(c, n2)) { xp2 = bounce(xp1, n2); fxp2 = fxp1; }
   n1 = c + ivec2(0, -1);
   n2 = c + ivec2(0, -2);
-  if (solid(n1)) { ym1 = bounce(w0, n1); fym1 = f0; ym2 = bounce(yp1, n1); fym2 = fyp1; }
-  else if (solid(n2)) { ym2 = bounce(ym1, n2); fym2 = fym1; }
+  if (blocked(c, n1)) { ym1 = bounce(w0, n1); fym1 = f0; ym2 = bounce(yp1, n1); fym2 = fyp1; }
+  else if (blocked(c, n2)) { ym2 = bounce(ym1, n2); fym2 = fym1; }
   n1 = c + ivec2(0, 1);
   n2 = c + ivec2(0, 2);
-  if (solid(n1)) { yp1 = bounce(w0, n1); fyp1 = f0; yp2 = bounce(ym1, n1); fyp2 = fym1; }
-  else if (solid(n2)) { yp2 = bounce(yp1, n2); fyp2 = fyp1; }
+  if (blocked(c, n1)) { yp1 = bounce(w0, n1); fyp1 = f0; yp2 = bounce(ym1, n1); fyp2 = fym1; }
+  else if (blocked(c, n2)) { yp2 = bounce(yp1, n2); fyp2 = fyp1; }
 
   float sxL, sxR, syB, syT;
   vec4 fxL = faceFlux(xm2, xm1, w0, xp1, fxm2, fxm1, f0, fxp1, sxL);
