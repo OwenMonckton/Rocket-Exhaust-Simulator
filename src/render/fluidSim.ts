@@ -217,9 +217,13 @@ bool solid(ivec2 c) {
   return r >= inner && r <= inner + uWallThick;
 }
 
-// Gas bounces off a solid surface: the velocity toward it is reversed.
-vec4 bounceX(vec4 w) { w.y = -w.y; return w; }
-vec4 bounceY(vec4 w) { w.z = -w.z; return w; }
+// Gas bounces off the wall: the part of its velocity pointing into the surface is reversed.
+// Using the cone's true slope here, not the grid's stair-steps, keeps the flow along it smooth.
+vec4 bounce(vec4 w) {
+  vec2 n = normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
+  w.yz -= 2.0 * dot(w.yz, n) * n;
+  return w;
+}
 
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
@@ -241,14 +245,14 @@ void main() {
 
   // Where a neighbour is solid wall, replace it (and whatever lies beyond) with mirror images.
   if (uWallOn > 0.5) {
-    if (solid(c + ivec2(-1, 0))) { xm1 = bounceX(w0); fxm1 = f0; xm2 = bounceX(xp1); fxm2 = fxp1; }
-    else if (solid(c + ivec2(-2, 0))) { xm2 = bounceX(xm1); fxm2 = fxm1; }
-    if (solid(c + ivec2(1, 0))) { xp1 = bounceX(w0); fxp1 = f0; xp2 = bounceX(xm1); fxp2 = fxm1; }
-    else if (solid(c + ivec2(2, 0))) { xp2 = bounceX(xp1); fxp2 = fxp1; }
-    if (solid(c + ivec2(0, -1))) { ym1 = bounceY(w0); fym1 = f0; ym2 = bounceY(yp1); fym2 = fyp1; }
-    else if (solid(c + ivec2(0, -2))) { ym2 = bounceY(ym1); fym2 = fym1; }
-    if (solid(c + ivec2(0, 1))) { yp1 = bounceY(w0); fyp1 = f0; yp2 = bounceY(ym1); fyp2 = fym1; }
-    else if (solid(c + ivec2(0, 2))) { yp2 = bounceY(yp1); fyp2 = fyp1; }
+    if (solid(c + ivec2(-1, 0))) { xm1 = bounce(w0); fxm1 = f0; xm2 = bounce(xp1); fxm2 = fxp1; }
+    else if (solid(c + ivec2(-2, 0))) { xm2 = bounce(xm1); fxm2 = fxm1; }
+    if (solid(c + ivec2(1, 0))) { xp1 = bounce(w0); fxp1 = f0; xp2 = bounce(xm1); fxp2 = fxm1; }
+    else if (solid(c + ivec2(2, 0))) { xp2 = bounce(xp1); fxp2 = fxp1; }
+    if (solid(c + ivec2(0, -1))) { ym1 = bounce(w0); fym1 = f0; ym2 = bounce(yp1); fym2 = fyp1; }
+    else if (solid(c + ivec2(0, -2))) { ym2 = bounce(ym1); fym2 = fym1; }
+    if (solid(c + ivec2(0, 1))) { yp1 = bounce(w0); fyp1 = f0; yp2 = bounce(ym1); fyp2 = fym1; }
+    else if (solid(c + ivec2(0, 2))) { yp2 = bounce(yp1); fyp2 = fyp1; }
   }
   float sxL, sxR, syB, syT;
   vec4 fxL = faceFlux(xm2, xm1, w0, xp1, fxm2, fxm1, f0, fxp1, sxL);

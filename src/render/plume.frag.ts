@@ -204,10 +204,12 @@ void main() {
         // the glow along the line of sight instead of showing a single slice.
         // Only look as far out as the plume can plausibly reach.
         float reach = mix(min(size.y, max(1.6, 1.3 * uSettle) + 0.16 * xs), size.y, clamp(uBloom * 2.0, 0.0, 1.0));
-        // Inside a nozzle extension there is nothing to see beyond its wall, so don't look there:
-        // the samples are better spent on the gas inside.
+        // Looking into a nozzle extension, the far wall hides whatever is behind it, so only the
+        // gas inside counts. Beside the extension the view is clear, and any exhaust that has
+        // curled back around the outside of it is visible as usual.
         if (uWallOn > 0.5 && xs >= uWall.x && xs <= uWall.z) {
-          reach = min(reach, mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x)) + 0.05);
+          float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
+          if (q.y < inner) reach = min(reach, inner);
         }
         float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
         const int SAMPLES = 16;
@@ -266,10 +268,14 @@ void main() {
         col = mix(col, smokeCol, clamp(sm, 0.0, 0.92));
       }
 
-      // Nothing gets through the wall of a nozzle extension.
-      if (uWallOn > 0.5 && xs >= uWall.x && xs <= uWall.z) {
-        float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
-        em *= 1.0 - smoothstep(inner - 0.04, inner + 0.02, y);
+      // The drawn plume knows nothing about a nozzle extension, so keep it inside the cone,
+      // and let it open out gradually past the end instead of appearing all at once.
+      // (The simulated plume needs none of this: the gas itself cannot pass through the wall.)
+      if (uWallOn > 0.5 && uUseSim < 0.5 && xs >= uWall.x) {
+        float allowed = xs <= uWall.z
+          ? mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x))
+          : uWall.w + (xs - uWall.z) * 1.6;
+        em *= 1.0 - smoothstep(allowed - 0.04, allowed + 0.12, y);
       }
       emTotal += em;
     }
