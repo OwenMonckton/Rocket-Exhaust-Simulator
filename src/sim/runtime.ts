@@ -5,7 +5,7 @@ import { getPreset } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
-import { engineProfile, viewTransform, type View } from '../render/geometry';
+import { engineProfile, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
@@ -152,6 +152,25 @@ export function createRuntime(
         }
       : null;
 
+    const sim = useSim
+      ? simInputs(
+          state.config,
+          result,
+          fire,
+          fromFixed ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope } : undefined,
+        )
+      : null;
+    if (sim && result.state !== 'separated') {
+      // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
+      // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back.
+      const back = Math.min(2 * plumeRadiusM, flowExitX - profile.throatX);
+      const u = back / plumeRadiusM;
+      if (u > 0.05) {
+        const radiusBack = radiusAt(profile, flowExitX - back) / plumeRadiusM;
+        sim.wallCurve = Math.min(0.2, Math.max(-0.5, (radiusBack - 1 + sim.divergence * u) / (u * u)));
+      }
+    }
+
     plume?.draw(
       params,
       {
@@ -162,14 +181,7 @@ export function createRuntime(
         wall,
       },
       timeS,
-      useSim
-        ? simInputs(
-            state.config,
-            result,
-            fire,
-            fromFixed ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope } : undefined,
-          )
-        : null,
+      sim,
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

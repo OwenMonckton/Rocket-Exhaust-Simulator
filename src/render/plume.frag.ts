@@ -15,6 +15,7 @@ uniform vec2 uSimGrid;
 uniform float uSimCell;     // cell size, in exit radii
 uniform float uSimUp;       // how far the grid reaches upstream of the nozzle exit, in exit radii
 uniform float uSimLip;      // slope of the nozzle wall at the lip
+uniform float uSimCurve;    // and how sharply it curves in upstream of that
 uniform float uSimGamma;
 uniform float uSimAmbT;     // ambient temperature over exit temperature
 uniform float uSimT0;       // stagnation temperature over exit temperature
@@ -205,8 +206,12 @@ void main() {
         vec2 size = uSimGrid * uSimCell - vec2(uSimUp, 0.0);
         float edgeFade = falloff(size.x - 1.2, size.x - 0.1, xs) * falloff(size.y - 0.5, size.y - 0.05, y)
                        * smoothstep(-uSimUp, -uSimUp + 0.4, x);
-        // The nozzle itself is drawn separately; nothing shows through it.
-        if (x < 0.0 && y < 1.0 + uSimLip * x + 0.02) edgeFade = 0.0;
+        // The nozzle itself is drawn separately; nothing shows through it. The margin stops the
+        // exhaust held inside the nozzle from blurring out past the wall where the grid is coarse.
+        if (x < 0.0) {
+          float wallR = max(0.3, 1.0 + uSimLip * x + uSimCurve * x * x);
+          edgeFade *= smoothstep(wallR + 0.7 * uSimCell, wallR + 1.4 * uSimCell + 0.02, y);
+        }
 
         // The plume is a round column and a camera sees right through it, so add up
         // the glow along the line of sight instead of showing a single slice.

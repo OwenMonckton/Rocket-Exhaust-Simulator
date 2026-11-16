@@ -118,6 +118,8 @@ export function simInputs(
     // A jet that has already torn off the wall leaves straighter and more evenly.
     divergence: separated ? 0.06 : lipSlope,
     profile: separated ? 0 : 0.4,
+    // Set by the caller from the engine's drawn contour; a straight cone until then.
+    wallCurve: 0,
   };
 }
 /** Turn the physics result into what the plume should look like. `fire` is the 0–1 ignition ramp. */

@@ -26,7 +26,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip', 'uSimCurve',
 ] as const;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -159,6 +159,7 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         gl.uniform1f(u.uSimCell, cell);
         gl.uniform1f(u.uSimUp, upstream);
         gl.uniform1f(u.uSimLip, simInputs!.divergence);
+        gl.uniform1f(u.uSimCurve, simInputs!.wallCurve);
         gl.uniform1f(u.uSimGamma, simInputs!.gamma);
         gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb);
         gl.uniform1f(u.uSimT0, simInputs!.t0);

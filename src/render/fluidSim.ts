@@ -31,6 +31,11 @@ export interface SimInputs {
   divergence: number;
   /** How much the exit pressure rises from centreline to wall (0 = uniform), as bell nozzles do */
   profile: number;
+  /**
+   * How sharply the bell curves in upstream of the lip. The outside of the nozzle, x radii from
+   * the exit plane (x is negative there), has radius 1 + divergence*x + wallCurve*x*x.
+   */
+  wallCurve: number;
 }
 
 /**
@@ -86,6 +91,7 @@ uniform float uWallOn;      // 1 when a solid cone (a nozzle extension) stands i
 uniform vec4 uWall;         // its inner surface: (x, r) at the upstream end, (x, r) at the downstream end
 uniform float uWallThick;
 uniform float uUpstream;    // how far the grid reaches upstream of the nozzle exit, in exit radii
+uniform float uWallCurve;   // curvature of the nozzle wall upstream of the lip
 
 layout(location = 0) out vec4 outU;
 layout(location = 1) out vec4 outS;
@@ -116,9 +122,10 @@ vec2 position(ivec2 c) {
   return vec2((float(c.x) + 0.5) * uDx - uUpstream, (float(c.y) + 0.5) * uDx);
 }
 
-// Inner radius of the nozzle wall upstream of the exit: the bell narrows going forward.
+// Radius of the nozzle wall upstream of the exit: the bell narrows going forward, following
+// the same curve the engine is drawn with.
 float nozzleRadius(float x) {
-  return max(0.3, 1.0 + uDiverge * x);
+  return max(0.3, 1.0 + uDiverge * x + uWallCurve * x * x);
 }
 
 // Inside the nozzle itself. These cells are not simulated: they hold the exhaust as it arrives.
@@ -252,7 +259,7 @@ bool blocked(ivec2 c, ivec2 neighbour) {
 // Using the wall's true slope here, not the grid's stair-steps, keeps the flow along it smooth.
 vec4 bounce(vec4 w, ivec2 wallCell) {
   vec2 n = inNozzle(wallCell)
-    ? normalize(vec2(uDiverge, -1.0))
+    ? normalize(vec2(uDiverge + 2.0 * uWallCurve * position(wallCell).x, -1.0))
     : normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
   w.yz -= 2.0 * dot(w.yz, n) * n;
   return w;
@@ -388,7 +395,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     prev: u('uPrev'), cur: u('uCur'), prevS: u('uPrevS'), curS: u('uCurS'), stage: u('uStage'),
     grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
-    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'),
+    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'),
   };
 
   const makeTexture = (format: number) => {
@@ -487,6 +494,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       // Walls are thick enough that gas cannot leak through between neighbouring cells.
       gl.uniform1f(loc.wallThick, Math.max(3 * dx, 0.05));
       gl.uniform1f(loc.upstream, upstreamRadii);
+      gl.uniform1f(loc.wallCurve, inputs.wallCurve);
       gl.uniform1i(loc.prev, 0);
       gl.uniform1i(loc.cur, 1);
       gl.uniform1i(loc.prevS, 2);
