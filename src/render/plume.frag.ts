@@ -234,9 +234,17 @@ void main() {
         // Looking into a nozzle extension, the far wall hides whatever is behind it, so only the
         // gas inside counts. Beside the extension the view is clear, and any exhaust that has
         // curled back around the outside of it is visible as usual.
-        if (uWallOn > 0.5 && xs >= uWall.x && xs <= uWall.z) {
-          float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
-          if (q.y < inner) reach = min(reach, inner);
+        if (uWallOn > 0.5 && xs >= uWall.x) {
+          if (xs <= uWall.z) {
+            float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
+            if (q.y < inner) reach = min(reach, inner);
+          } else {
+            // Past the end of the extension the view opens out from the lip instead of jumping
+            // straight to full width. Without this the plume shows a hard vertical edge at the
+            // exit, taller than the bell, because the wall is far thicker in the simulation
+            // than it is drawn.
+            reach = min(reach, uWall.w + (xs - uWall.z) * 2.0);
+          }
         }
         float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
         const int SAMPLES = 16;
