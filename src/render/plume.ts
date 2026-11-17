@@ -1,4 +1,4 @@
-import { ENGINE_NX, createEngineSim, type EngineSim, type EngineSimInputs } from './engineSim';
+import { ENGINE_NX, ENGINE_NY, createEngineSim, type EngineSim, type EngineSimInputs } from './engineSim';
 import { SIM_NX, SIM_NY, createFluidSim, wallShape, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
 import { VACUUM_FLOOR, type PlumeParams } from './plumeParams';
@@ -27,6 +27,11 @@ export interface EngineGas {
   exitTemp: number;
   /** Mach number at the top of the speed scale */
   machMax: number;
+  /**
+   * Mach number the plume simulation takes its units from, when the plume should start from
+   * the gas this simulation delivers to the nozzle exit. Left out, the plume starts from a formula.
+   */
+  feedsPlumeAtMach?: number;
 }
 
 export interface PlumeRenderer {
@@ -155,7 +160,25 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         const height = SIM_NY * cell;
         fadeX = Math.min(0.3 * length, 1.1 + 1.5 * Math.max(0, across - length));
         fadeY = Math.min(0.3 * height, 0.45 + 1.5 * Math.max(0, up - height));
-        sim!.step(simInputs!, length + upstream, target.wall, upstream);
+        // The plume solver measures the gas against its state at the nozzle exit; the engine
+        // solver against its state at rest in the chamber. These factors convert one to the other.
+        let inlet = null;
+        if (useEngine && engine!.feedsPlumeAtMach !== undefined) {
+          const g = simInputs!.gamma;
+          const temp = 1 / (1 + ((g - 1) / 2) * engine!.feedsPlumeAtMach ** 2);
+          const pressure = Math.pow(temp, g / (g - 1));
+          const density = pressure / temp;
+          inlet = {
+            texture: engineSim!.texture,
+            columns: ENGINE_NX,
+            rows: ENGINE_NY,
+            density: 1 / density,
+            speed: Math.sqrt(density / pressure),
+            pressure: 1 / pressure,
+            coldTemp: engine!.inputs.restTemp / temp,
+          };
+        }
+        sim!.step(simInputs!, length + upstream, target.wall, upstream, inlet);
       }
 
       gl.useProgram(program);

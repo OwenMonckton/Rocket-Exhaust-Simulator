@@ -183,6 +183,9 @@ export function createRuntime(
 
     // The gas inside the engine, simulated from the injector face to where it leaves the nozzle.
     let gas: EngineGas | null = null;
+    // A jet that has torn off the wall leaves the nozzle narrower than the nozzle is, which the
+    // engine simulation (it always fills the nozzle) knows nothing about.
+    const jetFillsNozzle = fromFixed ? !fromFixed.flow.separated : result.state !== 'separated';
     if (engineGas === 'sim' && (plume?.simAvailable ?? false) && !failure) {
       const cfg = state.config;
       const rc = cfg.chamberDia / 2;
@@ -223,6 +226,8 @@ export function createRuntime(
         mode: overlay === 'none' ? 'flame' : overlay,
         exitTemp,
         machMax: Math.max(1.5, exitMach),
+        // The simulated plume carries on from the gas this simulation delivers to the exit.
+        feedsPlumeAtMach: useSim && jetFillsNozzle ? (fromFixed ? fromFixed.flow.mach : result.exitMach) : undefined,
       };
     }
 
