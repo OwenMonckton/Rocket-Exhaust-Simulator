@@ -5,9 +5,9 @@ import { getPreset } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
-import { BORE_FRACTION, GRAIN_END, drawEngine, type FlowOverlay } from '../render/engineView';
+import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX } from '../render/engineSim';
-import { engineProfile, radiusAt, viewTransform, type View } from '../render/geometry';
+import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
@@ -190,19 +190,14 @@ export function createRuntime(
     const jetFillsNozzle = fromFixed ? !fromFixed.flow.separated : result.state !== 'separated';
     if (engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure) {
       const cfg = state.config;
-      const rc = cfg.chamberDia / 2;
-      // A solid motor's gas runs down the bore of its grain, which opens out where the grain ends.
-      const grainEnd = cfg.chamberLen * GRAIN_END;
-      const taper = Math.min(0.6 * rc, 0.4 * cfg.chamberLen);
+      // A solid motor's gas runs down the bore of its grain, and comes off the bore's surface
+      // all the way along it, not in through the head of the motor.
+      const solid = cfg.propellant === 'solid';
       for (let i = 0; i <= ENGINE_NX; i++) {
         const x = (i / ENGINE_NX) * flowExitX;
-        let r = radiusAt(profile, x);
-        if (cfg.propellant === 'solid' && x < grainEnd) {
-          const t = Math.min(1, Math.max(0, (x - (grainEnd - taper)) / taper));
-          r = Math.min(r, rc * (BORE_FRACTION + (1 - BORE_FRACTION) * t * t * (3 - 2 * t)));
-        }
-        radii[i] = r;
+        radii[i] = solid ? Math.min(radiusAt(profile, x), grainBore(cfg, x)) : radiusAt(profile, x);
       }
+      const burn = solid ? { from: 0, to: ((cfg.chamberLen * GRAIN_END) / flowExitX) * ENGINE_NX } : undefined;
       const g = result.gamma;
       const exitMach = machFromAreaRatio(result.expansionRatio, g);
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
@@ -222,6 +217,7 @@ export function createRuntime(
           // where it runs colder than average, so cold still gas can be told apart from it.
           restTemp: Math.min(0.1, 0.2 * exitTemp),
           exitPressure,
+          burn,
         },
         originX: view.originX * dpr,
         scale: pixelsPerMetre,

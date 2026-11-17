@@ -161,3 +161,26 @@ export function viewTransform(profile: EngineProfile, widthPx: number, heightPx:
   );
   return { ppm, originX, centreY: heightPx / 2 };
 }
+
+/** A solid motor's grain stops this fraction of the way along the case. */
+export const GRAIN_END = 0.97;
+
+/**
+ * Radius of the bore through a solid motor's grain at a distance x along the case, or Infinity
+ * past the end of the grain. The bore is a cone: a narrow point at the head of the motor,
+ * opening out toward the nozzle, as the grain has burned back furthest where it has burned
+ * longest. The flame front is the surface of that cone.
+ */
+export function grainBore(cfg: EngineConfig, x: number): number {
+  const rc = cfg.chamberDia / 2;
+  const end = cfg.chamberLen * GRAIN_END;
+  if (x >= end) return Infinity;
+  const tip = 0.07 * rc;
+  const mouth = 0.86 * rc;
+  // The last of the grain is cut back to the case wall instead of ending in a square step.
+  const chamfer = Math.min(0.3 * rc, 0.15 * end);
+  const coneEnd = end - chamfer;
+  if (x <= coneEnd) return tip + (mouth - tip) * Math.max(0, x / coneEnd);
+  const t = (x - coneEnd) / chamfer;
+  return mouth + (rc - mouth) * t * t * (3 - 2 * t);
+}

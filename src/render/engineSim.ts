@@ -32,6 +32,12 @@ export interface EngineSimInputs {
   restTemp: number;
   /** Roughly the pressure the gas leaves the nozzle at, over chamber pressure */
   exitPressure: number;
+  /**
+   * For a solid motor: the stretch of wall (in stations) that is burning propellant. The gas
+   * comes off that surface, and the head of the motor is closed. Left out, the gas comes in
+   * through the injector face.
+   */
+  burn?: { from: number; to: number };
 }
 
 export interface EngineSim {
@@ -64,6 +70,8 @@ uniform float uFire;
 uniform vec2 uChamber;      // total pressure and temperature of the gas supplied at the injector
 uniform vec2 uRest;         // density and pressure of still gas
 uniform float uBack;        // pressure outside the nozzle exit
+uniform vec2 uBurn;         // stations between which the wall is burning propellant (a solid motor)
+uniform float uHeadOpen;    // 1 when the gas comes in through the injector face, 0 when the head is a closed wall
 
 out vec4 outU;
 
@@ -125,12 +133,19 @@ vec4 cell(ivec2 c) {
   }
   int column = c.x;
   vec4 w = toPrim(texelFetch(uCur, ivec2(clamp(c.x, 0, uGrid.x - 1), c.y), 0));
-  if (c.x < 0) w = inflow(w);
+  if (c.x < 0) w = uHeadOpen > 0.5 ? inflow(w) : vec4(w.x, -w.y, w.z, w.w);
   else if (c.x >= uGrid.x) w = outflow(w);
   if (mirrored) w.z = -w.z;
   if (walled) {
     vec2 n = wallNormal(column);
-    w.yz -= 2.0 * dot(w.yz, n) * n;
+    float station = float(column) + 0.5;
+    if (station > uBurn.x && station < uBurn.y) {
+      // Burning propellant: gas comes off the wall, straight out from its surface.
+      vec4 fresh = inflow(w);
+      w = vec4(fresh.x, -n * fresh.y, fresh.w);
+    } else {
+      w.yz -= 2.0 * dot(w.yz, n) * n;
+    }
   }
   return w;
 }
@@ -260,6 +275,14 @@ void main() {
     w.w = mix(w.w, uRest.y, 0.02);
     w.yz *= 0.97;
   }
+  float here = float(c.x) + 0.5;
+  if (uFire >= 0.02 && here > uBurn.x && here < uBurn.y) {
+    // Inside a burning grain everything is soon as hot as the flame. Without this, the cold
+    // gas that was in the bore before ignition lingers in its closed, pointed end and trails
+    // out down the centreline for a long time.
+    float temp = mix(w.w / w.x, uChamber.y, 0.02);
+    w.x = w.w / temp;
+  }
   U1 = toCons(w);
   if (any(isnan(U1)) || any(isinf(U1))) U1 = toCons(vec4(uRest.x, 0.0, 0.0, uRest.y));
   outU = U1;
@@ -289,15 +312,26 @@ export function initialEngineState(inputs: EngineSimInputs): Float32Array {
   let throat = 0;
   for (let i = 1; i <= ENGINE_NX; i++) if (inputs.radii[i] < inputs.radii[throat]) throat = i;
   const throatR = inputs.radii[throat];
-  for (let i = 0; i < ENGINE_NX; i++) {
+  // A burning grain feeds gas in all along its bore, so the flow builds up from nothing at the
+  // head of the motor to the full flow where the grain ends.
+  const burnTo = inputs.burn ? Math.min(ENGINE_NX, Math.floor(inputs.burn.to)) : 0;
+  const burnt = new Float64Array(ENGINE_NX + 1);
+  for (let i = 0; i < burnTo; i++) burnt[i + 1] = burnt[i] + 0.5 * (inputs.radii[i] + inputs.radii[i + 1]);
+  const inBoreP = (lit: boolean, i: number) => lit && i < burnTo;
+  const throatTemp = 2 / (g + 1);
+  const throatFlow = Math.pow(throatTemp, 1 / (g - 1)) * Math.sqrt(g * throatTemp) * throatR * throatR;  for (let i = 0; i < ENGINE_NX; i++) {
     const r = 0.5 * (inputs.radii[i] + inputs.radii[i + 1]);
     const slope = (inputs.radii[i + 1] - inputs.radii[i]) / dx;
     const ratio = Math.max(1, (r / throatR) ** 2);
     const mach = i + 0.5 < throat ? subsonicMachFromAreaRatio(ratio, g) : machFromAreaRatio(ratio, g);
     const temp = 1 / (1 + ((g - 1) / 2) * mach * mach);
-    const p = burning ? Math.pow(temp, g / (g - 1)) : inputs.restPressure;
-    const rho = burning ? p / temp : inputs.restPressure / inputs.restTemp;
-    const speed = burning ? mach * Math.sqrt(g * temp) : 0;
+    const p = inBoreP(burning, i) ? 1 : burning ? Math.pow(temp, g / (g - 1)) : inputs.restPressure;
+    const rho = inBoreP(burning, i) ? 1 : burning ? p / temp : inputs.restPressure / inputs.restTemp;
+    let speed = burning ? mach * Math.sqrt(g * temp) : 0;
+    if (burning && i < burnTo) {
+      // Slow, at close to chamber pressure: only part of the flow has joined yet.
+      speed = Math.min(0.5, ((burnt[i] + burnt[i + 1]) / (2 * burnt[burnTo])) * throatFlow / (r * r));
+    }
     for (let j = 0; j < ENGINE_NY; j++) {
       // The gas follows the wall at the wall and runs straight along the centreline.
       const angle = slope * ((j + 0.5) / ENGINE_NY);
@@ -337,7 +371,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
   const u = (name: string) => gl.getUniformLocation(program, name);
   const loc = {
     prev: u('uPrev'), cur: u('uCur'), rad: u('uRad'), stage: u('uStage'), grid: u('uGrid'), dx: u('uDx'),
-    cfl: u('uCfl'), gamma: u('uGamma'), fire: u('uFire'), chamber: u('uChamber'), rest: u('uRest'), back: u('uBack'),
+    cfl: u('uCfl'), burn: u('uBurn'), headOpen: u('uHeadOpen'), gamma: u('uGamma'), fire: u('uFire'), chamber: u('uChamber'), rest: u('uRest'), back: u('uBack'),
   };
 
   const makeTexture = (format: number, width: number, height: number, filter: number) => {
@@ -405,6 +439,8 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
       // It stops a little below the pressure the gas leaves at: a true vacuum outside is more
       // than the solver can take, and the gas never feels the difference.
       gl.uniform1f(loc.back, Math.max(0.1 * inputs.exitPressure, rest * (1 - fire) ** 2));
+      gl.uniform2f(loc.burn, inputs.burn ? inputs.burn.from : -1, inputs.burn ? inputs.burn.to : -1);
+      gl.uniform1f(loc.headOpen, inputs.burn ? 0 : 1);
       gl.uniform1i(loc.prev, 0);
       gl.uniform1i(loc.cur, 1);
       gl.uniform1i(loc.rad, 2);
