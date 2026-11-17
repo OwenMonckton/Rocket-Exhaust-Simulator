@@ -47,6 +47,24 @@ export interface SimWall {
   r0: number;
   x1: number;
   r1: number;
+  /**
+   * Slope (dr/dx) of the wall at its upstream end. The wall curves from that slope to meet
+   * (x1, r1), as a bell does: steeper where it leaves the fixed nozzle, shallower at the exit.
+   * Left out, the wall is a straight cone.
+   */
+  slope0?: number;
+}
+
+/**
+ * The curve of an extension's wall: its slope at the upstream end and the curvature that takes
+ * it from there to its downstream end. The starting slope is capped so the wall never turns
+ * back inward before the exit.
+ */
+export function wallShape(wall: SimWall): { slope: number; curve: number } {
+  const length = wall.x1 - wall.x0;
+  const chord = (wall.r1 - wall.r0) / length;
+  const slope = wall.slope0 === undefined ? chord : Math.min(wall.slope0, 1.8 * chord);
+  return { slope, curve: (chord - slope) / length };
 }
 
 export interface FluidSim {
@@ -90,6 +108,7 @@ uniform vec2 uAmb;          // density, pressure
 uniform float uWallOn;      // 1 when a solid cone (a nozzle extension) stands in the flow
 uniform vec4 uWall;         // its inner surface: (x, r) at the upstream end, (x, r) at the downstream end
 uniform float uWallThick;
+uniform vec2 uWallShape;    // the extension's slope at its upstream end, and its curvature
 uniform float uUpstream;    // how far the grid reaches upstream of the nozzle exit, in exit radii
 uniform float uWallCurve;   // curvature of the nozzle wall upstream of the lip
 
@@ -238,12 +257,18 @@ vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d, float fa, float fb, float fc, floa
   return F;
 }
 
+// Inner radius of a nozzle extension at x. It is curved like the bell it is part of.
+float extensionRadius(float x) {
+  float t = x - uWall.x;
+  return uWall.y + uWallShape.x * t + uWallShape.y * t * t;
+}
+
 // The wall of a nozzle extension, wherever it currently is.
 bool solidExtension(ivec2 c) {
   if (uWallOn < 0.5 || c.x < 0 || c.y < 0) return false;
   vec2 p = position(c);
   if (p.x < uWall.x || p.x > uWall.z) return false;
-  float inner = mix(uWall.y, uWall.w, (p.x - uWall.x) / max(1e-6, uWall.z - uWall.x));
+  float inner = extensionRadius(p.x);
   return p.y >= inner && p.y <= inner + uWallThick;
 }
 
@@ -260,7 +285,7 @@ bool blocked(ivec2 c, ivec2 neighbour) {
 vec4 bounce(vec4 w, ivec2 wallCell) {
   vec2 n = inNozzle(wallCell)
     ? normalize(vec2(uDiverge + 2.0 * uWallCurve * position(wallCell).x, -1.0))
-    : normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
+    : normalize(vec2(uWallShape.x + 2.0 * uWallShape.y * (position(wallCell).x - uWall.x), -1.0));
   w.yz -= 2.0 * dot(w.yz, n) * n;
   return w;
 }
@@ -448,7 +473,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     prev: u('uPrev'), cur: u('uCur'), prevS: u('uPrevS'), curS: u('uCurS'), stage: u('uStage'),
     grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
-    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'),
+    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'), wallShape: u('uWallShape'),
   };
   const r = (name: string) => gl.getUniformLocation(resampler, name);
   const rloc = {
@@ -575,7 +600,11 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform2f(loc.amb, inputs.rhoAmb, inputs.pAmb);
       const hasWall = !!wall && wall.x1 > -upstreamRadii && wall.x1 > wall.x0;
       gl.uniform1f(loc.wallOn, hasWall ? 1 : 0);
-      if (hasWall) gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+      if (hasWall) {
+        gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+        const shape = wallShape(wall!);
+        gl.uniform2f(loc.wallShape, shape.slope, shape.curve);
+      }
       // Walls are thick enough that gas cannot leak through between neighbouring cells.
       gl.uniform1f(loc.wallThick, Math.max(3 * dx, 0.05));
       gl.uniform1f(loc.upstream, upstreamRadii);

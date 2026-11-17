@@ -149,6 +149,8 @@ export function createRuntime(
           r0: fromFixed.ext.seam.r / plumeRadiusM,
           x1: (fromFixed.ext.length - fromFixed.ext.shift) / plumeRadiusM,
           r1: state.config.exitDia / 2 / plumeRadiusM,
+          // The extension continues the bell's curve from where the fixed nozzle leaves off.
+          slope0: fromFixed.ext.seamSlope,
         }
       : null;
 

@@ -1,4 +1,4 @@
-import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
+import { SIM_NX, SIM_NY, createFluidSim, wallShape, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
 import { VACUUM_FLOOR, type PlumeParams } from './plumeParams';
 
@@ -26,7 +26,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uWallShape', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
 ] as const;
 
 /** Longest stretch of plume the gas simulation covers, in exit radii. */
@@ -162,7 +162,11 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       const wall = target.wall;
       const hasWall = !!wall && wall.x1 > 0 && wall.x1 > wall.x0;
       gl.uniform1f(u.uWallOn, hasWall ? 1 : 0);
-      if (hasWall) gl.uniform4f(u.uWall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+      if (hasWall) {
+        gl.uniform4f(u.uWall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+        const shape = wallShape(wall!);
+        gl.uniform2f(u.uWallShape, shape.slope, shape.curve);
+      }
 
       gl.uniform1f(u.uUseSim, useSim ? 1 : 0);
       gl.uniform1i(u.uSim, 0);

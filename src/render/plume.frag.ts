@@ -29,6 +29,7 @@ uniform float uParticles;   // glowing particles carried in the exhaust
 
 uniform float uWallOn;           // 1 when a nozzle extension stands in the plume
 uniform vec4 uWall;              // its inner surface in exit radii: (x, r) upstream end, (x, r) downstream end
+uniform vec2 uWallShape;         // the extension's slope at its upstream end, and its curvature
 uniform int uExitCount;          // how many nozzle exits to draw a plume from (1 or 2)
 uniform float uExitOffsets[2];   // their vertical offsets from uExit, in pixels
 
@@ -84,6 +85,12 @@ float fbm(vec2 p) {
     a *= 0.5;
   }
   return v;
+}
+
+// Inner radius of a nozzle extension at x. It is curved like the bell it is part of.
+float extensionRadius(float x) {
+  float t = x - uWall.x;
+  return uWall.y + uWallShape.x * t + uWallShape.y * t * t;
 }
 
 // Density and temperature of the simulated gas at a point (in exit radii), relative to the nozzle exit.
@@ -234,11 +241,11 @@ void main() {
         // Looking into a nozzle extension, the far wall hides whatever is behind it, so only the
         // gas inside counts. Beside the extension the view is clear, and any exhaust that has
         // curled back around the outside of it is visible as usual.
-        const float EXTENSION_DEPTH = 0.7;
+        const float EXTENSION_DEPTH = 0.93;
         float wallDepth = 1e6;
         if (uWallOn > 0.5 && xs >= uWall.x) {
           if (xs <= uWall.z) {
-            float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
+            float inner = extensionRadius(xs);
             if (q.y < inner) {
               reach = min(reach, inner);
               wallDepth = EXTENSION_DEPTH * inner;
@@ -320,7 +327,7 @@ void main() {
       // (The simulated plume needs none of this: the gas itself cannot pass through the wall.)
       if (uWallOn > 0.5 && uUseSim < 0.5 && xs >= uWall.x) {
         float allowed = xs <= uWall.z
-          ? mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x))
+          ? extensionRadius(xs)
           : uWall.w + (xs - uWall.z) * 1.6;
         em *= 1.0 - smoothstep(allowed - 0.04, allowed + 0.12, y);
       }
