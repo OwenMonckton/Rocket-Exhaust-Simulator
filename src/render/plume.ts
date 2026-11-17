@@ -1,5 +1,5 @@
-import { ENGINE_NX, ENGINE_NY, createEngineSim, type EngineSim, type EngineSimInputs } from './engineSim';
-import { SIM_NX, SIM_NY, createFluidSim, wallShape, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
+import { ENGINE_NX, ENGINE_NY, createEngineSim, engineStableStep, type EngineSim, type EngineSimInputs } from './engineSim';
+import { SIM_NX, SIM_NY, STEPS_PER_FRAME, createFluidSim, wallShape, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
 import { VACUUM_FLOOR, type PlumeParams } from './plumeParams';
 
@@ -54,6 +54,13 @@ const UNIFORMS = [
   'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uWallShape', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
   'uInOn', 'uIn', 'uInRad', 'uInStations', 'uInOrigin', 'uInScale', 'uInLen', 'uInMode', 'uInGamma', 'uInExitT', 'uInMachMax', 'uInRestT', 'uInOpacity',
 ] as const;
+
+/**
+ * The engine's cells are much smaller than the plume's, so it needs several steps of its own
+ * for each of the plume's. This caps how many: beyond it the smallest cells (across the throat)
+ * fall behind true time instead, which only shows while the flow is still changing.
+ */
+const MAX_ENGINE_SUBSTEPS = 2;
 
 /** Longest stretch of plume the gas simulation covers, in exit radii. */
 export const SIM_MAX_LENGTH = 24;
@@ -146,7 +153,11 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
     draw(p, target, timeS, simInputs, engine) {
       if (lost) return;
       const useEngine = !!engine && engineSim !== null && engine.scale > 0 && engine.inputs.length > 0;
-      if (useEngine) engineSim!.step(engine!.inputs);
+      // With both simulated and the jet filling the nozzle, the two solvers run as one: stepped
+      // together on the same clock, each reading the other across the nozzle exit. Otherwise
+      // the engine runs on its own.
+      const linked = useEngine && !!simInputs && sim !== null && target.radiusPx > 0.5 && engine!.feedsPlumeAtMach !== undefined;
+      if (useEngine && !linked) engineSim!.step(engine!.inputs);
       const useSim = !!simInputs && sim !== null && target.radiusPx > 0.5;
       let cell = 1;
       let upstream = 0;
@@ -168,9 +179,9 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         // The plume solver measures the gas against its state at the nozzle exit; the engine
         // solver against its state at rest in the chamber. These factors convert one to the other.
         let inlet = null;
-        if (useEngine && engine!.feedsPlumeAtMach !== undefined) {
+        if (linked) {
           const g = simInputs!.gamma;
-          const temp = 1 / (1 + ((g - 1) / 2) * engine!.feedsPlumeAtMach ** 2);
+          const temp = 1 / (1 + ((g - 1) / 2) * engine!.feedsPlumeAtMach! ** 2);
           const pressure = Math.pow(temp, g / (g - 1));
           const density = pressure / temp;
           inlet = {
@@ -183,7 +194,31 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
             coldTemp: engine!.inputs.restTemp / temp,
           };
         }
-        sim!.step(simInputs!, length + upstream, target.wall, upstream, inlet);
+        const dt = sim!.begin(simInputs!, length + upstream, target.wall, upstream, inlet);
+        if (inlet) {
+          const exitRadius = target.radiusPx / engine!.scale;
+          engineSim!.begin(engine!.inputs, {
+            columns: SIM_NX,
+            rows: SIM_NY,
+            cell,
+            upstream,
+            exitRadius,
+            density: 1 / inlet.density,
+            speed: 1 / inlet.speed,
+            pressure: 1 / inlet.pressure,
+          });
+          // The same stretch of time, in the engine solver's units.
+          const engineDt = dt * exitRadius * inlet.speed;
+          const substeps = Math.min(MAX_ENGINE_SUBSTEPS, Math.max(1, Math.ceil(engineDt / engineStableStep(engine!.inputs))));
+          for (let n = 0; n < STEPS_PER_FRAME; n++) {
+            engineSim!.advance(engineDt / substeps, substeps, sim!.texture);
+            sim!.advance(1, engineSim!.texture);
+          }
+          engineSim!.finish();
+        } else {
+          sim!.advance(STEPS_PER_FRAME, null);
+        }
+        sim!.finish();
       }
 
       gl.useProgram(program);

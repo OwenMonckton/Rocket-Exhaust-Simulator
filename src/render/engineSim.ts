@@ -40,12 +40,41 @@ export interface EngineSimInputs {
   burn?: { from: number; to: number };
 }
 
+/**
+ * The plume solver's grid, for when the two solvers run as one: the cells just beyond the
+ * nozzle exit then hold whatever the plume solver has there, so the outside can reach back
+ * into the engine wherever the gas is not leaving faster than sound.
+ */
+export interface EngineLink {
+  columns: number;
+  rows: number;
+  /** Size of a plume cell, in exit radii */
+  cell: number;
+  /** How far the plume grid reaches upstream of the nozzle exit, in exit radii */
+  upstream: number;
+  /** Radius of the nozzle exit, m */
+  exitRadius: number;
+  /** Factors that turn the plume solver's density, speed and pressure into this solver's units */
+  density: number;
+  speed: number;
+  pressure: number;
+}
+
 export interface EngineSim {
   /** Gas state: density, momentum (x, r), energy. One column per station, one row per step from centreline to wall. */
   readonly texture: WebGLTexture;
   /** Radius of the passage at each station (ENGINE_NX + 1 texels wide) */
   readonly radiusTexture: WebGLTexture;
+  /** Advance on its own for one display frame, every cell at its own pace: quick to settle. */
   step(inputs: EngineSimInputs): void;
+  /**
+   * Run in step with the plume solver instead: `begin` once a frame, then `advance` by the
+   * plume solver's time step each time that solver takes one, then `finish`.
+   */
+  begin(inputs: EngineSimInputs, link: EngineLink | null): void;
+  /** `dt` is in this solver's units (0: every cell at its own pace); `plume` is the plume solver's current gas state. */
+  advance(dt: number, substeps: number, plume: WebGLTexture | null): void;
+  finish(): void;
   reset(): void;
 }
 
@@ -70,6 +99,12 @@ uniform float uFire;
 uniform vec2 uChamber;      // total pressure and temperature of the gas supplied at the injector
 uniform vec2 uRest;         // density and pressure of still gas
 uniform float uBack;        // pressure outside the nozzle exit
+uniform float uDt;          // time step shared with the plume solver (0: every cell takes the largest step it can)
+uniform float uLinkOn;      // 1 when the cells beyond the exit come from the plume solver
+uniform sampler2D uPlume;   // the plume solver's gas state
+uniform ivec2 uPlumeGrid;
+uniform vec3 uPlumeGeom;    // plume cell size and upstream reach in exit radii, and the exit radius in metres
+uniform vec3 uPlumeScale;   // the plume solver's density, speed and pressure in this solver's units
 uniform vec2 uBurn;         // stations between which the wall is burning propellant (a solid motor)
 uniform float uHeadOpen;    // 1 when the gas comes in through the injector face, 0 when the head is a closed wall
 
@@ -111,9 +146,26 @@ vec4 inflow(vec4 inside) {
   return vec4(p / temp, sqrt(mach2 * uGamma * temp), 0.0, p);
 }
 
-// Beyond the nozzle exit. Supersonic gas leaves without knowing what is outside; slower gas
-// feels the outside pressure.
-vec4 outflow(vec4 inside) {
+// Beyond the nozzle exit. Run together with the plume solver, the cells there are that
+// solver's: whatever is really outside the nozzle. The flux between them and the last cells
+// in here then sorts itself out: supersonic gas leaves without noticing, slower gas feels the
+// outside, and air can come back in.
+// On its own, supersonic gas leaves freely and slower gas feels a set outside pressure.
+vec4 outflow(vec4 inside, ivec2 c) {
+  if (uLinkOn > 0.5) {
+    float x = (float(c.x - uGrid.x) + 0.5) * uDx / uPlumeGeom.z;
+    float r = (float(c.y) + 0.5) / float(uGrid.y);
+    // The first plume column whose centre is downstream of the exit plane, or further.
+    int first = int(floor(uPlumeGeom.y / uPlumeGeom.x - 0.5)) + 1;
+    int column = clamp(int(floor((x + uPlumeGeom.y) / uPlumeGeom.x)), first, uPlumeGrid.x - 1);
+    int row = clamp(int(floor(r / uPlumeGeom.x)), 0, uPlumeGrid.y - 1);
+    vec4 U = texelFetch(uPlume, ivec2(column, row), 0);
+    float rho = max(U.x, 1e-9);
+    vec2 vel = U.yz / rho;
+    float p = max((uGamma - 1.0) * (U.w - 0.5 * rho * dot(vel, vel)), 1e-12);
+    vec4 w = vec4(rho * uPlumeScale.x, vel * uPlumeScale.y, p * uPlumeScale.z);
+    if (!(any(isnan(w)) || any(isinf(w)))) return vec4(max(w.x, RHO_MIN), w.yz, max(w.w, P_MIN));
+  }
   float a = sqrt(uGamma * inside.w / inside.x);
   if (inside.y >= a) return inside;
   if (inside.y < 0.0) return vec4(uRest.x * uBack / uRest.y, 0.0, 0.0, uBack);
@@ -134,7 +186,7 @@ vec4 cell(ivec2 c) {
   int column = c.x;
   vec4 w = toPrim(texelFetch(uCur, ivec2(clamp(c.x, 0, uGrid.x - 1), c.y), 0));
   if (c.x < 0) w = uHeadOpen > 0.5 ? inflow(w) : vec4(w.x, -w.y, w.z, w.w);
-  else if (c.x >= uGrid.x) w = outflow(w);
+  else if (c.x >= uGrid.x) w = outflow(w, c);
   if (mirrored) w.z = -w.z;
   if (walled) {
     vec2 n = wallNormal(column);
@@ -264,6 +316,9 @@ void main() {
   float a = sqrt(uGamma * wp.w / wp.x);
   float dr = min(radius(c.x), radius(c.x + 1)) / float(uGrid.y);
   float dt = uCfl / ((abs(wp.y) + a) / uDx + (abs(wp.z) + a) / dr);
+  // In step with the plume solver, every cell takes the shared step, unless that is more than
+  // it can take: then it falls behind true time instead of going unstable.
+  if (uDt > 0.0) dt = min(dt, uDt);
 
   vec4 U1 = toCons(w0) + dt * rate(c, w0);
   if (uStage == 1) U1 = 0.5 * texelFetch(uPrev, c, 0) + 0.5 * U1;
@@ -288,6 +343,22 @@ void main() {
   outU = U1;
 }
 `;
+
+/**
+ * The largest time step (in this solver's units) that every cell of the engine can take, give
+ * or take: set by the small cells across the throat. Used to decide how many of its own steps
+ * the engine solver needs for each step of the plume solver.
+ */
+export function engineStableStep(inputs: EngineSimInputs): number {
+  const g = inputs.gamma;
+  const sound = Math.sqrt(g);
+  const fastest = Math.sqrt((2 * g) / (g - 1));
+  const dx = inputs.length / ENGINE_NX;
+  let smallest = Infinity;
+  for (let i = 0; i <= ENGINE_NX; i++) smallest = Math.min(smallest, inputs.radii[i]);
+  // At the throat the gas moves at about the speed of sound, nearly straight along the engine.
+  return CFL / ((2.1 * sound) / dx + (1.2 * sound + 0.1 * fastest) / (smallest / ENGINE_NY));
+}
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -372,6 +443,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
   const loc = {
     prev: u('uPrev'), cur: u('uCur'), rad: u('uRad'), stage: u('uStage'), grid: u('uGrid'), dx: u('uDx'),
     cfl: u('uCfl'), burn: u('uBurn'), headOpen: u('uHeadOpen'), gamma: u('uGamma'), fire: u('uFire'), chamber: u('uChamber'), rest: u('uRest'), back: u('uBack'),
+    dt: u('uDt'), linkOn: u('uLinkOn'), plume: u('uPlume'), plumeGrid: u('uPlumeGrid'), plumeGeom: u('uPlumeGeom'), plumeScale: u('uPlumeScale'),
   };
 
   const makeTexture = (format: number, width: number, height: number, filter: number) => {
@@ -413,7 +485,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
     reset() {
       needsReset = true;
     },
-    step(inputs: EngineSimInputs) {
+    begin(inputs: EngineSimInputs, link: EngineLink | null) {
       bind(0, radiusTexture);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, ENGINE_NX + 1, 1, gl.RED, gl.FLOAT, inputs.radii);
       if (needsReset) {
@@ -425,7 +497,6 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
       const fire = Math.min(1, Math.max(0, inputs.fire));
       const rest = inputs.restPressure;
       gl.useProgram(program);
-      gl.viewport(0, 0, ENGINE_NX, ENGINE_NY);
       gl.uniform2i(loc.grid, ENGINE_NX, ENGINE_NY);
       gl.uniform1f(loc.dx, inputs.length / ENGINE_NX);
       gl.uniform1f(loc.cfl, CFL);
@@ -441,12 +512,24 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
       gl.uniform1f(loc.back, Math.max(0.1 * inputs.exitPressure, rest * (1 - fire) ** 2));
       gl.uniform2f(loc.burn, inputs.burn ? inputs.burn.from : -1, inputs.burn ? inputs.burn.to : -1);
       gl.uniform1f(loc.headOpen, inputs.burn ? 0 : 1);
+      gl.uniform1f(loc.linkOn, link ? 1 : 0);
+      if (link) {
+        gl.uniform2i(loc.plumeGrid, link.columns, link.rows);
+        gl.uniform3f(loc.plumeGeom, link.cell, link.upstream, link.exitRadius);
+        gl.uniform3f(loc.plumeScale, link.density, link.speed, link.pressure);
+      }
       gl.uniform1i(loc.prev, 0);
       gl.uniform1i(loc.cur, 1);
       gl.uniform1i(loc.rad, 2);
+      gl.uniform1i(loc.plume, 3);
+    },
+    advance(dt: number, substeps: number, plume: WebGLTexture | null) {
+      gl.useProgram(program);
+      gl.viewport(0, 0, ENGINE_NX, ENGINE_NY);
+      gl.uniform1f(loc.dt, dt);
       bind(2, radiusTexture);
-
-      for (let n = 0; n < STEPS_PER_FRAME; n++) {
+      bind(3, plume);
+      for (let n = 0; n < substeps; n++) {
         const a = targets[current];
         const b = targets[(current + 1) % 3];
         const c = targets[(current + 2) % 3];
@@ -461,9 +544,16 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         current = (current + 2) % 3;
       }
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      for (const unit of [2, 1, 0]) bind(unit, null);
       sim.texture = targets[current].state;
+    },
+    finish() {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      for (const unit of [3, 2, 1, 0]) bind(unit, null);
+    },
+    step(inputs: EngineSimInputs) {
+      sim.begin(inputs, null);
+      sim.advance(0, STEPS_PER_FRAME, null);
+      sim.finish();
     },
   };
   return sim;

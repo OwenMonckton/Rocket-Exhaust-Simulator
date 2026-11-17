@@ -12,7 +12,7 @@
 
 export const SIM_NX = 384;
 export const SIM_NY = 162;
-const STEPS_PER_FRAME = 48;
+export const STEPS_PER_FRAME = 48;
 const CFL = 0.3;
 
 export interface SimInputs {
@@ -95,6 +95,14 @@ export interface FluidSim {
    * lie beside the nozzle, upstream of its exit plane.
    */
   step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii?: number, inlet?: SimInlet | null): void;
+  /**
+   * The same in pieces, for running in step with the engine solver: egin once a frame
+   * (it returns the time step, in this solver's units), dvance a number of steps at a time,
+   * then inish. inlet is the engine solver's current gas state.
+   */
+  begin(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii?: number, inlet?: SimInlet | null): number;
+  advance(steps: number, inlet?: WebGLTexture | null): void;
+  finish(): void;
   reset(): void;
 }
 
@@ -624,6 +632,11 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       needsReset = true;
     },
     step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii = 0, inlet?: SimInlet | null) {
+      sim.begin(inputs, lengthRadii, wall, upstreamRadii, inlet);
+      sim.advance(STEPS_PER_FRAME, inlet?.texture);
+      sim.finish();
+    },
+    begin(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii = 0, inlet?: SimInlet | null) {
       if (needsReset) {
         fill(inputs, lengthRadii);
         needsReset = false;
@@ -640,7 +653,6 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       const dt = (CFL * dx) / maxSpeed;
 
       gl.useProgram(program);
-      gl.viewport(0, 0, SIM_NX, SIM_NY);
       gl.uniform2i(loc.grid, SIM_NX, SIM_NY);
       gl.uniform1f(loc.dx, dx);
       gl.uniform1f(loc.dt, dt);
@@ -669,13 +681,17 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform1i(loc.inlet, 4);
       gl.uniform1f(loc.inletOn, inlet ? 1 : 0);
       if (inlet) {
-        bind(4, inlet.texture);
         gl.uniform2i(loc.inletGrid, inlet.columns, inlet.rows);
         gl.uniform3f(loc.inletScale, inlet.density, inlet.speed, inlet.pressure);
         gl.uniform1f(loc.inletCold, inlet.coldTemp);
       }
-
-      for (let n = 0; n < STEPS_PER_FRAME; n++) {
+      return dt;
+    },
+    advance(steps: number, inlet?: WebGLTexture | null) {
+      gl.useProgram(program);
+      gl.viewport(0, 0, SIM_NX, SIM_NY);
+      bind(4, inlet ?? null);
+      for (let n = 0; n < steps; n++) {
         const a = targets[current];
         const b = targets[(current + 1) % 3];
         const c = targets[(current + 2) % 3];
@@ -695,10 +711,12 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         current = (current + 2) % 3;
       }
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      for (const unit of [4, 3, 2, 1, 0]) bind(unit, null);
       sim.texture = targets[current].state;
       sim.scalarTexture = targets[current].scalar;
+    },
+    finish() {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      for (const unit of [4, 3, 2, 1, 0]) bind(unit, null);
     },
   };
   return sim;
