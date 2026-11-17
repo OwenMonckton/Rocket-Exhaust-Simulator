@@ -76,15 +76,25 @@ export interface FixedExitFlow {
   separated: boolean;
 }
 
-/** Null for an ordinary one-piece nozzle. */
-export function fixedExitFlow(cfg: EngineConfig, r: SimResult): FixedExitFlow | null {
+/**
+ * Null for an ordinary one-piece nozzle. With `wholeNozzle`, the gas as it would leave if it
+ * filled the nozzle, whether or not the jet has really torn off the wall: for when the gas
+ * simulation is left to work that out for itself.
+ */
+export function fixedExitFlow(cfg: EngineConfig, r: SimResult, wholeNozzle = false): FixedExitFlow | null {
   if (!(cfg.extFixedDia > 0)) return null;
   const fixedR = cfg.extFixedDia / 2;
-  if (r.state === 'separated' && r.effectiveExitDia / 2 < fixedR * 0.999) {
+  if (!wholeNozzle && r.state === 'separated' && r.effectiveExitDia / 2 < fixedR * 0.999) {
     return { radiusM: r.effectiveExitDia / 2, mach: r.exitMach, pressure: r.pe, separated: true };
   }
   const mach = machFromAreaRatio((cfg.extFixedDia / cfg.throatDia) ** 2, r.gamma);
   return { radiusM: fixedR, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
+}
+
+/** The gas as it would leave a one-piece nozzle if it filled it all the way to the exit. */
+export function wholeNozzleFlow(cfg: EngineConfig, r: SimResult): FixedExitFlow {
+  const mach = machFromAreaRatio(r.expansionRatio, r.gamma);
+  return { radiusM: cfg.exitDia / 2, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
 }
 
 /**
@@ -96,7 +106,7 @@ export function simInputs(
   cfg: EngineConfig,
   r: SimResult,
   fire: number,
-  start?: { flow: FixedExitFlow; wallSlope: number },
+  start?: { flow: FixedExitFlow; wallSlope?: number },
 ): SimInputs {
   const g = r.gamma;
   const mach = start ? start.flow.mach : r.exitMach;
@@ -104,10 +114,12 @@ export function simInputs(
   const separated = start ? start.flow.separated : r.state === 'separated';
   const t0 = 1 + ((g - 1) / 2) * mach * mach;
   const exitTemp = r.tc / t0;
-  const pAmb = r.pa > 0 ? clamp(r.pa / pressure, VACUUM_FLOOR, 20) : VACUUM_FLOOR;
+  // The top of the range is a badly over-expanded nozzle at sea level: outside air at a hundred
+  // times the pressure the exhaust would leave at.
+  const pAmb = r.pa > 0 ? clamp(r.pa / pressure, VACUUM_FLOOR, 150) : VACUUM_FLOOR;
   const gasR = gasProps(cfg.propellant, cfg.mixtureRatio).R;
   // Slope of the bell wall at the lip (see engineProfile).
-  const lipSlope = start ? start.wallSlope : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
+  const lipSlope = start?.wallSlope ?? (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
   return {
     gamma: g,
     uExit: mach * Math.sqrt(g),

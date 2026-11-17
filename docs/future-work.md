@@ -11,9 +11,12 @@ Ideas that have been discussed and set aside for later.
   cells hold whatever the plume solver has just outside the nozzle, so the outside can reach
   back in wherever the gas is not leaving faster than sound. See the loop in
   `src/render/plume.ts`.
-- Stage 2 (to do): simulate separated flow for real. Drop the formula-based plume and the
-  clipped view for a jet that has torn off the wall, and let the linked solvers work it out.
-  The plume solver then has to cope with outside air at tens of times the exit pressure.
+- Stage 2 (done): separated flow runs through the linked solvers too. The formula still says
+  where the jet tears off the wall, because a solver with no friction cannot find that for
+  itself: left alone it stands a shock across the whole nozzle with slow gas behind it, which
+  is not what an engine does. From that station on, the engine grid's wall is open to still
+  outside air. Everything after that is simulated: the free jet inside the bell, the air
+  beside it, and the plume it becomes.
 - Stage 3 (to do): move the RL10B-2 extension into one place, and fold the two solvers into a
   single module.
 
@@ -26,9 +29,9 @@ Ideas that have been discussed and set aside for later.
 
 What is left of the old one-way arrangement:
 
-- **Separated flow.** When the nozzle is too big for the altitude (Merlin Vacuum at sea level),
-  the solvers are not linked: the engine runs on its own, the view is clipped to the jet, and
-  the plume starts from a formula.
+- **Where the jet separates.** The station comes from a formula (the Schmucker criterion in
+  `src/physics/engine.ts`), not from the gas simulation. Finding it properly needs friction at
+  the wall: a boundary layer, which is a different class of solver.
 - **The smallest cells lag.** The engine's cells across the throat are far smaller than the
   plume's. The engine takes up to two steps of its own for each plume step; cells that would
   need more fall behind true time instead. Steady flow is unaffected, but a start-up passes

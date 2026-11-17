@@ -38,6 +38,13 @@ export interface EngineSimInputs {
    * through the injector face.
    */
   burn?: { from: number; to: number };
+  /**
+   * For an over-expanded nozzle: the station where the jet tears off the wall. A solver with no
+   * friction cannot find that for itself (nothing makes the gas let go of the wall), so it is
+   * told. From there on the wall no longer confines the gas: the space between jet and wall
+   * is open to the outside air, as it is in a real separated nozzle.
+   */
+  separatesAt?: number;
 }
 
 /**
@@ -106,6 +113,7 @@ uniform ivec2 uPlumeGrid;
 uniform vec3 uPlumeGeom;    // plume cell size and upstream reach in exit radii, and the exit radius in metres
 uniform vec3 uPlumeScale;   // the plume solver's density, speed and pressure in this solver's units
 uniform vec2 uBurn;         // stations between which the wall is burning propellant (a solid motor)
+uniform float uSeparates;   // station where the jet tears off the wall (beyond the grid: it does not)
 uniform float uHeadOpen;    // 1 when the gas comes in through the injector face, 0 when the head is a closed wall
 
 out vec4 outU;
@@ -191,7 +199,10 @@ vec4 cell(ivec2 c) {
   if (walled) {
     vec2 n = wallNormal(column);
     float station = float(column) + 0.5;
-    if (station > uBurn.x && station < uBurn.y) {
+    if (station > uSeparates) {
+      // Past where the jet has torn off the wall, still outside air lies beside it.
+      w = vec4(uRest.x, 0.0, 0.0, uRest.y);
+    } else if (station > uBurn.x && station < uBurn.y) {
       // Burning propellant: gas comes off the wall, straight out from its surface.
       vec4 fresh = inflow(w);
       w = vec4(fresh.x, -n * fresh.y, fresh.w);
@@ -442,7 +453,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
   const u = (name: string) => gl.getUniformLocation(program, name);
   const loc = {
     prev: u('uPrev'), cur: u('uCur'), rad: u('uRad'), stage: u('uStage'), grid: u('uGrid'), dx: u('uDx'),
-    cfl: u('uCfl'), burn: u('uBurn'), headOpen: u('uHeadOpen'), gamma: u('uGamma'), fire: u('uFire'), chamber: u('uChamber'), rest: u('uRest'), back: u('uBack'),
+    cfl: u('uCfl'), burn: u('uBurn'), separates: u('uSeparates'), headOpen: u('uHeadOpen'), gamma: u('uGamma'), fire: u('uFire'), chamber: u('uChamber'), rest: u('uRest'), back: u('uBack'),
     dt: u('uDt'), linkOn: u('uLinkOn'), plume: u('uPlume'), plumeGrid: u('uPlumeGrid'), plumeGeom: u('uPlumeGeom'), plumeScale: u('uPlumeScale'),
   };
 
@@ -512,6 +523,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
       gl.uniform1f(loc.back, Math.max(0.1 * inputs.exitPressure, rest * (1 - fire) ** 2));
       gl.uniform2f(loc.burn, inputs.burn ? inputs.burn.from : -1, inputs.burn ? inputs.burn.to : -1);
       gl.uniform1f(loc.headOpen, inputs.burn ? 0 : 1);
+      gl.uniform1f(loc.separates, inputs.separatesAt ?? 1e9);
       gl.uniform1f(loc.linkOn, link ? 1 : 0);
       if (link) {
         gl.uniform2i(loc.plumeGrid, link.columns, link.rows);

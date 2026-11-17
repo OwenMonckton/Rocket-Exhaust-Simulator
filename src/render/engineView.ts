@@ -17,6 +17,8 @@ export interface EngineAnim {
   flowExitX: number;
   /** True when the gas inside the engine comes from the gas simulation, drawn underneath this view */
   simGas?: boolean;
+  /** True when the gas simulation is working out a separated jet for itself, so the view is not clipped to where a formula says the jet is */
+  wholeNozzle?: boolean;
   /** How far a solid motor's grain has burned: 0 fresh, 1 nothing left */
   burnt?: number;
 }
@@ -258,7 +260,7 @@ export function drawEngine(
   const jet = (x: number, r: number) => {
     let out = r;
     if (isSolid) out = Math.min(out, grainBore(cfg, x, anim.burnt ?? 0));
-    if (result.state === 'separated' && x > profile.throatX && r > result.effectiveExitDia / 2) {
+    if (result.state === 'separated' && !anim.wholeNozzle && x > profile.throatX && r > result.effectiveExitDia / 2) {
       out = (result.effectiveExitDia / 2) * (1 + 0.05 * Math.sin(x * 40 + anim.timeS * 30));
     }
     return out;

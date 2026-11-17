@@ -211,8 +211,10 @@ vec4 inletState(float r, out float exhaust) {
   vec2 vel = U.yz / rho;
   float p = max((uGamma - 1.0) * (U.w - 0.5 * rho * dot(vel, vel)), 1e-9);
   vec4 w = vec4(rho * uInletScale.x, vel * uInletScale.y, p * uInletScale.z);
-  w.x = clamp(w.x, RHO_MIN, 20.0);
-  w.w = clamp(w.w, P_MIN, 20.0);
+  // No upper limit: gas that has come through a shock inside the nozzle arrives at many times
+  // the pressure it would have had leaving freely.
+  w.x = max(w.x, RHO_MIN);
+  w.w = max(w.w, P_MIN);
   exhaust = smoothstep(1.3 * uInletCold, 2.2 * uInletCold, w.w / w.x);
   if (any(isnan(w)) || any(isinf(w))) {
     w = exhaustState(r);

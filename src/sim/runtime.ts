@@ -9,7 +9,7 @@ import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
-import { fixedExitFlow, plumeParams, simInputs } from '../render/plumeParams';
+import { fixedExitFlow, plumeParams, simInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
 
 export interface FrameInfo {
@@ -163,15 +163,23 @@ export function createRuntime(
     // A nozzle extension is a separate part. Until it seats, the gas leaves the engine at the end
     // of the fixed nozzle and the extension is just a wall in its way. The simulated plume always
     // starts at the fixed nozzle, and works out the flow inside the extension itself.
+    // With the gas inside the engine and the plume both simulated, the two solvers run as one
+    // and work out for themselves what an over-expanded nozzle does: where the shock stands,
+    // whether outside air gets in. Nothing is taken from the formula that says where the jet
+    // tears off the wall, so everything is laid out as if the gas filled the whole nozzle.
+    const wholeNozzle = useSim && engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure;
     const ext = profile.extension;
-    const fixedFlow = ext ? fixedExitFlow(state.config, result) : null;
+    const fixedFlow = ext ? fixedExitFlow(state.config, result, wholeNozzle) : null;
     const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
     const flowExitX = fromFixed ? fromFixed.ext.seam.x : profile.exitX;
+    const wholeFlow = wholeNozzle && !fromFixed ? wholeNozzleFlow(state.config, result) : null;
     const plumeRadiusM = fromFixed
       ? useSim
         ? fromFixed.flow.radiusM
         : Math.min(params.exitRadiusM, fromFixed.ext.seam.r)
-      : params.exitRadiusM;
+      : wholeFlow
+        ? wholeFlow.radiusM
+        : params.exitRadiusM;
     const wall = fromFixed
       ? {
           x0: -fromFixed.ext.shift / plumeRadiusM,
@@ -188,10 +196,14 @@ export function createRuntime(
           state.config,
           result,
           fire,
-          fromFixed ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope } : undefined,
+          fromFixed
+            ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope }
+            : wholeFlow
+              ? { flow: wholeFlow }
+              : undefined,
         )
       : null;
-    if (sim && result.state !== 'separated') {
+    if (sim && (wholeNozzle || result.state !== 'separated')) {
       // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
       // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back.
       const back = Math.min(2 * plumeRadiusM, flowExitX - profile.throatX);
@@ -204,9 +216,6 @@ export function createRuntime(
 
     // The gas inside the engine, simulated from the injector face to where it leaves the nozzle.
     let gas: EngineGas | null = null;
-    // A jet that has torn off the wall leaves the nozzle narrower than the nozzle is, which the
-    // engine simulation (it always fills the nozzle) knows nothing about.
-    const jetFillsNozzle = fromFixed ? !fromFixed.flow.separated : result.state !== 'separated';
     if (engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure) {
       const cfg = state.config;
       // A solid motor's gas runs down the bore of its grain, and comes off the bore's surface
@@ -225,6 +234,19 @@ export function createRuntime(
         }
       }
       const burn = solid ? { from: 0, to: burnTo } : undefined;
+      // Where the jet tears off the wall of an over-expanded nozzle, if it does so inside the
+      // stretch of engine being simulated.
+      let separatesAt: number | undefined;
+      if (wholeNozzle && result.state === 'separated') {
+        const jetRadius = result.effectiveExitDia / 2;
+        for (let i = 0; i <= ENGINE_NX; i++) {
+          const x = (i / ENGINE_NX) * flowExitX;
+          if (x > profile.throatX && radii[i] >= jetRadius) {
+            if (i < ENGINE_NX) separatesAt = i;
+            break;
+          }
+        }
+      }
       const g = result.gamma;
       const exitMach = machFromAreaRatio(result.expansionRatio, g);
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
@@ -245,6 +267,7 @@ export function createRuntime(
           restTemp: Math.min(0.1, 0.2 * exitTemp),
           exitPressure,
           burn,
+          separatesAt,
         },
         originX: view.originX * dpr,
         scale: pixelsPerMetre,
@@ -252,7 +275,7 @@ export function createRuntime(
         exitTemp,
         machMax: Math.max(1.5, exitMach),
         // The simulated plume carries on from the gas this simulation delivers to the exit.
-        feedsPlumeAtMach: useSim && jetFillsNozzle ? (fromFixed ? fromFixed.flow.mach : result.exitMach) : undefined,
+        feedsPlumeAtMach: wholeNozzle ? (fromFixed ? fromFixed.flow.mach : wholeFlow!.mach) : undefined,
       };
     }
 
@@ -271,7 +294,7 @@ export function createRuntime(
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX, simGas: gas !== null, burnt }, w, h);
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX, simGas: gas !== null, wholeNozzle, burnt }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 
