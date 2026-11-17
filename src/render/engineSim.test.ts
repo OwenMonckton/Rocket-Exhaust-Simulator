@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PRESETS } from '../physics/presets';
 import { ENGINE_NX, ENGINE_NY, initialEngineState, type EngineSimInputs } from './engineSim';
-import { engineProfile, radiusAt } from './geometry';
+import { engineProfile, grainBore, grainLeft, radiusAt } from './geometry';
 
 function inputsFor(presetId: string, fire: number): EngineSimInputs {
   const cfg = PRESETS.find((p) => p.id === presetId)!.config;
@@ -49,5 +49,30 @@ describe('initialEngineState', () => {
     };
     expect(mach(0)).toBeLessThan(0.5);
     expect(mach(ENGINE_NX - 1)).toBeGreaterThan(2.5);
+  });
+});
+
+describe('solid grain', () => {
+  const cfg = PRESETS.find((p) => p.id === 'solid-booster')!.config;
+  const rc = cfg.chamberDia / 2;
+
+  it('has a bore that opens out toward the nozzle', () => {
+    expect(grainBore(cfg, 0)).toBeLessThan(0.2 * rc);
+    expect(grainBore(cfg, 0.5 * cfg.chamberLen)).toBeGreaterThan(grainBore(cfg, 0.1 * cfg.chamberLen));
+    expect(grainBore(cfg, cfg.chamberLen)).toBe(Infinity);
+  });
+
+  it('burns back evenly, reaching the case at the nozzle end first', () => {
+    const x = 0.3 * cfg.chamberLen;
+    expect(grainBore(cfg, x, 0.5) - grainBore(cfg, x, 0)).toBeCloseTo(grainBore(cfg, 0, 0.5) - grainBore(cfg, 0, 0), 9);
+    expect(grainBore(cfg, 0.9 * cfg.chamberLen, 0.75)).toBeGreaterThanOrEqual(rc);
+    expect(grainBore(cfg, 0, 0.75)).toBeLessThan(rc);
+  });
+
+  it('runs from a full grain to nothing', () => {
+    expect(grainLeft(cfg, 0)).toBeCloseTo(1, 9);
+    expect(grainLeft(cfg, 0.5)).toBeGreaterThan(0);
+    expect(grainLeft(cfg, 0.5)).toBeLessThan(grainLeft(cfg, 0.25));
+    expect(grainLeft(cfg, 1)).toBe(0);
   });
 });

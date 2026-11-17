@@ -50,6 +50,8 @@ export type Sweep = 0 | 1 | -1;
 const RAMP_UP_S = 1.0;
 const RAMP_DOWN_S = 0.6;
 const SWEEP_S = 30;
+/** How long a solid motor's grain lasts at full burn. Longer than an altitude sweep, so one motor can fly it. */
+const SOLID_BURN_S = 60;
 export const ZOOM_MIN = 0.3;
 export const ZOOM_MAX = 1.4;
 
@@ -74,6 +76,9 @@ export function createRuntime(
   let engineGas: PlumeMode = 'drawn';
   // The engine the gas inside was last simulated for: a different engine starts afresh.
   let simulatedEngine = '';
+  // How far a solid motor's grain has burned (0 fresh, 1 gone), and the motor it belongs to.
+  let burnt = 0;
+  let burningMotor = '';
   const radii = new Float32Array(ENGINE_NX + 1);
   let zoom = 1;
   let lastGood: AppState = store.get();
@@ -98,6 +103,20 @@ export function createRuntime(
 
     const state = store.get();
     const result = simulate(state.config, state.flight);
+
+    // A solid motor burns its grain away while it fires, and goes out when there is none left.
+    // Choosing a different engine casts a fresh grain.
+    const isSolid = state.config.propellant === 'solid';
+    const motor = `${state.config.presetId}|${state.config.propellant}`;
+    if (motor !== burningMotor) burnt = 0;
+    burningMotor = motor;
+    if (isSolid && !failure && fire > 0.5) {
+      burnt = Math.min(1, burnt + dt / SOLID_BURN_S);
+      if (burnt >= 1) {
+        firing = false;
+        sweep = 0;
+      }
+    }
 
     if (failure) {
       failT += dt;
@@ -195,9 +214,17 @@ export function createRuntime(
       const solid = cfg.propellant === 'solid';
       for (let i = 0; i <= ENGINE_NX; i++) {
         const x = (i / ENGINE_NX) * flowExitX;
-        radii[i] = solid ? Math.min(radiusAt(profile, x), grainBore(cfg, x)) : radiusAt(profile, x);
+        radii[i] = solid ? Math.min(radiusAt(profile, x), grainBore(cfg, x, burnt)) : radiusAt(profile, x);
       }
-      const burn = solid ? { from: 0, to: ((cfg.chamberLen * GRAIN_END) / flowExitX) * ENGINE_NX } : undefined;
+      // Only the part of the bore that still has grain around it burns.
+      let burnTo = 0;
+      if (solid) {
+        const grainStations = ((cfg.chamberLen * GRAIN_END) / flowExitX) * ENGINE_NX;
+        for (let i = 0; i < grainStations; i++) {
+          if (grainBore(cfg, ((i + 0.5) / ENGINE_NX) * flowExitX, burnt) < 0.999 * (cfg.chamberDia / 2)) burnTo = i + 1;
+        }
+      }
+      const burn = solid ? { from: 0, to: burnTo } : undefined;
       const g = result.gamma;
       const exitMach = machFromAreaRatio(result.expansionRatio, g);
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
@@ -244,7 +271,7 @@ export function createRuntime(
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX, simGas: gas !== null }, w, h);
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX, simGas: gas !== null, burnt }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 
@@ -279,6 +306,8 @@ export function createRuntime(
     },
     toggleFire() {
       if (failure) return;
+      // Firing a burnt-out solid motor loads a fresh one.
+      if (!firing && burnt >= 1) burnt = 0;
       firing = !firing;
       if (!firing) sweep = 0;
     },
@@ -292,10 +321,12 @@ export function createRuntime(
       const alt = store.get().flight.altitudeKm;
       if (direction === 1 && (alt >= 99.9 || !firing)) store.set({ flight: { altitudeKm: 0 } });
       if (direction === -1 && (alt <= 0.1 || !firing)) store.set({ flight: { altitudeKm: 100 } });
+      if (burnt >= 1) burnt = 0;
       firing = true;
       sweep = direction;
     },
     rebuild() {
+      burnt = 0;
       failure = null;
       failT = 0;
       fire = 0;
