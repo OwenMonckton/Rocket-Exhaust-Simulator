@@ -256,7 +256,15 @@ void main() {
             // exit, taller than the bell, because the wall is far thicker in the simulation
             // than it is drawn.
             reach = min(reach, uWall.w + (xs - uWall.z) * 2.0);
-            wallDepth = EXTENSION_DEPTH * uWall.w + (xs - uWall.z) * 0.8;
+            // The depth counted carries on from what was counted at the exit at this height
+            // (nothing at all above the lip) and grows from there. Measured from the axis
+            // instead, the depth near the lip jumped by half within a tenth of a radius, which
+            // showed as a faint vertical step where the extension ends.
+            float atExit = min(sqrt(max(0.0, uWall.w * uWall.w - q.y * q.y)), EXTENSION_DEPTH * uWall.w);
+            // It grows slowly at first: the dense layer that ran along the wall is still just
+            // outside the counted depth here, and needs room to thin out before it is taken in.
+            float past = xs - uWall.z;
+            wallDepth = atExit + past * (0.3 + 0.3 * past);
           }
         }
         // The gas pressed against the inside of the extension is much denser and brighter than
