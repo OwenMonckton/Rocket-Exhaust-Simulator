@@ -264,7 +264,11 @@ void main() {
             // It grows slowly at first: the dense layer that ran along the wall is still just
             // outside the counted depth here, and needs room to thin out before it is taken in.
             float past = xs - uWall.z;
-            wallDepth = atExit + past * (0.3 + 0.3 * past);
+            // Slowest of all through the middle, where taking that layer in early showed as the
+            // centreline brightening again just after the exit. Above the lip nothing was
+            // counted at the exit, so there the depth opens at once and the plume can flare.
+            float shallow = 1.0 - atExit / (EXTENSION_DEPTH * uWall.w);
+            wallDepth = atExit + past * (0.3 * shallow + 0.25 * past);
           }
         }
         // The gas pressed against the inside of the extension is much denser and brighter than
