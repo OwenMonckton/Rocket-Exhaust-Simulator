@@ -234,19 +234,31 @@ void main() {
         // Looking into a nozzle extension, the far wall hides whatever is behind it, so only the
         // gas inside counts. Beside the extension the view is clear, and any exhaust that has
         // curled back around the outside of it is visible as usual.
+        const float EXTENSION_DEPTH = 0.7;
+        float wallDepth = 1e6;
         if (uWallOn > 0.5 && xs >= uWall.x) {
           if (xs <= uWall.z) {
             float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
-            if (q.y < inner) reach = min(reach, inner);
+            if (q.y < inner) {
+              reach = min(reach, inner);
+              wallDepth = EXTENSION_DEPTH * inner;
+            }
           } else {
             // Past the end of the extension the view opens out from the lip instead of jumping
             // straight to full width. Without this the plume shows a hard vertical edge at the
             // exit, taller than the bell, because the wall is far thicker in the simulation
             // than it is drawn.
             reach = min(reach, uWall.w + (xs - uWall.z) * 2.0);
+            wallDepth = EXTENSION_DEPTH * uWall.w + (xs - uWall.z) * 0.8;
           }
         }
-        float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
+        // The gas pressed against the inside of the extension is much denser and brighter than
+        // the flow down the middle. Looking all the way through the cone, every line of sight
+        // crosses that layer, which lit the whole interior evenly and then dropped away at the
+        // exit, where the layer expands and thins. So inside the extension only a shallow depth
+        // is counted, which shows the bright layer where it is (along the walls), and past the
+        // exit that depth grows gradually to take in the whole plume.
+        float depth = min(sqrt(max(0.0, reach * reach - q.y * q.y)), wallDepth);
         const int SAMPLES = 16;
         // Each pixel starts its samples at a slightly different depth so the steps don't show
         // as bands. A smooth, ordered pattern is used for that offset (interleaved gradient
