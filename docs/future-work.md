@@ -35,6 +35,7 @@ What is left of the old one-way arrangement:
   through the throat more slowly than it should.
 - **The RL10B-2 extension.** The engine grid stops at the end of the fixed nozzle, and the
   extension is a wall inside the plume grid.
+
 **The idea.** Rewrite the two as one solver that advances both grids together, on the same clock,
 and exchanges gas across the nozzle exit in both directions every step. Physically that is a
 single simulation; the two grids are only how it is stored. It would give real flow separation,
