@@ -1,2 +1,2 @@
 Free to use here:
-https://github.com/OwenMonckton/Rocket-Exhaust-Simulator/deployments/github-pages
+https://owenmonckton.github.io/Rocket-Exhaust-Simulator/
