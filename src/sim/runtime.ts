@@ -4,9 +4,11 @@ import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
-import { drawEngine, type FlowOverlay } from '../render/engineView';
+import { machFromAreaRatio } from '../physics/nozzle';
+import { BORE_FRACTION, GRAIN_END, drawEngine, type FlowOverlay } from '../render/engineView';
+import { ENGINE_NX } from '../render/engineSim';
 import { engineProfile, radiusAt, viewTransform, type View } from '../render/geometry';
-import { createPlumeRenderer } from '../render/plume';
+import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
 
@@ -31,6 +33,8 @@ export interface Runtime {
   setPlumeMode(mode: PlumeMode): void;
   /** False when this browser cannot run the gas simulation */
   readonly hasSim: boolean;
+  /** Show the gas inside the engine from a gas simulation instead of painting it on. */
+  setEngineGas(mode: PlumeMode): void;
   /** 1 is the default framing; smaller values shrink the engine to show more of the plume. Returns the zoom actually applied. */
   setZoom(z: number): number;
   getZoom(): number;
@@ -65,6 +69,10 @@ export function createRuntime(
   let failT = 0;
   let overlay: FlowOverlay = 'none';
   let plumeMode: PlumeMode = 'drawn';
+  let engineGas: PlumeMode = 'drawn';
+  // The engine the gas inside was last simulated for: a different engine starts afresh.
+  let simulatedEngine = '';
+  const radii = new Float32Array(ENGINE_NX + 1);
   let zoom = 1;
   let lastGood: AppState = store.get();
   // Remember the most recent engine that would survive firing, for the Rebuild button.
@@ -173,6 +181,51 @@ export function createRuntime(
       }
     }
 
+    // The gas inside the engine, simulated from the injector face to where it leaves the nozzle.
+    let gas: EngineGas | null = null;
+    if (engineGas === 'sim' && (plume?.simAvailable ?? false) && !failure) {
+      const cfg = state.config;
+      const rc = cfg.chamberDia / 2;
+      // A solid motor's gas runs down the bore of its grain, which opens out where the grain ends.
+      const grainEnd = cfg.chamberLen * GRAIN_END;
+      const taper = Math.min(0.6 * rc, 0.4 * cfg.chamberLen);
+      for (let i = 0; i <= ENGINE_NX; i++) {
+        const x = (i / ENGINE_NX) * flowExitX;
+        let r = radiusAt(profile, x);
+        if (cfg.propellant === 'solid' && x < grainEnd) {
+          const t = Math.min(1, Math.max(0, (x - (grainEnd - taper)) / taper));
+          r = Math.min(r, rc * (BORE_FRACTION + (1 - BORE_FRACTION) * t * t * (3 - 2 * t)));
+        }
+        radii[i] = r;
+      }
+      const g = result.gamma;
+      const exitMach = machFromAreaRatio(result.expansionRatio, g);
+      const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
+      const exitPressure = Math.pow(exitTemp, g / (g - 1));
+      const engine = `${cfg.presetId}|${cfg.propellant}`;
+      if (engine !== simulatedEngine) plume?.resetEngineSim();
+      simulatedEngine = engine;
+      gas = {
+        inputs: {
+          gamma: g,
+          fire,
+          length: flowExitX,
+          radii,
+          // Never a true vacuum, which the solver cannot hold: a fraction of the exit pressure at least.
+          restPressure: Math.min(0.3, Math.max(0.3 * exitPressure, result.pa / result.pc)),
+          // Well below anything the exhaust reaches, even down the centreline of a big nozzle
+          // where it runs colder than average, so cold still gas can be told apart from it.
+          restTemp: Math.min(0.1, 0.2 * exitTemp),
+          exitPressure,
+        },
+        originX: view.originX * dpr,
+        scale: pixelsPerMetre,
+        mode: overlay === 'none' ? 'flame' : overlay,
+        exitTemp,
+        machMax: Math.max(1.5, exitMach),
+      };
+    }
+
     plume?.draw(
       params,
       {
@@ -184,10 +237,11 @@ export function createRuntime(
       },
       timeS,
       sim,
+      gas,
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX }, w, h);
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX, simGas: gas !== null }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 
@@ -214,6 +268,10 @@ export function createRuntime(
     setPlumeMode(mode) {
       if (mode === 'sim' && plumeMode !== 'sim') plume?.resetSim();
       plumeMode = mode;
+    },
+    setEngineGas(mode) {
+      if (mode === 'sim' && engineGas !== 'sim') plume?.resetEngineSim();
+      engineGas = mode;
     },
     toggleFire() {
       if (failure) return;

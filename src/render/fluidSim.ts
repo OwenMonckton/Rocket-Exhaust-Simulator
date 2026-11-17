@@ -196,15 +196,16 @@ vec4 cell(ivec2 c, out float frac) {
 }
 
 // Van Leer slope limiter: sharper than minmod, still free of overshoots.
-vec4 limited(vec4 a, vec4 b) {
-  vec4 ab = a * b;
-  vec4 same = step(vec4(1e-30), ab);   // 1 where both slopes point the same way
-  return same * 2.0 * ab / mix(vec4(1.0), a + b, same);
-}
-
+// Worked out one component at a time. Blending between 1 and the sum of the slopes to avoid a
+// division by zero looks neater, but when the slopes are tiny that blend rounds to exactly
+// zero, and the division it was there to protect blows up.
 float limited1(float a, float b) {
   float ab = a * b;
   return ab > 1e-30 ? 2.0 * ab / (a + b) : 0.0;
+}
+
+vec4 limited(vec4 a, vec4 b) {
+  return vec4(limited1(a.x, b.x), limited1(a.y, b.y), limited1(a.z, b.z), limited1(a.w, b.w));
 }
 
 vec4 floorState(vec4 w) {

@@ -131,6 +131,13 @@ if (runtime.hasSim) {
 }
 plumeMode.addEventListener('change', () => applyPlumeMode(plumeMode.value as PlumeMode));
 
+const engineGas = $<HTMLSelectElement>('engine-gas');
+if (!runtime.hasSim) {
+  engineGas.disabled = true;
+  engineGas.title = "This browser can't run the gas simulation, so the gas inside the engine is drawn instead.";
+}
+engineGas.addEventListener('change', () => runtime.setEngineGas(engineGas.value as PlumeMode));
+
 $('zoom-out').addEventListener('click', () => runtime.setZoom(runtime.getZoom() / 1.25));
 $('zoom-in').addEventListener('click', () => runtime.setZoom(runtime.getZoom() * 1.25));
 $('stage').addEventListener(

@@ -15,7 +15,14 @@ export interface EngineAnim {
   failT: number;
   /** Distance (m) from the injector face to where the gas leaves the engine: the fixed nozzle's exit until an extension seats */
   flowExitX: number;
+  /** True when the gas inside the engine comes from the gas simulation, drawn underneath this view */
+  simGas?: boolean;
 }
+
+/** A solid motor's grain leaves a bore down the middle this fraction of the case radius, */
+export const BORE_FRACTION = 0.36;
+/** and stops this fraction of the way along the case. */
+export const GRAIN_END = 0.97;
 
 const css = (c: RGB, a = 1) =>
   `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`;
@@ -242,6 +249,27 @@ export function drawEngine(
   ctx.fillStyle = '#0d0f14';
   ctx.fill();
 
+  const boreR = BORE_FRACTION * rc;
+  // Where the gas goes: the whole passage, less a solid motor's grain and the part of the
+  // nozzle a separated jet has pulled away from.
+  const jet = (x: number, r: number) => {
+    let out = r;
+    if (isSolid && x < cfg.chamberLen * GRAIN_END) out = Math.min(out, boreR);
+    if (result.state === 'separated' && x > profile.throatX && r > result.effectiveExitDia / 2) {
+      out = (result.effectiveExitDia / 2) * (1 + 0.05 * Math.sin(x * 40 + anim.timeS * 30));
+    }
+    return out;
+  };
+  // Simulated gas is drawn on the layer underneath, so open a window onto it.
+  const simGas = !!anim.simGas && !anim.failure;
+  if (simGas) {
+    cavity(jet);
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   // Nuclear salt water: the fuel waits in a bundle of thin neutron-absorbing tubes, so it
   // cannot start reacting early, then runs down a single pipe that opens into the nozzle.
   if (isSaltwater) {
@@ -258,9 +286,8 @@ export function drawEngine(
   }
 
   // Solid propellant grain: fills the case, leaving a bore down the middle.
-  const boreR = 0.36 * rc;
   if (isSolid) {
-    const grainEnd = cfg.chamberLen * 0.97;
+    const grainEnd = cfg.chamberLen * GRAIN_END;
     for (const sign of [-1, 1]) {
       ctx.beginPath();
       ctx.rect(X(0), sign < 0 ? cy - rc * ppm : cy + boreR * ppm, grainEnd * ppm, (rc - boreR) * ppm);
@@ -277,16 +304,7 @@ export function drawEngine(
 
   // --- Hot gas inside the engine ------------------------------------------
   if (anim.fire > 0.01 && !anim.failure) {
-    const separated = result.state === 'separated';
-    const rEff = result.effectiveExitDia / 2;
-    const jet = (x: number, r: number) => {
-      let out = r;
-      if (isSolid && x < cfg.chamberLen * 0.97) out = Math.min(out, boreR);
-      if (separated && x > profile.throatX && r > rEff) {
-        out = rEff * (1 + 0.05 * Math.sin(x * 40 + anim.timeS * 30));
-      }
-      return out;
-    };
+    if (!simGas) {
     cavity(jet);
     const grad = ctx.createLinearGradient(X(0), 0, X(profile.exitX), 0);
     const look = prop.look;
@@ -338,6 +356,7 @@ export function drawEngine(
       ctx.globalAlpha = 0.5 * anim.fire;
       ctx.fill();
       ctx.globalAlpha = 1;
+    }
     }
 
     if (isSaltwater && anim.overlay === 'none') {
