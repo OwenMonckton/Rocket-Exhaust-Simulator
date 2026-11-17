@@ -33,6 +33,8 @@ export interface Runtime {
   setPlumeMode(mode: PlumeMode): void;
   /** False when this browser cannot run the gas simulation */
   readonly hasSim: boolean;
+  /** False when this browser cannot run the simulation of the gas inside the engine */
+  readonly hasEngineSim: boolean;
   /** Show the gas inside the engine from a gas simulation instead of painting it on. */
   setEngineGas(mode: PlumeMode): void;
   /** 1 is the default framing; smaller values shrink the engine to show more of the plume. Returns the zoom actually applied. */
@@ -186,7 +188,7 @@ export function createRuntime(
     // A jet that has torn off the wall leaves the nozzle narrower than the nozzle is, which the
     // engine simulation (it always fills the nozzle) knows nothing about.
     const jetFillsNozzle = fromFixed ? !fromFixed.flow.separated : result.state !== 'separated';
-    if (engineGas === 'sim' && (plume?.simAvailable ?? false) && !failure) {
+    if (engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure) {
       const cfg = state.config;
       const rc = cfg.chamberDia / 2;
       // A solid motor's gas runs down the bore of its grain, which opens out where the grain ends.
@@ -270,6 +272,7 @@ export function createRuntime(
   return {
     hasPlume: plume !== null,
     hasSim: plume?.simAvailable ?? false,
+    hasEngineSim: plume?.engineSimAvailable ?? false,
     setPlumeMode(mode) {
       if (mode === 'sim' && plumeMode !== 'sim') plume?.resetSim();
       plumeMode = mode;

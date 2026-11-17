@@ -44,6 +44,8 @@ export interface PlumeRenderer {
   resetEngineSim(): void;
   /** False when this browser cannot run the gas simulation */
   readonly simAvailable: boolean;
+  /** False when this browser cannot run the simulation of the gas inside the engine */
+  readonly engineSimAvailable: boolean;
 }
 
 const UNIFORMS = [
@@ -125,6 +127,9 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
   return {
     get simAvailable() {
       return sim !== null;
+    },
+    get engineSimAvailable() {
+      return engineSim !== null;
     },
     resetSim() {
       sim?.reset();
