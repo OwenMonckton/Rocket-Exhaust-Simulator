@@ -95,6 +95,14 @@ export interface EngineConfig {
    */
   extFixedDia: number;
   extDeploy: number;
+  /**
+   * Aerospike (XRS-2200): instead of a bell, a ring of small thrust cells fires along a central
+   * spike, and the outside of the jet is bounded only by the surrounding air. `chambers` is then
+   * the number of thrust cells, and the dimensions above describe one cell, with `exitDia` the
+   * share of the spike's base that one cell's flow expands across. `nozzleLenPct` sets how much
+   * of a full-length spike is kept before it is cut off flat.
+   */
+  aerospike: boolean;
 }
 
 export interface FlightState {
@@ -103,7 +111,8 @@ export interface FlightState {
   throttle: number;
 }
 
-export type ExpansionState = 'ideal' | 'over' | 'under' | 'separated';
+/** 'compensating': an aerospike below its design altitude, its jet shaped by the air to match it */
+export type ExpansionState = 'ideal' | 'over' | 'under' | 'separated' | 'compensating';
 export type Failure = null | 'burst' | 'burnthrough' | 'instability' | 'meltdown';
 
 export interface Limits {

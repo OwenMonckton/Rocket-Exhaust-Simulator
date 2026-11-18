@@ -349,7 +349,8 @@ main {
   margin-top: 2px;
 }
 
-.state[data-state='ideal'] {
+.state[data-state='ideal'],
+.state[data-state='compensating'] {
   color: var(--ok);
 }
 

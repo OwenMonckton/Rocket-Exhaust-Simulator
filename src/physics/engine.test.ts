@@ -17,6 +17,7 @@ const base: EngineConfig = {
   chambers: 1,
   extFixedDia: 0,
   extDeploy: 1,
+  aerospike: false,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 
@@ -26,6 +27,32 @@ function allFinite(r: SimResult) {
   }
   for (const v of Object.values(r.limits)) expect(Number.isFinite(v)).toBe(true);
 }
+
+describe('aerospike', () => {
+  it('only exists as a real choice, and never with a nozzle extension', () => {
+    expect(sanitize({ ...base, aerospike: 'yes' as never }).aerospike).toBe(false);
+    const spike = sanitize({ ...base, aerospike: true, extFixedDia: 0.5, extDeploy: 0.3, chambers: 20 });
+    expect(spike.aerospike).toBe(true);
+    expect(spike.extFixedDia).toBe(0);
+    expect(spike.extDeploy).toBe(1);
+    // Up to 40 thrust cells; bells stay at four chambers or fewer.
+    expect(spike.chambers).toBe(20);
+    expect(sanitize({ ...base, aerospike: true, chambers: 99 }).chambers).toBe(40);
+    expect(sanitize({ ...base, chambers: 20 }).chambers).toBe(4);
+  });
+  it('matches a bell that is the right size for the altitude, less a little loss', () => {
+    const spike = { ...base, aerospike: true, exitDia: 1.3 };
+    const r = simulate(spike, sl);
+    expect(r.state).toBe('compensating');
+    // A bell whose exit matches the air exactly does at least as well as the spike.
+    const matched = simulate({ ...base, exitDia: r.effectiveExitDia }, sl);
+    expect(matched.state).toBe('ideal');
+    expect(r.thrust).toBeLessThanOrEqual(matched.thrust * 1.001);
+    expect(r.thrust).toBeGreaterThan(simulate({ ...base, exitDia: 1.3 }, sl).thrust);
+    allFinite(r);
+    allFinite(simulate({ ...spike, chamberPressureBar: 5 }, { altitudeKm: 0, throttle: 0.4 }));
+  });
+});
 
 describe('simulate behaviour', () => {
   it('gains thrust with altitude and has better vacuum Isp', () => {

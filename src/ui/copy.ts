@@ -18,6 +18,30 @@ export const TIPS = {
   overlay: 'Colour the gas inside the engine by how fast or how hot it is.',
 };
 
+/** Slider names and tips for an aerospike, whose dimensions describe one of its thrust cells. */
+export const AEROSPIKE_DIMS = {
+  chamberDia: {
+    label: 'Thrust cell width',
+    tip: 'Width of each small combustion chamber feeding the spike. Wider cells strain their walls more and are prone to instability.',
+  },
+  chamberLen: {
+    label: 'Thrust cell length',
+    tip: 'Length of each thrust cell. Too short and the propellant leaves before it finishes burning.',
+  },
+  throatDia: {
+    label: 'Cell throat diameter',
+    tip: 'The narrowest point of each thrust cell. Wider throats let more propellant through, which means more thrust.',
+  },
+  exitDia: {
+    label: 'Engine exit diameter',
+    tip: 'Width of the ring of thrust cells, which sets how far the gas can expand along the spike. Below the altitude it suits, the air squeezes the jet to fit, so it never over-expands.',
+  },
+  nozzleLenPct: {
+    label: 'Spike length',
+    tip: 'How much of a full-length spike is kept before it is cut off flat. The cut-off end costs only a little efficiency and saves a lot of weight.',
+  },
+};
+
 export const STATE_COPY: Record<ExpansionState, { label: string; text: string }> = {
   ideal: {
     label: 'Ideally expanded',
@@ -30,6 +54,10 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   under: {
     label: 'Under-expanded',
     text: 'The nozzle is too small for this altitude, so the plume balloons outward after leaving it.',
+  },
+  compensating: {
+    label: 'Altitude compensating',
+    text: 'Nothing but air holds in the outside of an aerospike jet, so the air squeezes it until the exhaust leaves at the outside pressure. A bell this size would be over-expanded here.',
   },
   separated: {
     label: 'Flow separation!',

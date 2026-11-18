@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { PRESETS } from '../physics/presets';
-import { engineProfile, radiusAt, viewTransform } from './geometry';
+import { engineProfile, radiusAt, spikeJetRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
-  for (const p of PRESETS) {
+  for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
     it(`${p.name} has a sane contour`, () => {
       const cfg = p.config;
       const prof = engineProfile(cfg);
@@ -75,6 +75,55 @@ describe('engine profile', () => {
     const v = viewTransform(stowed, 1200, 600);
     expect(v.originX + (seated.seam.x - seated.length) * v.ppm).toBeGreaterThan(0);
     expect(engineProfile(PRESETS[0].config).extension).toBeNull();
+  });
+  it('shapes the XRS-2200 spike from its cells to a flat base', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const prof = engineProfile(cfg);
+    const spike = prof.spike!;
+    expect(prof.extension).toBeNull();
+    expect(prof.offsets).toEqual([0]);
+    // The lip encloses all twenty cells' share of the exit area.
+    expect(spike.lip.r).toBeCloseTo((Math.sqrt(20) * cfg.exitDia) / 2, 9);
+    expect(prof.throatX).toBe(spike.lip.x);
+    expect(prof.exitX).toBe(spike.base.x);
+    // The spike narrows steadily from the cells to the base, and the Mach number climbs.
+    const c = spike.contour;
+    expect(c[0].r).toBeLessThan(spike.lip.r);
+    for (let i = 1; i < c.length; i++) {
+      expect(c[i].x).toBeGreaterThan(c[i - 1].x);
+      expect(c[i].r).toBeLessThanOrEqual(c[i - 1].r + 1e-12);
+      expect(c[i].mach).toBeGreaterThanOrEqual(c[i - 1].mach);
+    }
+    expect(spike.base).toEqual({ x: c.at(-1)!.x, r: c.at(-1)!.r });
+    expect(spike.base.r).toBeGreaterThan(0.2 * spike.lip.r);
+    // The cells do some of the expanding, and the spike the rest.
+    expect(spike.cell.exitAreaRatio).toBeGreaterThan(2);
+    expect(spike.cell.exitAreaRatio).toBeLessThan((cfg.exitDia / cfg.throatDia) ** 2 / 4);
+    expect(spike.cell.throatS).toBeGreaterThan(spike.cell.chamberEndS);
+    expect(spike.cell.exitS).toBeGreaterThan(spike.cell.throatS);
+    // The engine starts at the front of the cells.
+    expect(Math.min(spike.cell.origin.x, c[0].x)).toBeGreaterThanOrEqual(-1e-9);
+    expect(prof.halfHeight).toBeGreaterThanOrEqual(spike.lip.r);
+  });
+  it('cuts a spike off shorter at a lower length setting, and keeps it all at 100%', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const short = engineProfile({ ...cfg, nozzleLenPct: 60 }).spike!;
+    const full = engineProfile({ ...cfg, nozzleLenPct: 100 }).spike!;
+    expect(full.base.x - full.lip.x).toBeGreaterThan(2 * (short.base.x - short.lip.x));
+    expect(full.base.x - full.lip.x).toBeCloseTo(full.fullLength, 6);
+    expect(full.base.r).toBeLessThan(1e-9);
+    expect(short.base.r).toBeGreaterThan(full.base.r);
+  });
+  it('wraps an aerospike jet around its spike, as wide as its flow area needs', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const spike = engineProfile(cfg).spike!;
+    // With nothing in the middle, the full design flow area fills the lip.
+    expect(spikeJetRadius(cfg, cfg.exitDia, 0)).toBeCloseTo(spike.lip.r, 9);
+    // Squeezed by the air, the jet still wraps around the base, and widens as the air thins.
+    const squeezed = spikeJetRadius(cfg, 2 * cfg.throatDia, spike.base.r);
+    expect(squeezed).toBeGreaterThan(spike.base.r);
+    expect(squeezed).toBeLessThan(spike.lip.r);
+    expect(spikeJetRadius(cfg, 3 * cfg.throatDia, spike.base.r)).toBeGreaterThan(squeezed);
   });
   it('fits the engine in the left of the stage', () => {
     for (const p of PRESETS) {

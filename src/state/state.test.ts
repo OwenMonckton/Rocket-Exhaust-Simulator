@@ -27,6 +27,13 @@ describe('share links', () => {
     const half = { config: { ...getPreset('rl10b-2')!.config, extDeploy: 0.5 }, flight: { altitudeKm: 100, throttle: 1 } };
     expect(decodeState(encodeState(half))).toEqual(half);
     expect(decodeState(old)!.config.extFixedDia).toBe(0);
+    expect(decodeState(old)!.config.aerospike).toBe(false);
+    // Links made before aerospikes have 16 entries.
+    const bellLink = 'v1.' + btoa(JSON.stringify(['rd-170', 'kerolox', 0.4, 0.4, 0.25, 1.4, 80, 0.012, 245, 2.63, 1, 0, 1, 4, 0, 1]));
+    expect(decodeState(bellLink)!.config.aerospike).toBe(false);
+    const spike = decodeState(encodeState({ config: getPreset('xrs-2200')!.config, flight: { altitudeKm: 0, throttle: 1 } }))!;
+    expect(spike.config.aerospike).toBe(true);
+    expect(spike.config.chambers).toBe(20);
     expect(decodeState(old)!.config.extDeploy).toBe(1);
   });
   it('rejects garbage without throwing (review focus)', () => {

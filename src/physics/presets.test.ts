@@ -34,7 +34,7 @@ describe('presets', () => {
     const state = (id: string) => simulate(getPreset(id)!.config, { altitudeKm: 0, throttle: 1 }).state;
     expect(state('merlin-vac')).toBe('separated');
     expect(state('rl10b-2')).toBe('separated');
-    for (const id of ['merlin-1d', 'raptor-2', 'rs-25', 'rd-180', 'rd-170', 'f-1', 'solid-booster']) {
+    for (const id of ['merlin-1d', 'raptor-2', 'rs-25', 'rd-180', 'rd-170', 'f-1', 'solid-booster', 'xrs-2200']) {
       expect(state(id), id).not.toBe('separated');
     }
   });
@@ -114,12 +114,51 @@ describe('presets', () => {
     expect(all.limits).toEqual(one.limits);
     // Four small chambers are far less prone to instability than one big one of the same thrust.
     expect(all.limits.instability).toBeLessThan(0.3);
-    expect(PRESETS.filter((p) => p.config.chambers > 1).map((p) => p.id)).toEqual(['rd-180', 'rd-170']);
+    expect(PRESETS.filter((p) => p.config.chambers > 1 && !p.config.aerospike).map((p) => p.id)).toEqual(['rd-180', 'rd-170']);
     // The RD-180 is half an RD-170: two chambers of nearly the same size.
     const rd180 = getPreset('rd-180')!.config;
     expect(rd180.chambers).toBe(2);
     expect(Math.abs(rd180.chamberDia - rd170.chamberDia) / rd170.chamberDia).toBeLessThan(0.05);
     expect(Math.abs(rd180.exitDia - rd170.exitDia) / rd170.exitDia).toBeLessThan(0.05);
+  });
+
+  it('gives the XRS-2200 aerospike a jet the air shapes at every altitude below its design', () => {
+    const xrs = getPreset('xrs-2200')!.config;
+    expect(xrs.aerospike).toBe(true);
+    expect(xrs.chambers).toBe(20);
+    expect(PRESETS.filter((p) => p.config.aerospike).map((p) => p.id)).toEqual(['xrs-2200']);
+    // The same cells and expansion ratio with a bell instead. A bell engine has at most four
+    // chambers, so compare Isp, not thrust.
+    const bell = { ...xrs, aerospike: false };
+    const at = (cfg: typeof xrs, altitudeKm: number) => simulate(cfg, { altitudeKm, throttle: 1 });
+    // Below its design altitude it never over-expands or separates: the exhaust leaves at the
+    // outside pressure, and it beats a bell of the same size.
+    for (const h of [0, 2, 5, 8, 12, 16]) {
+      const r = at(xrs, h);
+      expect(r.state, `${h} km`).toBe('compensating');
+      expect(r.pe).toBeCloseTo(r.pa, 6);
+      expect(r.effectiveExitDia).toBeLessThan(xrs.exitDia);
+      expect(r.isp, `${h} km`).toBeGreaterThan(at(bell, h).isp);
+    }
+    expect(at(bell, 0).state).toBe('separated');
+    // The jet widens as the air thins, until it fills the base at its design altitude.
+    expect(at(xrs, 10).effectiveExitDia).toBeGreaterThan(at(xrs, 0).effectiveExitDia);
+    // Above it, it is just a fixed nozzle of that size.
+    for (const h of [30, 100]) {
+      const r = at(xrs, h);
+      expect(r.state).toBe('under');
+      expect(r.isp).toBeCloseTo(at(bell, h).isp, 6);
+      expect(r.effectiveExitDia).toBeCloseTo(xrs.exitDia, 9);
+    }
+    // Thrust climbs smoothly the whole way up.
+    let prev = 0;
+    for (let h = 0; h <= 100; h += 0.5) {
+      const t = at(xrs, h).thrust;
+      expect(t, `${h} km`).toBeGreaterThanOrEqual(prev);
+      prev = t;
+    }
+    // Every cell is small, so none of them is near combustion instability.
+    expect(at(xrs, 0).limits.instability).toBeLessThan(0.2);
   });
 
   it('has a default preset', () => {

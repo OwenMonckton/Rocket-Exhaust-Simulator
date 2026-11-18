@@ -3,7 +3,7 @@ import { PRESETS } from '../physics/presets';
 import { PROPELLANTS, PROPELLANT_IDS } from '../physics/propellants';
 import type { PropellantId } from '../physics/types';
 import type { AppState, Store } from '../state/store';
-import { TIPS } from './copy';
+import { AEROSPIKE_DIMS, TIPS } from './copy';
 
 interface SliderSpec {
   id: string;
@@ -44,10 +44,14 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     range: () => RANGES[key],
     get: (s) => s.config[key],
     set: (v) => store.set({ config: { [key]: v } }),
-    format: (v, s) =>
-      key === 'exitDia'
-        ? `${formatLength(v)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`
-        : formatLength(v),
+    format: (v, s) => {
+      // An aerospike's sliders size one thrust cell; its exit is the whole ring of cells.
+      const shown = key === 'exitDia' && s.config.aerospike ? v * Math.sqrt(s.config.chambers) : v;
+      return key === 'exitDia'
+        ? `${formatLength(shown)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`
+        : formatLength(v);
+    },
+    describe: (s) => (s.config.aerospike ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
   });
 
   const groups: { title: string; sliders: SliderSpec[]; extra?: (box: HTMLElement) => void }[] = [
@@ -75,7 +79,12 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           range: () => RANGES.nozzleLenPct,
           get: (s) => s.config.nozzleLenPct,
           set: (v) => store.set({ config: { nozzleLenPct: Math.round(v) } }),
-          format: (v) => `${Math.round(v)} %`,
+          format: (v, s) =>
+            s.config.aerospike ? `${Math.round(20 + (80 * (v - 60)) / 40)} % of a full spike` : `${Math.round(v)} %`,
+          describe: (s) =>
+            s.config.aerospike
+              ? AEROSPIKE_DIMS.nozzleLenPct
+              : { label: 'Nozzle length', tip: TIPS.nozzleLenPct },
         },
         {
           id: 'chamberPressureBar',

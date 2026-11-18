@@ -1,3 +1,5 @@
+import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
+import { gasProps } from '../physics/propellants';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -25,6 +27,49 @@ export interface EngineProfile {
   frontSpace: number;
   /** Present when the nozzle has a deployable extension */
   extension: NozzleExtension | null;
+  /**
+   * Present for an aerospike. `points` is then just the jet's design outline, from the lip to
+   * the spike's base, `throatX` the lip and `exitX` the base.
+   */
+  spike: SpikeGeometry | null;
+}
+
+export interface SpikePoint extends ProfilePoint {
+  /** Mach number of the flow along the spike surface here */
+  mach: number;
+}
+
+/**
+ * Cross-section through an aerospike: one thrust cell above the axis (mirrored below), tilted
+ * in towards the spike it fires along.
+ */
+export interface SpikeGeometry {
+  /** Outer lip of the cell exit, where the jet's free outer edge begins */
+  lip: ProfilePoint;
+  /** Spike surface from the inner edge of the cell exit to the flat base */
+  contour: SpikePoint[];
+  /** Where the spike is cut off */
+  base: ProfilePoint;
+  /** How far a full-length spike would run from the lip before coming to a point, m */
+  fullLength: number;
+  cell: ThrustCell;
+}
+
+export interface ThrustCell {
+  /** Centre of the injector face */
+  origin: ProfilePoint;
+  /** Inward tilt of the cell's axis from the engine axis, radians */
+  tilt: number;
+  /**
+   * Inner wall contour in the cell's own frame: `x` along its axis from the injector face, `r`
+   * half the height of the passage. A cell is drawn as a slot seen edge-on, so heights scale with area.
+   */
+  points: ProfilePoint[];
+  chamberEndS: number;
+  throatS: number;
+  exitS: number;
+  /** Area ratio at the cell exit, where the spike takes over */
+  exitAreaRatio: number;
 }
 
 export interface NozzleExtension {
@@ -55,6 +100,7 @@ const DEG = Math.PI / 180;
 
 /** Inner wall contour: cylinder, smooth converging section, parabolic bell. */
 export function engineProfile(cfg: EngineConfig): EngineProfile {
+  if (cfg.aerospike) return aerospikeProfile(cfg);
   const rc = cfg.chamberDia / 2;
   const rt = cfg.throatDia / 2;
   const re = cfg.exitDia / 2;
@@ -126,7 +172,161 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
     offsets: multi ? [-pitch / 2, pitch / 2] : [0],
     halfHeight: Math.max(rc, re) + (multi ? pitch / 2 : 0),
     frontSpace: Math.max(multi ? 0.75 * pitch : 0, stowedOverhang),
+    spike: null,
   };
+}
+
+/** Prandtl–Meyer angle: how far supersonic flow has turned to reach a Mach number, radians. */
+export function prandtlMeyer(mach: number, g: number): number {
+  const k = Math.sqrt((g + 1) / (g - 1));
+  const b = Math.sqrt(Math.max(0, mach * mach - 1));
+  return k * Math.atan(b / k) - Math.atan(b);
+}
+
+/** Largest inward tilt of the thrust cells. The cells do the first part of the expansion themselves. */
+const CELL_TILT = 40 * DEG;
+const SPIKE_SAMPLES = 40;
+
+/**
+ * Aerospike geometry. The spike contour is Angelino's approximation of an ideal plug: each Mach
+ * line fanning out from the lip ends on the spike where the flow crossing it has the area its
+ * Mach number needs. Thrust cells tilted in by up to `CELL_TILT` deliver gas already partly
+ * expanded, and the spike is cut off flat according to `nozzleLenPct`.
+ */
+function aerospikeProfile(cfg: EngineConfig): EngineProfile {
+  const g = gasProps(cfg.propellant, cfg.mixtureRatio).gamma;
+  // The whole engine's flow leaves across a circle n times one cell's share of the exit area.
+  const lipR = (Math.sqrt(cfg.chambers) * cfg.exitDia) / 2;
+  const eps = (cfg.exitDia / cfg.throatDia) ** 2;
+  const exitMach = machFromAreaRatio(eps, g);
+  const nuExit = prandtlMeyer(exitMach, g);
+  const tilt = Math.min(CELL_TILT, 0.6 * nuExit);
+
+  // Mach number leaving the cells: the flow still has `tilt` left to turn along the spike.
+  let lo = 1;
+  let hi = exitMach;
+  for (let i = 0; i < 50; i++) {
+    const mid = 0.5 * (lo + hi);
+    if (prandtlMeyer(mid, g) < nuExit - tilt) lo = mid;
+    else hi = mid;
+  }
+  const cellMach = 0.5 * (lo + hi);
+  const cellEps = areaRatio(cellMach, g);
+
+  // Spike surface, measured from the lip.
+  const raw: SpikePoint[] = [];
+  for (let i = 0; i <= SPIKE_SAMPLES; i++) {
+    const t = i / SPIKE_SAMPLES;
+    const mach = cellMach + (exitMach - cellMach) * t;
+    const mu = Math.asin(1 / mach);
+    const alpha = nuExit - prandtlMeyer(mach, g) + mu;
+    const share = (areaRatio(mach, g) / eps) * (Math.sin(alpha) / Math.sin(mu));
+    const r = lipR * Math.sqrt(Math.max(0, 1 - share));
+    raw.push({ x: (lipR - r) / Math.tan(alpha), r, mach });
+  }
+  raw[raw.length - 1].r = 0;
+  const fullLength = raw[raw.length - 1].x;
+
+  // The cell exit spans from the lip to where the spike begins, square to the cell's axis, so
+  // with the cell tilted in its inner edge sits a little forward of the lip.
+  const exitH = Math.hypot(raw[0].x, lipR - raw[0].r);
+  const inner = { x: -exitH * Math.sin(tilt), r: lipR - exitH * Math.cos(tilt) };
+  const throatH = exitH / cellEps;
+  const chamberH = Math.min(throatH * (cfg.chamberDia / cfg.throatDia) ** 2, 3 * exitH);
+  const convLen = Math.max((chamberH - throatH) / 2 / Math.tan(30 * DEG), 0.3 * throatH);
+  const divLen = (exitH - throatH) / 2 / Math.tan(18 * DEG);
+  const throatS = cfg.chamberLen + convLen;
+  const exitS = throatS + divLen;
+  const cellPts: ProfilePoint[] = [
+    { x: 0, r: chamberH / 2 },
+    { x: cfg.chamberLen, r: chamberH / 2 },
+  ];
+  for (let i = 1; i <= 10; i++) {
+    const t = i / 10;
+    cellPts.push({
+      x: cfg.chamberLen + convLen * t,
+      r: throatH / 2 + ((chamberH - throatH) / 2) * (0.5 + 0.5 * Math.cos(Math.PI * t)),
+    });
+  }
+  for (let i = 1; i <= 10; i++) {
+    const t = i / 10;
+    cellPts.push({ x: throatS + divLen * t, r: throatH / 2 + ((exitH - throatH) / 2) * Math.sqrt(t) });
+  }
+
+  // The cell's axis points down the flow, tilted in towards the spike.
+  const exitMid = { x: -0.5 * exitH * Math.sin(tilt), r: lipR - 0.5 * exitH * Math.cos(tilt) };
+  const injector = { x: exitMid.x - exitS * Math.cos(tilt), r: exitMid.r + exitS * Math.sin(tilt) };
+  // The lower corner of the injector face is the furthest-forward part of the engine.
+  const shift = -(injector.x - (chamberH / 2) * Math.sin(tilt));
+
+  // Cut the spike off where `nozzleLenPct` says: 60 % keeps a fifth of it, 100 % all of it.
+  const keep = 0.2 + (0.8 * (cfg.nozzleLenPct - 60)) / 40;
+  const cutX = Math.max(inner.x + 1e-6, keep * fullLength);
+  // The square-cut cell exit ends forward of where Angelino's spike begins, so ease the front of
+  // the spike back to meet it, fading out by the base.
+  const drop = raw[0].r - inner.r;
+  const pull = raw[0].x - inner.x;
+  const eased = raw.map((p) => {
+    const t = Math.min(1, Math.max(0, (p.x - raw[0].x) / Math.max(1e-9, cutX - raw[0].x)));
+    const w = 1 - t * t * (3 - 2 * t);
+    return { ...p, x: p.x - pull * w, r: p.r - drop * w };
+  });
+  // The first eased point is the cell's inner edge itself.
+  const contour: SpikePoint[] = [{ ...inner, mach: cellMach }];
+  for (let i = 1; i < eased.length; i++) {
+    const b = eased[i];
+    if (b.x <= inner.x) continue;
+    if (b.x >= cutX) {
+      const a = eased[i - 1];
+      const f = Math.max(0, (cutX - a.x) / Math.max(1e-12, b.x - a.x));
+      contour.push({ x: cutX, r: a.r + (b.r - a.r) * f, mach: a.mach + (b.mach - a.mach) * f });
+      break;
+    }
+    contour.push(b);
+  }
+  const moved = contour.map((p) => ({ ...p, x: p.x + shift }));
+  const base = moved[moved.length - 1];
+  const lip = { x: shift, r: lipR };
+  const top = injector.r + (chamberH / 2) * Math.cos(tilt);
+
+  return {
+    points: [lip, { x: base.x, r: lipR }],
+    chamberEndX: lip.x,
+    throatX: lip.x,
+    exitX: base.x,
+    length: base.x,
+    maxRadius: lipR,
+    offsets: [0],
+    halfHeight: Math.max(lipR, top),
+    frontSpace: 0,
+    extension: null,
+    spike: {
+      lip,
+      contour: moved,
+      base: { x: base.x, r: base.r },
+      fullLength,
+      cell: {
+        origin: { x: injector.x + shift, r: injector.r },
+        tilt,
+        points: cellPts,
+        chamberEndS: cfg.chamberLen,
+        throatS,
+        exitS,
+        exitAreaRatio: cellEps,
+      },
+    },
+  };
+}
+
+/**
+ * Outer radius (m) of an aerospike's jet at a point along the spike, where the spike's surface
+ * is at `spikeR`. The gas flows in a ring around the spike, so it reaches out as far as it takes
+ * to hold its flow area: the area it leaves the engine with, which the air squeezes down below
+ * the design altitude. Behind the base it closes over a pocket of slower gas that travels with it.
+ */
+export function spikeJetRadius(cfg: EngineConfig, effectiveExitDia: number, spikeR: number): number {
+  const jet = (Math.sqrt(cfg.chambers) * effectiveExitDia) / 2;
+  return Math.sqrt(spikeR * spikeR + jet * jet);
 }
 
 /** Inner wall radius at a distance x along the engine. */

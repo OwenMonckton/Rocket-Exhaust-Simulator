@@ -29,8 +29,10 @@ interface Spec {
   nozzleLenPct: number;
   /** Fraction of the structural limit the stock engine runs at */
   structural: number;
-  /** Number of identical chambers sharing one turbopump (default 1) */
+  /** Number of identical chambers sharing one turbopump (default 1), or an aerospike's thrust cells */
   chambers?: number;
+  /** Thrust cells firing along a central spike instead of into a bell */
+  aerospike?: boolean;
   published: Preset['published'];
 }
 
@@ -117,6 +119,15 @@ const SPECS: Spec[] = [
     published: { thrustKN: 12900, atVacuum: true, ispVac: 6730 },
   },
   {
+    id: 'xrs-2200',
+    name: 'XRS-2200 aerospike',
+    blurb: 'Linear aerospike built for the X-33, test-fired but never flown. Twenty small thrust cells fire along a spike, and the outside air shapes the jet, so it suits every altitude.',
+    // Dimensions are per thrust cell; the spike is cut off at about a third of its full length.
+    propellant: 'hydrolox', pcBar: 58.9, of: 5.5, eps: 58, contraction: 2.0, lStar: 0.9,
+    nozzleLenPct: 65, structural: 0.4, chambers: 20, aerospike: true,
+    published: { thrustKN: 917, atVacuum: false, ispSL: 338, ispVac: 428 },
+  },
+  {
     id: 'solid-booster',
     name: 'Solid booster',
     blurb: 'A generic strap-on solid rocket motor. Bright, smoky, and it cannot be throttled.',
@@ -153,6 +164,7 @@ function build(s: Spec): Preset {
       // Deployable extension: stock engines have it seated.
       extFixedDia: s.epsStowed ? round(throatDia * Math.sqrt(s.epsStowed)) : 0,
       extDeploy: 1,
+      aerospike: s.aerospike ?? false,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };

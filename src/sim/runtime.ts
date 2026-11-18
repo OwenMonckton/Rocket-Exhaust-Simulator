@@ -160,7 +160,8 @@ export function createRuntime(
           fromFixed ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope } : undefined,
         )
       : null;
-    if (sim && result.state !== 'separated') {
+    // An aerospike has no bell for the jet to follow.
+    if (sim && result.state !== 'separated' && !profile.spike) {
       // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
       // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back.
       const back = Math.min(2 * plumeRadiusM, flowExitX - profile.throatX);
