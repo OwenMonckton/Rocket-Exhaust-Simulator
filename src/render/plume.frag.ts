@@ -23,6 +23,8 @@ uniform float uSimT0;       // stagnation temperature over exit temperature
 uniform float uSimAmbP;     // ambient pressure over exit pressure
 uniform float uSimFloor;    // the solver's stand-in for a vacuum: the lowest ambient pressure it can hold
 uniform sampler2D uSimS;    // exhaust density
+uniform vec2 uSimUnit;      // density and temperature of exhaust leaving a nozzle, in the solver's units: 1 unless
+                            // the solver takes its gas in before it has finished expanding, as an aerospike's does
 uniform float uAfter;       // afterburning strength
 uniform vec3 uAfterCol;
 uniform float uParticles;   // glowing particles carried in the exhaust
@@ -47,6 +49,9 @@ uniform float uInExitT;          // temperature at the nozzle exit over chamber 
 uniform float uInMachMax;        // Mach number at the top of the speed scale
 uniform float uInRestT;          // temperature of the still gas in an unlit engine, over chamber temperature
 uniform float uInOpacity;
+uniform int uSpikeView;          // colour the gas over an aerospike's spike: 0 no, 1 by speed, 2 by temperature
+uniform vec3 uSpikeScale;        // the spike's length in exit radii, the Mach number at the top of the speed scale,
+                                 // and the temperature at the bottom of the temperature scale over chamber temperature
 
 uniform vec2 uRes;
 uniform vec2 uExit;
@@ -115,7 +120,7 @@ vec3 simGas(vec2 q) {
   vec4 U = texture(uSim, uv);
   float rho = max(U.x, 1e-6);
   float p = max((uSimGamma - 1.0) * (U.w - 0.5 * (U.y * U.y + U.z * U.z) / rho), 1e-8);
-  return vec3(rho, p / rho, clamp(texture(uSimS, uv).x / rho, 0.0, 1.0));
+  return vec3(rho / uSimUnit.x, p / rho / uSimUnit.y, clamp(texture(uSimS, uv).x / rho, 0.0, 1.0));
 }
 
 // How much of a parcel of exhaust to show, given how close it is to the solver's vacuum floor.
@@ -210,6 +215,29 @@ vec3 engineGas(vec3 col, vec2 frag, float centreY) {
   // Still, cold gas in an unlit engine is not shown.
   alpha *= smoothstep(1.3 * uInRestT, 2.2 * uInRestT, temp);
   return mix(vec3(0.051, 0.059, 0.078), gas, alpha);
+}
+
+// The gas flowing over an aerospike's spike, coloured by its speed or temperature. It comes
+// from the plume's own grid, cut through the middle: the spike stands in that grid.
+vec3 spikeGas(vec3 col, vec2 frag) {
+  vec2 p = (frag - uExit) / uRadius;
+  vec2 size = uSimGrid * uSimCell;
+  if (p.x < 0.0 || p.x > uSpikeScale.x || abs(p.y) > size.y) return col;
+  vec2 uv = (vec2(p.x, abs(p.y)) + vec2(uSimUp, 0.0)) / size;
+  vec4 U = texture(uSim, uv);
+  float rho = max(U.x, 1e-6);
+  float speed2 = (U.y * U.y + U.z * U.z) / (rho * rho);
+  float temp = max((uSimGamma - 1.0) * (U.w - 0.5 * rho * speed2), 1e-8) / rho;
+  float mach = sqrt(speed2 / (uSimGamma * temp));
+  // 0 at the temperature the gas would leave a full-length spike at, 1 at chamber temperature.
+  float heat = clamp((temp / uSimUnit.y / uSimT0 - uSpikeScale.z) / max(1e-4, 1.0 - uSpikeScale.z), 0.0, 1.0);
+  vec3 gas = uSpikeView == 1 ? heatMap(mach / uSpikeScale.y) : heatMap(heat);
+  // Only the exhaust is coloured; the air around it is left as it is.
+  float exhaust = clamp(texture(uSimS, uv).x / rho, 0.0, 1.0);
+  // Nor is gas that has thinned out to far less than it would have at the end of a full-length
+  // spike: in a vacuum that is the fan spreading round the lip, which fills the whole view.
+  float body = smoothstep(0.08, 0.5, rho / uSimUnit.x);
+  return mix(col, gas, 0.95 * smoothstep(0.35, 0.65, exhaust) * body);
 }
 
 void main() {
@@ -430,6 +458,7 @@ void main() {
       col = engineGas(col, frag, uExit.y + uExitOffsets[e]);
     }
   }
+  if (uSpikeView != 0 && uUseSim > 0.5) col = spikeGas(col, frag);
 
   outColor = vec4(col, 1.0);
 }

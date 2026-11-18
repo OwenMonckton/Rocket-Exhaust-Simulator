@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { simulate } from '../physics/engine';
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { PRESETS } from '../physics/presets';
-import { engineProfile, radiusAt, spikeJetRadius, viewTransform } from './geometry';
+import { engineProfile, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
   for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
@@ -143,6 +143,16 @@ describe('engine profile', () => {
     expect(full.base.x - full.lip.x).toBeCloseTo(full.fullLength, 6);
     expect(full.base.r).toBeLessThan(1e-9);
     expect(short.base.r).toBeGreaterThan(full.base.r);
+  });
+  it('reads the spike surface off at any point along the engine', () => {
+    const spike = engineProfile(PRESETS.find((p) => p.id === 'xrs-2200')!.config).spike!;
+    const c = spike.contour;
+    for (const q of c) expect(spikeSurfaceRadius(spike, q.x)).toBeCloseTo(q.r, 9);
+    const mid = spikeSurfaceRadius(spike, 0.5 * (c[3].x + c[4].x));
+    expect(mid).toBeCloseTo(0.5 * (c[3].r + c[4].r), 9);
+    // Forward of where it begins it keeps its starting radius; behind the base there is nothing.
+    expect(spikeSurfaceRadius(spike, c[0].x - 1)).toBe(c[0].r);
+    expect(spikeSurfaceRadius(spike, spike.base.x + 1e-6)).toBe(0);
   });
   it('wraps an aerospike jet around its spike, never wider than the lip while the air squeezes it', () => {
     const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;

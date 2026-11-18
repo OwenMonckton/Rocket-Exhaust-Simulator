@@ -329,6 +329,22 @@ export function spikeJetRadius(cfg: EngineConfig, effectiveExitDia: number, spik
   return Math.sqrt(spikeR * spikeR + share * (lipR * lipR - spikeR * spikeR));
 }
 
+/**
+ * Radius (m) of the spike's surface at a distance x along the engine. Forward of where the
+ * surface begins it keeps the radius it begins at; behind the base there is nothing, so 0.
+ */
+export function spikeSurfaceRadius(spike: SpikeGeometry, x: number): number {
+  const c = spike.contour;
+  if (x <= c[0].x) return c[0].r;
+  for (let i = 1; i < c.length; i++) {
+    if (x <= c[i].x) {
+      const f = (x - c[i - 1].x) / Math.max(1e-12, c[i].x - c[i - 1].x);
+      return c[i - 1].r + (c[i].r - c[i - 1].r) * f;
+    }
+  }
+  return 0;
+}
+
 /** Inner wall radius at a distance x along the engine. */
 export function radiusAt(profile: EngineProfile, x: number): number {
   const p = profile.points;

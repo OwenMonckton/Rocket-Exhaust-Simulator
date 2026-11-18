@@ -12,8 +12,10 @@ interface Pt {
 
 /**
  * Cross-section through an aerospike: a thrust cell above and below the axis, each firing in
- * along the central spike, and the gas expanding over the spike to its flat base. The outside of
- * the jet has no wall: it is drawn where the surrounding air holds it.
+ * along the central spike. The gas on the spike is normally simulated, by the plume's solver,
+ * and shows through from the layer underneath (`anim.simGas`). With the plume drawn instead,
+ * this draws the gas too, from a formula: a band over the spike, as wide as the surrounding air
+ * lets the jet be.
  */
 export function drawAerospike(
   ctx: CanvasRenderingContext2D,
@@ -105,7 +107,8 @@ export function drawAerospike(
   }
 
   // --- Gas expanding over the spike ----------------------------------------
-  if (firing) {
+  // Only when it is not being simulated: simulated gas is drawn on the layer underneath.
+  if (firing && !anim.simGas) {
     // The jet's free outer edge: it leaves the lip and settles to the width the air allows.
     const x0 = spike.lip.x;
     const settle = 0.25 * (spike.base.x - x0);

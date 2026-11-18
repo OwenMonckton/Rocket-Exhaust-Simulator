@@ -36,6 +36,34 @@ export interface SimInputs {
    * the exit plane (x is negative there), has radius 1 + divergence*x + wallCurve*x*x.
    */
   wallCurve: number;
+  /** Present for an aerospike, whose gas the grid takes in and shapes quite differently */
+  spike?: SimSpike;
+}
+
+/** How many points describe the surface of an aerospike's spike. */
+export const SPIKE_SAMPLES = 33;
+
+/**
+ * An aerospike in the grid. Lengths are in units of the lip's radius, and the grid's origin is
+ * the plane of the lip. The gas arrives through a ring between the spike and the lip, already
+ * supersonic and heading inward, in the state the other inputs describe: the thrust cells' exit.
+ * From there the grid works out everything itself: the expansion round the lip, the flow along
+ * the spike, how the outside air shapes the jet, and the wake behind the flat base.
+ */
+export interface SimSpike {
+  /** Radius of the spike's surface at `SPIKE_SAMPLES` evenly spaced points from the lip's plane to the base */
+  radii: number[];
+  /** Distance from the lip's plane to the base */
+  length: number;
+  /** Angle the arriving gas is heading inward at, radians */
+  tilt: number;
+  /**
+   * Density and temperature the gas would have once the whole spike had expanded it, relative to
+   * how it arrives. That is the state a bell's exhaust leaves its nozzle in, which is what the
+   * plume's brightness is judged against.
+   */
+  designDensity: number;
+  designTemp: number;
 }
 
 /**
@@ -150,6 +178,10 @@ uniform ivec2 uInletGrid;
 uniform vec3 uInletScale;   // its density, speed and pressure in this solver's units
 uniform float uInletCold;   // temperature of the still gas in an unlit engine
 uniform vec2 uInletGeom;    // where its grid ends (0: at this grid's origin), and its columns per radius
+uniform float uSpikeOn;     // 1 for an aerospike: a solid spike stands in the grid, and the gas arrives as a ring round it
+uniform float uSpike[${SPIKE_SAMPLES}];     // radius of the spike's surface, at evenly spaced points from the lip's plane to its base
+uniform float uSpikeLen;    // distance from the lip's plane to the base
+uniform vec2 uSpikeDir;     // direction the gas arrives in
 
 layout(location = 0) out vec4 outU;
 layout(location = 1) out vec4 outS;
@@ -193,11 +225,46 @@ bool inEngineExtension(vec2 p) {
   return uInletOn > 0.5 && uWallOn > 0.5 && p.x >= 0.0 && p.x < uInletGeom.x && p.y < extensionRadius(p.x);
 }
 
+// Radius and slope of an aerospike's surface at x. Forward of the lip's plane it carries on at
+// the radius it has there; that part only marks the inner edge of the ring the gas arrives through.
+float spikeRadius(float x) {
+  float f = clamp(x / uSpikeLen, 0.0, 1.0) * float(${SPIKE_SAMPLES - 1});
+  int i = min(int(f), ${SPIKE_SAMPLES - 2});
+  return mix(uSpike[i], uSpike[i + 1], f - float(i));
+}
+
+float spikeSlope(float x) {
+  float f = clamp(x / uSpikeLen, 0.0, 1.0) * float(${SPIKE_SAMPLES - 1});
+  int i = min(int(f), ${SPIKE_SAMPLES - 2});
+  return (uSpike[i + 1] - uSpike[i]) * float(${SPIKE_SAMPLES - 1}) / uSpikeLen;
+}
+
+// The body of an aerospike: the spike itself, and the engine in front of it inside the ring
+// of thrust cells.
+bool solidSpike(ivec2 c) {
+  if (uSpikeOn < 0.5 || c.x < 0 || c.y < 0) return false;
+  vec2 p = position(c);
+  if (p.x > uSpikeLen) return false;
+  // Forward of the lip, a cell is solid only if none of it reaches into the ring.
+  if (p.x < 0.0) return p.y + 0.5 * uDx <= uSpike[0];
+  return p.y < spikeRadius(p.x);
+}
+
 // Inside the nozzle itself. These cells are not simulated: they hold the exhaust as it arrives.
 bool inNozzle(ivec2 c) {
   if (c.x < 0 || c.y < 0) return false;
   vec2 p = position(c);
+  // An aerospike: everything forward of the lip's plane, out to the lip. Any cell the lip cuts
+  // through counts, so the ring delivers exactly the flow it should however coarse the grid.
+  if (uSpikeOn > 0.5) return p.x < 0.0 && p.y - 0.5 * uDx < 1.0;
   return (p.x < 0.0 && p.y < nozzleRadius(p.x)) || inEngineExtension(p);
+}
+
+// The exhaust arriving from an aerospike's thrust cells: uniform, heading inward, through the
+// ring between the spike and the lip. A cell only partly inside the ring delivers that share.
+vec4 ringState(vec2 p) {
+  float cover = clamp((min(p.y + 0.5 * uDx, 1.0) - max(p.y - 0.5 * uDx, uSpike[0])) / uDx, 0.0, 1.0);
+  return vec4(uFire * cover, uExitSpeed * uSpikeDir, uFire * cover);
 }
 
 // The exhaust arriving at the nozzle exit, at radius r (as a fraction of the nozzle's radius).
@@ -260,7 +327,10 @@ vec4 cell(ivec2 c, out float frac) {
     if (uFire > 0.02) {
       vec2 p = position(c);
       float r = p.y / nozzleRadius(p.x);
-      if (uInletOn > 0.5) {
+      if (uSpikeOn > 0.5) {
+        w = ringState(p);
+        frac = 1.0;
+      } else if (uInletOn > 0.5) {
         w = inletState(p, frac);
       } else {
         w = exhaustState(r);
@@ -361,22 +431,31 @@ bool solidExtension(ivec2 c) {
 // there the nozzle is a solid surface with no thickness. Gas downstream of the exit sees
 // the same cells as the exhaust arriving.
 bool blocked(ivec2 c, ivec2 neighbour) {
-  return solidExtension(neighbour) || (position(c).x < 0.0 && inNozzle(neighbour));
+  return solidExtension(neighbour) || solidSpike(neighbour) || (position(c).x < 0.0 && inNozzle(neighbour));
 }
 
 // Gas bounces off a wall: the part of its velocity pointing into the surface is reversed.
 // Using the wall's true slope here, not the grid's stair-steps, keeps the flow along it smooth.
-vec4 bounce(vec4 w, ivec2 wallCell) {
-  vec2 n = inNozzle(wallCell)
-    ? normalize(vec2(uDiverge + 2.0 * uWallCurve * position(wallCell).x, -1.0))
-    : normalize(vec2(uWallShape.x + 2.0 * uWallShape.y * (position(wallCell).x - uWall.x), -1.0));
+// from is the cell the gas is in.
+vec4 bounce(vec4 w, ivec2 wallCell, ivec2 from) {
+  vec2 n;
+  if (solidSpike(wallCell)) {
+    // Behind the spike is its flat base; everywhere else, its sloping surface.
+    n = position(from).x > uSpikeLen
+      ? vec2(1.0, 0.0)
+      : normalize(vec2(spikeSlope(max(position(wallCell).x, 0.0)), -1.0));
+  } else if (inNozzle(wallCell)) {
+    n = normalize(vec2(uDiverge + 2.0 * uWallCurve * position(wallCell).x, -1.0));
+  } else {
+    n = normalize(vec2(uWallShape.x + 2.0 * uWallShape.y * (position(wallCell).x - uWall.x), -1.0));
+  }
   w.yz -= 2.0 * dot(w.yz, n) * n;
   return w;
 }
 
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
-  if (solidExtension(c)) {
+  if (solidExtension(c) || solidSpike(c)) {
     outU = toCons(ambient());
     outS = vec4(0.0, 0.0, 0.0, 1.0);
     return;
@@ -400,20 +479,20 @@ void main() {
   // Where a neighbour is solid wall, replace it (and whatever lies beyond) with mirror images.
   ivec2 n1 = c + ivec2(-1, 0);
   ivec2 n2 = c + ivec2(-2, 0);
-  if (blocked(c, n1)) { xm1 = bounce(w0, n1); fxm1 = f0; xm2 = bounce(xp1, n1); fxm2 = fxp1; }
-  else if (blocked(c, n2)) { xm2 = bounce(xm1, n2); fxm2 = fxm1; }
+  if (blocked(c, n1)) { xm1 = bounce(w0, n1, c); fxm1 = f0; xm2 = bounce(xp1, n1, c); fxm2 = fxp1; }
+  else if (blocked(c, n2)) { xm2 = bounce(xm1, n2, c); fxm2 = fxm1; }
   n1 = c + ivec2(1, 0);
   n2 = c + ivec2(2, 0);
-  if (blocked(c, n1)) { xp1 = bounce(w0, n1); fxp1 = f0; xp2 = bounce(xm1, n1); fxp2 = fxm1; }
-  else if (blocked(c, n2)) { xp2 = bounce(xp1, n2); fxp2 = fxp1; }
+  if (blocked(c, n1)) { xp1 = bounce(w0, n1, c); fxp1 = f0; xp2 = bounce(xm1, n1, c); fxp2 = fxm1; }
+  else if (blocked(c, n2)) { xp2 = bounce(xp1, n2, c); fxp2 = fxp1; }
   n1 = c + ivec2(0, -1);
   n2 = c + ivec2(0, -2);
-  if (blocked(c, n1)) { ym1 = bounce(w0, n1); fym1 = f0; ym2 = bounce(yp1, n1); fym2 = fyp1; }
-  else if (blocked(c, n2)) { ym2 = bounce(ym1, n2); fym2 = fym1; }
+  if (blocked(c, n1)) { ym1 = bounce(w0, n1, c); fym1 = f0; ym2 = bounce(yp1, n1, c); fym2 = fyp1; }
+  else if (blocked(c, n2)) { ym2 = bounce(ym1, n2, c); fym2 = fym1; }
   n1 = c + ivec2(0, 1);
   n2 = c + ivec2(0, 2);
-  if (blocked(c, n1)) { yp1 = bounce(w0, n1); fyp1 = f0; yp2 = bounce(ym1, n1); fyp2 = fym1; }
-  else if (blocked(c, n2)) { yp2 = bounce(yp1, n2); fyp2 = fyp1; }
+  if (blocked(c, n1)) { yp1 = bounce(w0, n1, c); fyp1 = f0; yp2 = bounce(ym1, n1, c); fyp2 = fym1; }
+  else if (blocked(c, n2)) { yp2 = bounce(yp1, n2, c); fyp2 = fyp1; }
 
   float sxL, sxR, syB, syT;
   vec4 fxL = faceFlux(xm2, xm1, w0, xp1, fxm2, fxm1, f0, fxp1, sxL);
@@ -559,6 +638,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
     wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'), wallShape: u('uWallShape'),
     inletOn: u('uInletOn'), inlet: u('uInlet'), inletGrid: u('uInletGrid'), inletScale: u('uInletScale'), inletCold: u('uInletCold'), inletGeom: u('uInletGeom'),
+    spikeOn: u('uSpikeOn'), spike: u('uSpike[0]'), spikeLen: u('uSpikeLen'), spikeDir: u('uSpikeDir'),
   };
   const r = (name: string) => gl.getUniformLocation(resampler, name);
   const rloc = {
@@ -602,7 +682,8 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     const scalar = new Float32Array(SIM_NX * SIM_NY);
     const energy = inputs.pAmb / (inputs.gamma - 1);
     // If the engine is already burning, start with a column of exhaust so the plume forms quickly.
-    const burning = inputs.fire > 0.5;
+    // Not for an aerospike, whose gas arrives as a ring heading inward, not as a column.
+    const burning = inputs.fire > 0.5 && !inputs.spike;
     const jetRows = Math.floor(SIM_NX / lengthRadii);
     const jetEnergy = 1 / (inputs.gamma - 1) + 0.5 * inputs.uExit * inputs.uExit;
     for (let j = 0; j < SIM_NY; j++) {
@@ -709,6 +790,13 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
         gl.uniform3f(loc.inletScale, inlet.density, inlet.speed, inlet.pressure);
         gl.uniform1f(loc.inletCold, inlet.coldTemp);
         gl.uniform2f(loc.inletGeom, inlet.exitX, inlet.columnsPerRadius);
+      }
+      const spike = inputs.spike;
+      gl.uniform1f(loc.spikeOn, spike ? 1 : 0);
+      if (spike) {
+        gl.uniform1fv(loc.spike, spike.radii.slice(0, SPIKE_SAMPLES));
+        gl.uniform1f(loc.spikeLen, Math.max(1e-3, spike.length));
+        gl.uniform2f(loc.spikeDir, Math.cos(spike.tilt), -Math.sin(spike.tilt));
       }
       return dt;
     },
