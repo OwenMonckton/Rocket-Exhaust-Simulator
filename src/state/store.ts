@@ -23,7 +23,7 @@ const close = (a: number, b: number) => Math.abs(a - b) <= 1e-6 * Math.max(1, Ma
 export function isModified(cfg: EngineConfig): boolean {
   const stock = getPreset(cfg.presetId)?.config;
   if (!stock) return false;
-  if (cfg.propellant !== stock.propellant) return true;
+  if (cfg.propellant !== stock.propellant || cfg.aerospike !== stock.aerospike) return true;
   const keys: (keyof EngineConfig)[] = [
     'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'nozzleLenPct',
     'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers', 'extFixedDia', 'extDeploy',

@@ -174,12 +174,12 @@ export function createRuntime(
     // the bell. Those keep the simpler treatment: the engine's gas runs on its own, the view is
     // clipped to where the formula puts the jet, and the plume starts from the formula.
     const lightExhaust = PROPELLANTS[state.config.propellant].mixKind === 'temperature';
-    const wholeNozzle =
-      useSim &&
-      engineGas === 'sim' &&
-      (plume?.engineSimAvailable ?? false) &&
-      !failure &&
-      !(lightExhaust && result.state === 'separated');
+    // The engine's gas simulation follows the wall of a bell from the injector to the exit. An
+    // aerospike has no such wall: its gas runs along the outside of a spike, with open air on the
+    // other side. So an aerospike's gas is drawn by its own view, and only its plume is simulated,
+    // starting from the spike's base.
+    const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike;
+    const wholeNozzle = useSim && engineSimOn && !(lightExhaust && result.state === 'separated');
     const ext = profile.extension;
     const fixedFlow = ext ? fixedExitFlow(state.config, result, wholeNozzle) : null;
     const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
@@ -215,7 +215,8 @@ export function createRuntime(
               : undefined,
         )
       : null;
-    if (sim && (wholeNozzle || result.state !== 'separated')) {
+    // An aerospike has no bell for the jet to follow.
+    if (sim && !profile.spike && (wholeNozzle || result.state !== 'separated')) {
       // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
       // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back.
       const back = Math.min(2 * plumeRadiusM, flowExitX - profile.throatX);
@@ -239,7 +240,7 @@ export function createRuntime(
       wholeNozzle && !!fromFixed && state.config.extDeploy > 0.995 && result.state !== 'separated';
     const engineExitX = extensionInEngine ? profile.exitX : flowExitX;
     let gas: EngineGas | null = null;
-    if (engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure) {
+    if (engineSimOn) {
       const cfg = state.config;
       // A solid motor's gas runs down the bore of its grain, and comes off the bore's surface
       // all the way along it, not in through the head of the motor.

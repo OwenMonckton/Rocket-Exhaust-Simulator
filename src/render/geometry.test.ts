@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { simulate } from '../physics/engine';
+import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { PRESETS } from '../physics/presets';
-import { engineProfile, radiusAt, viewTransform } from './geometry';
+import { engineProfile, radiusAt, spikeJetRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
-  for (const p of PRESETS) {
+  for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
     it(`${p.name} has a sane contour`, () => {
       const cfg = p.config;
       const prof = engineProfile(cfg);
@@ -75,6 +77,93 @@ describe('engine profile', () => {
     const v = viewTransform(stowed, 1200, 600);
     expect(v.originX + (seated.seam.x - seated.length) * v.ppm).toBeGreaterThan(0);
     expect(engineProfile(PRESETS[0].config).extension).toBeNull();
+  });
+  it('shapes the XRS-2200 spike from its cells to a flat base', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const prof = engineProfile(cfg);
+    const spike = prof.spike!;
+    expect(prof.extension).toBeNull();
+    expect(prof.offsets).toEqual([0]);
+    // The lip encloses all twenty cells' share of the exit area.
+    expect(spike.lip.r).toBeCloseTo((Math.sqrt(20) * cfg.exitDia) / 2, 9);
+    expect(prof.throatX).toBe(spike.lip.x);
+    expect(prof.exitX).toBe(spike.base.x);
+    // The spike narrows steadily from the cells to the base, and the Mach number climbs.
+    const c = spike.contour;
+    expect(c[0].r).toBeLessThan(spike.lip.r);
+    for (let i = 1; i < c.length; i++) {
+      expect(c[i].x).toBeGreaterThan(c[i - 1].x);
+      expect(c[i].r).toBeLessThanOrEqual(c[i - 1].r + 1e-12);
+      expect(c[i].mach).toBeGreaterThanOrEqual(c[i - 1].mach);
+    }
+    expect(spike.base).toEqual({ x: c.at(-1)!.x, r: c.at(-1)!.r });
+    expect(spike.base.r).toBeGreaterThan(0.2 * spike.lip.r);
+    // The cells do some of the expanding, and the spike the rest.
+    expect(spike.cell.exitAreaRatio).toBeGreaterThan(2);
+    expect(spike.cell.exitAreaRatio).toBeLessThan((cfg.exitDia / cfg.throatDia) ** 2 / 4);
+    expect(spike.cell.throatS).toBeGreaterThan(spike.cell.chamberEndS);
+    expect(spike.cell.exitS).toBeGreaterThan(spike.cell.throatS);
+    // The engine starts at the front of the cells.
+    expect(Math.min(spike.cell.origin.x, c[0].x)).toBeGreaterThanOrEqual(-1e-9);
+    expect(prof.halfHeight).toBeGreaterThanOrEqual(spike.lip.r);
+  });
+  it('puts the spike exactly where each Mach line from the lip needs it', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const spike = engineProfile({ ...cfg, nozzleLenPct: 100 }).spike!;
+    const g = simulate(cfg, { altitudeKm: 0, throttle: 1 }).gamma;
+    const throatArea = cfg.chambers * (Math.PI / 4) * cfg.throatDia ** 2;
+    const c = spike.contour;
+    // Angelino: the gas crossing the Mach line from the lip to any point on the spike has
+    // exactly the flow area its Mach number calls for.
+    for (const q of c.slice(1, -1)) {
+      const alpha = Math.atan2(spike.lip.r - q.r, q.x - spike.lip.x);
+      const mu = Math.asin(1 / q.mach);
+      const flowArea = (Math.PI * (spike.lip.r ** 2 - q.r ** 2) * Math.sin(mu)) / Math.sin(alpha);
+      expect(flowArea / throatArea, `Mach ${q.mach}`).toBeCloseTo(areaRatio(q.mach, g), 6);
+    }
+    // It ends at the design exit Mach number, having turned the flow to run straight back.
+    expect(c.at(-1)!.mach).toBeCloseTo(machFromAreaRatio((cfg.exitDia / cfg.throatDia) ** 2, g), 9);
+    // From the cells to the first Mach line the surface runs straight along the flow.
+    expect(Math.atan2(c[0].r - c[1].r, c[1].x - c[0].x)).toBeCloseTo(spike.cell.tilt, 9);
+    expect(c[1].mach).toBe(c[0].mach);
+    // The cells' exit slot, a thin ring round the lip, has the area the gas needs there.
+    const slotH = Math.hypot(spike.lip.x - c[0].x, spike.lip.r - c[0].r);
+    const slotArea = Math.PI * (spike.lip.r + c[0].r) * slotH;
+    expect(slotArea / throatArea / spike.cell.exitAreaRatio).toBeGreaterThan(0.95);
+    expect(slotArea / throatArea / spike.cell.exitAreaRatio).toBeLessThan(1.05);
+    // The cells themselves are drawn at their true size.
+    expect(spike.cell.points[0].r).toBe(cfg.chamberDia / 2);
+    expect(spike.cell.throatR).toBe(cfg.throatDia / 2);
+  });
+  it('cuts a spike off shorter at a lower length setting, and keeps it all at 100%', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const short = engineProfile({ ...cfg, nozzleLenPct: 60 }).spike!;
+    const full = engineProfile({ ...cfg, nozzleLenPct: 100 }).spike!;
+    expect(full.base.x - full.lip.x).toBeGreaterThan(2 * (short.base.x - short.lip.x));
+    expect(full.base.x - full.lip.x).toBeCloseTo(full.fullLength, 6);
+    expect(full.base.r).toBeLessThan(1e-9);
+    expect(short.base.r).toBeGreaterThan(full.base.r);
+  });
+  it('wraps an aerospike jet around its spike, never wider than the lip while the air squeezes it', () => {
+    const cfg = PRESETS.find((p) => p.id === 'xrs-2200')!.config;
+    const spike = engineProfile(cfg).spike!;
+    // At the design altitude the jet's outer edge runs straight back from the lip.
+    expect(spikeJetRadius(cfg, cfg.exitDia, 0)).toBeCloseTo(spike.lip.r, 9);
+    expect(spikeJetRadius(cfg, cfg.exitDia, spike.base.r)).toBeCloseTo(spike.lip.r, 9);
+    // Squeezed by the air, the jet still wraps around the base, and widens as the air thins.
+    const squeezed = spikeJetRadius(cfg, 2 * cfg.throatDia, spike.base.r);
+    expect(squeezed).toBeGreaterThan(spike.base.r);
+    expect(squeezed).toBeLessThan(spike.lip.r);
+    expect(spikeJetRadius(cfg, 3 * cfg.throatDia, spike.base.r)).toBeGreaterThan(squeezed);
+    // With no spike in the way, it is simply as wide as its flow area.
+    expect(spikeJetRadius(cfg, 2 * cfg.throatDia, 0)).toBeCloseTo(Math.sqrt(20) * cfg.throatDia, 9);
+    // At every altitude the drawn jet stays between the base and the lip.
+    for (let h = 0; h <= 100; h += 1) {
+      const r = simulate(cfg, { altitudeKm: h, throttle: 1 });
+      const jet = spikeJetRadius(cfg, r.effectiveExitDia, spike.base.r);
+      expect(jet, `${h} km`).toBeGreaterThan(spike.base.r);
+      expect(jet, `${h} km`).toBeLessThanOrEqual(spike.lip.r + 1e-9);
+    }
   });
   it('fits the engine in the left of the stage', () => {
     for (const p of PRESETS) {

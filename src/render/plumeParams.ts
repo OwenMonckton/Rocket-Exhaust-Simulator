@@ -3,6 +3,7 @@ import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../phys
 import { PROPELLANTS, gasProps, richness } from '../physics/propellants';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
 import type { SimInputs } from './fluidSim';
+import { engineProfile, spikeJetRadius } from './geometry';
 
 export interface PlumeParams {
   /** Exit pressure over ambient pressure, capped to 0.05–400 */
@@ -119,7 +120,9 @@ export function simInputs(
   const pAmb = r.pa > 0 ? clamp(r.pa / pressure, VACUUM_FLOOR, 150) : VACUUM_FLOOR;
   const gasR = gasProps(cfg.propellant, cfg.mixtureRatio).R;
   // Slope of the bell wall at the lip (see engineProfile).
-  const lipSlope = start?.wallSlope ?? (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
+  // An aerospike's jet leaves its base running straight back: the spike has already turned it.
+  const lipSlope =
+    start?.wallSlope ?? (cfg.aerospike ? 0 : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct);
   return {
     gamma: g,
     uExit: mach * Math.sqrt(g),
@@ -178,7 +181,10 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     settleRadius,
     bloom,
     mach: r.exitMach,
-    exitRadiusM: r.effectiveExitDia / 2,
+    // An aerospike's cells all feed one jet, wrapped around the spike's flat base.
+    exitRadiusM: cfg.aerospike
+      ? spikeJetRadius(cfg, r.effectiveExitDia, engineProfile(cfg).spike!.base.r)
+      : r.effectiveExitDia / 2,
     intensity: clamp(fire, 0, 1) * (0.55 + 0.45 * throttle),
     length: (10 + 8 * look.opacity) * (0.7 + 0.3 * throttle) * (1 - 0.35 * bloom) * (0.25 + 0.75 * clamp(fire, 0, 1)),
     diamondSpacing,

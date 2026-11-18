@@ -5,6 +5,7 @@ import {
   cStar,
   exitVelocity,
   machFromAreaRatio,
+  machFromPressureRatio,
   pressureRatio,
 } from './nozzle';
 import { PROPELLANTS, clampMixture, gasProps, isPropellantId } from './propellants';
@@ -17,6 +18,12 @@ const BASE_COMBUSTION_EFF = 0.98;
 const THRUST_EFF = 1.0;
 /** Schmucker separation criterion multiplier, tuned so the RS-25 stays attached at sea level. */
 const SEPARATION_K = 0.62;
+/**
+ * Below its design altitude, the share an aerospike recovers of the gap between a bell of the
+ * same size (separated flow and all) and a nozzle perfectly matched to the air. Tuned to the
+ * XRS-2200's sea-level Isp, where it leaves the spike about 4.5 % short of a perfect match.
+ */
+const AEROSPIKE_COMPENSATION = 0.7;
 
 export interface Range {
   min: number;
@@ -34,6 +41,8 @@ export const RANGES = {
   chamberPressureBar: { min: 5, max: 400, fallback: 100 },
   scale: { min: 0.25, max: 5, fallback: 1 },
   chambers: { min: 1, max: 4, fallback: 1 },
+  /** An aerospike's thrust cells, which all feed one spike */
+  cells: { min: 1, max: 40, fallback: 20 },
   extFixedDia: { min: 0, max: 25, fallback: 0 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
@@ -52,8 +61,10 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
   const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
+  // An aerospike has no bell to extend.
+  const aerospike = cfg.aerospike === true;
   let extFixedDia = clampTo(cfg.extFixedDia, RANGES.extFixedDia);
-  if (extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
+  if (aerospike || extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
   return {
     presetId: typeof cfg.presetId === 'string' ? cfg.presetId : null,
     propellant,
@@ -66,9 +77,10 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     chamberPressureBar: clampTo(cfg.chamberPressureBar, RANGES.chamberPressureBar),
     mixtureRatio: clampMixture(propellant, cfg.mixtureRatio),
     scale: clampTo(cfg.scale, RANGES.scale),
-    chambers: Math.round(clampTo(cfg.chambers, RANGES.chambers)),
+    chambers: Math.round(clampTo(cfg.chambers, aerospike ? RANGES.cells : RANGES.chambers)),
     extFixedDia,
     extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
+    aerospike,
   };
 }
 
@@ -148,6 +160,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     let area = ae;
     let state: ExpansionState;
     const sepRatio = (m: number) => SEPARATION_K * Math.pow(1.88 * m - 1, -0.64);
+    // First, what a bell of this size would do.
     if (pa <= 0) {
       state = 'under';
     } else if (pe < sepRatio(exitMach) * pa) {
@@ -166,9 +179,24 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       const r = pe / pa;
       state = Math.abs(r - 1) <= 0.1 ? 'ideal' : r < 1 ? 'over' : 'under';
     }
-    const ve = exitVelocity(mach, g, gas.R, gas.tc);
-    const thrust = THRUST_EFF * (nozzleEff * idealFlow * ve + (pExit - pa) * area);
-    return { thrust: n * Math.max(0, thrust), state, mach, pExit, area, ve };
+    let ve = exitVelocity(mach, g, gas.R, gas.tc);
+    let thrust = nozzleEff * idealFlow * ve + (pExit - pa) * area;
+    if (cfg.aerospike && pa > 0 && pe < pa) {
+      // Altitude compensation. Nothing but the surrounding air holds in the outside of an
+      // aerospike's jet, so below its design altitude the air squeezes the jet in until it leaves
+      // at the outside pressure: it never over-expands and never separates.
+      state = 'compensating';
+      mach = Math.max(1, machFromPressureRatio(pa / pc, g));
+      pExit = pa;
+      area = at * areaRatio(mach, g);
+      ve = exitVelocity(mach, g, gas.R, gas.tc);
+      // Air is a poor wall, and some of the expansion is lost in waves along the spike and in
+      // drag on its flat base. Measuring the loss from what a real bell manages, separation
+      // included, keeps it to a few percent however large the spike is.
+      const matched = nozzleEff * idealFlow * ve;
+      thrust += AEROSPIKE_COMPENSATION * Math.max(0, matched - thrust);
+    }
+    return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve };
   };
 
   const pa = ambientPressure(flight.altitudeKm * 1000);

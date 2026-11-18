@@ -39,6 +39,7 @@ export function encodeState(s: AppState): string {
     c.chambers,
     c.extFixedDia,
     c.extDeploy,
+    c.aerospike ? 1 : 0,
   ];
   return `${VERSION}.${toBase64Url(JSON.stringify(packed))}`;
 }
@@ -50,8 +51,9 @@ export function decodeState(hash: string): AppState | null {
     const dot = text.indexOf('.');
     if (dot < 0 || text.slice(0, dot) !== VERSION) return null;
     const a: unknown = JSON.parse(fromBase64Url(text.slice(dot + 1)));
-    // Older links are shorter: 13 entries (one chamber, one-piece nozzle) or 14 (chamber count added).
-    if (!Array.isArray(a) || ![13, 14, 16].includes(a.length)) return null;
+    // Older links are shorter: 13 entries (one chamber, one-piece nozzle), 14 (chamber count
+    // added) or 16 (nozzle extension added, no aerospikes).
+    if (!Array.isArray(a) || ![13, 14, 16, 17].includes(a.length)) return null;
     const [presetId, propellant, ...nums] = a;
     if (!isPropellantId(propellant)) return null;
     if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
@@ -71,6 +73,7 @@ export function decodeState(hash: string): AppState | null {
       chambers: n.length > 11 ? n[11] : 1,
       extFixedDia: n.length > 13 ? n[12] : 0,
       extDeploy: n.length > 13 ? n[13] : 1,
+      aerospike: n.length > 14 && n[14] === 1,
     });
     return { config, flight: sanitizeFlight({ altitudeKm: n[9], throttle: n[10] }) };
   } catch {
