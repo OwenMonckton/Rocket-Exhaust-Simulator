@@ -201,7 +201,7 @@ vec3 engineGas(vec3 col, vec2 frag, float centreY) {
   } else if (uInMode == 2) {
     gas = heatMap(heat);
   } else {
-    gas = mix(uMid, mix(uCore, vec3(1.0), 0.35), smoothstep(0.0, 0.9, pow(heat, 0.3)));
+    gas = mix(uMid, mix(uCore, vec3(1.0), 0.35), 0.3 + 0.7 * smoothstep(0.0, 0.9, pow(heat, 0.3)));
     // Dimmer toward the walls, so the gas reads as a round column.
     gas *= 1.0 - 0.3 * across * across;
     gas *= 0.95 + 0.05 * sin(uTime * 47.0 + x * 9.0 / max(uInLen, 1e-3));

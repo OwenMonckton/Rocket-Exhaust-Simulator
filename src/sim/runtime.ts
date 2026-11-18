@@ -215,6 +215,12 @@ export function createRuntime(
     }
 
     // The gas inside the engine, simulated from the injector face to where it leaves the nozzle.
+    // A seated nozzle extension is part of the nozzle, so the engine's grid carries on through
+    // it to the true exit. (Sliding or stowed, it is a loose cone standing in the plume, which
+    // only the plume's grid can hold.) The plume's grid stays where it is either way, so
+    // nothing jumps as the extension seats.
+    const extensionInEngine = wholeNozzle && !!fromFixed && state.config.extDeploy > 0.995;
+    const engineExitX = extensionInEngine ? profile.exitX : flowExitX;
     let gas: EngineGas | null = null;
     if (engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure) {
       const cfg = state.config;
@@ -222,15 +228,15 @@ export function createRuntime(
       // all the way along it, not in through the head of the motor.
       const solid = cfg.propellant === 'solid';
       for (let i = 0; i <= ENGINE_NX; i++) {
-        const x = (i / ENGINE_NX) * flowExitX;
+        const x = (i / ENGINE_NX) * engineExitX;
         radii[i] = solid ? Math.min(radiusAt(profile, x), grainBore(cfg, x, burnt)) : radiusAt(profile, x);
       }
       // Only the part of the bore that still has grain around it burns.
       let burnTo = 0;
       if (solid) {
-        const grainStations = ((cfg.chamberLen * GRAIN_END) / flowExitX) * ENGINE_NX;
+        const grainStations = ((cfg.chamberLen * GRAIN_END) / engineExitX) * ENGINE_NX;
         for (let i = 0; i < grainStations; i++) {
-          if (grainBore(cfg, ((i + 0.5) / ENGINE_NX) * flowExitX, burnt) < 0.999 * (cfg.chamberDia / 2)) burnTo = i + 1;
+          if (grainBore(cfg, ((i + 0.5) / ENGINE_NX) * engineExitX, burnt) < 0.999 * (cfg.chamberDia / 2)) burnTo = i + 1;
         }
       }
       const burn = solid ? { from: 0, to: burnTo } : undefined;
@@ -240,7 +246,7 @@ export function createRuntime(
       if (wholeNozzle && result.state === 'separated') {
         const jetRadius = result.effectiveExitDia / 2;
         for (let i = 0; i <= ENGINE_NX; i++) {
-          const x = (i / ENGINE_NX) * flowExitX;
+          const x = (i / ENGINE_NX) * engineExitX;
           if (x > profile.throatX && radii[i] >= jetRadius) {
             if (i < ENGINE_NX) separatesAt = i;
             break;
@@ -251,14 +257,15 @@ export function createRuntime(
       const exitMach = machFromAreaRatio(result.expansionRatio, g);
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
       const exitPressure = Math.pow(exitTemp, g / (g - 1));
-      const engine = `${cfg.presetId}|${cfg.propellant}`;
+      // A different stretch of engine starts afresh, as a different engine does.
+      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.propellant}`;
       if (engine !== simulatedEngine) plume?.resetEngineSim();
       simulatedEngine = engine;
       gas = {
         inputs: {
           gamma: g,
           fire,
-          length: flowExitX,
+          length: engineExitX,
           radii,
           // Never a true vacuum, which the solver cannot hold: a fraction of the exit pressure at least.
           restPressure: Math.min(0.3, Math.max(0.3 * exitPressure, result.pa / result.pc)),
@@ -276,6 +283,9 @@ export function createRuntime(
         machMax: Math.max(1.5, exitMach),
         // The simulated plume carries on from the gas this simulation delivers to the exit.
         feedsPlumeAtMach: wholeNozzle ? (fromFixed ? fromFixed.flow.mach : wholeFlow!.mach) : undefined,
+        exit: extensionInEngine
+          ? { x: (engineExitX - flowExitX) / plumeRadiusM, radius: cfg.exitDia / 2 / plumeRadiusM }
+          : undefined,
       };
     }
 
@@ -294,7 +304,7 @@ export function createRuntime(
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX, simGas: gas !== null, wholeNozzle, burnt }, w, h);
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null, wholeNozzle, burnt }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 

@@ -59,7 +59,10 @@ export interface EngineLink {
   cell: number;
   /** How far the plume grid reaches upstream of the nozzle exit, in exit radii */
   upstream: number;
-  /** Radius of the nozzle exit, m */
+  /** One of the plume grid's radii, m */
+  unitRadius: number;
+  /** Where this grid's nozzle exit is, in plume radii from the plume grid's origin, and its radius there */
+  exitX: number;
   exitRadius: number;
   /** Factors that turn the plume solver's density, speed and pressure into this solver's units */
   density: number;
@@ -110,7 +113,8 @@ uniform float uDt;          // time step shared with the plume solver (0: every 
 uniform float uLinkOn;      // 1 when the cells beyond the exit come from the plume solver
 uniform sampler2D uPlume;   // the plume solver's gas state
 uniform ivec2 uPlumeGrid;
-uniform vec3 uPlumeGeom;    // plume cell size and upstream reach in exit radii, and the exit radius in metres
+uniform vec3 uPlumeGeom;    // plume cell size and upstream reach in plume radii, and one plume radius in metres
+uniform vec2 uPlumeExit;    // where this grid's exit is on the plume grid, and its radius, in plume radii
 uniform vec3 uPlumeScale;   // the plume solver's density, speed and pressure in this solver's units
 uniform vec2 uBurn;         // stations between which the wall is burning propellant (a solid motor)
 uniform float uSeparates;   // station where the jet tears off the wall (beyond the grid: it does not)
@@ -161,10 +165,10 @@ vec4 inflow(vec4 inside) {
 // On its own, supersonic gas leaves freely and slower gas feels a set outside pressure.
 vec4 outflow(vec4 inside, ivec2 c) {
   if (uLinkOn > 0.5) {
-    float x = (float(c.x - uGrid.x) + 0.5) * uDx / uPlumeGeom.z;
-    float r = (float(c.y) + 0.5) / float(uGrid.y);
+    float x = uPlumeExit.x + (float(c.x - uGrid.x) + 0.5) * uDx / uPlumeGeom.z;
+    float r = uPlumeExit.y * (float(c.y) + 0.5) / float(uGrid.y);
     // The first plume column whose centre is downstream of the exit plane, or further.
-    int first = int(floor(uPlumeGeom.y / uPlumeGeom.x - 0.5)) + 1;
+    int first = int(floor((uPlumeExit.x + uPlumeGeom.y) / uPlumeGeom.x - 0.5)) + 1;
     int column = clamp(int(floor((x + uPlumeGeom.y) / uPlumeGeom.x)), first, uPlumeGrid.x - 1);
     int row = clamp(int(floor(r / uPlumeGeom.x)), 0, uPlumeGrid.y - 1);
     vec4 U = texelFetch(uPlume, ivec2(column, row), 0);
@@ -454,7 +458,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
   const loc = {
     prev: u('uPrev'), cur: u('uCur'), rad: u('uRad'), stage: u('uStage'), grid: u('uGrid'), dx: u('uDx'),
     cfl: u('uCfl'), burn: u('uBurn'), separates: u('uSeparates'), headOpen: u('uHeadOpen'), gamma: u('uGamma'), fire: u('uFire'), chamber: u('uChamber'), rest: u('uRest'), back: u('uBack'),
-    dt: u('uDt'), linkOn: u('uLinkOn'), plume: u('uPlume'), plumeGrid: u('uPlumeGrid'), plumeGeom: u('uPlumeGeom'), plumeScale: u('uPlumeScale'),
+    dt: u('uDt'), linkOn: u('uLinkOn'), plume: u('uPlume'), plumeGrid: u('uPlumeGrid'), plumeGeom: u('uPlumeGeom'), plumeExit: u('uPlumeExit'), plumeScale: u('uPlumeScale'),
   };
 
   const makeTexture = (format: number, width: number, height: number, filter: number) => {
@@ -527,7 +531,8 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
       gl.uniform1f(loc.linkOn, link ? 1 : 0);
       if (link) {
         gl.uniform2i(loc.plumeGrid, link.columns, link.rows);
-        gl.uniform3f(loc.plumeGeom, link.cell, link.upstream, link.exitRadius);
+        gl.uniform3f(loc.plumeGeom, link.cell, link.upstream, link.unitRadius);
+        gl.uniform2f(loc.plumeExit, link.exitX, link.exitRadius);
         gl.uniform3f(loc.plumeScale, link.density, link.speed, link.pressure);
       }
       gl.uniform1i(loc.prev, 0);
