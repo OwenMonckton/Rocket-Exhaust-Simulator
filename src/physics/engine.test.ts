@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from './engine';
+import { PRESETS } from './presets';
 import type { EngineConfig, SimResult } from './types';
 
 const base: EngineConfig = {
@@ -51,6 +52,42 @@ describe('aerospike', () => {
     expect(r.thrust).toBeGreaterThan(simulate({ ...base, exitDia: 1.3 }, sl).thrust);
     allFinite(r);
     allFinite(simulate({ ...spike, chamberPressureBar: 5 }, { altitudeKm: 0, throttle: 0.4 }));
+  });
+  it('is never worse than the bell it replaces, on any engine at any altitude', () => {
+    for (const p of PRESETS) {
+      const bell = { ...p.config, aerospike: false, extFixedDia: 0 };
+      const spike = { ...bell, aerospike: true };
+      for (let h = 0; h <= 100; h += 0.5) {
+        const f = { altitudeKm: h, throttle: 1 };
+        const s = simulate(spike, f);
+        const b = simulate(bell, f);
+        expect(s.isp, `${p.id} at ${h} km`).toBeGreaterThanOrEqual(b.isp * (1 - 1e-9));
+        // Nor better than a nozzle perfectly matched to the air.
+        if (s.state === 'compensating') {
+          const matched = simulate({ ...bell, exitDia: s.effectiveExitDia }, f);
+          expect(s.isp, `${p.id} at ${h} km`).toBeLessThanOrEqual(matched.isp * 1.001);
+          expect(s.isp, `${p.id} at ${h} km`).toBeGreaterThan(0.9 * matched.isp);
+        }
+      }
+    }
+  });
+  it('loses nothing at sea level by having a spike far too big for it', () => {
+    // The air decides how far the gas expands, so past a point a bigger spike changes nothing.
+    const spike = { ...base, aerospike: true };
+    const big = simulate({ ...spike, exitDia: 3 }, sl);
+    const huge = simulate({ ...spike, exitDia: 20 }, sl);
+    expect(big.state).toBe('compensating');
+    expect(huge.thrust).toBeCloseTo(big.thrust, 3);
+    expect(huge.effectiveExitDia).toBeCloseTo(big.effectiveExitDia, 9);
+    // Throttled right down, or at very low pressure, it still makes thrust.
+    for (const chamberPressureBar of [5, 20, 100]) {
+      for (const throttle of [0.4, 1]) {
+        const r = simulate({ ...spike, exitDia: 20, chamberPressureBar }, { altitudeKm: 0, throttle });
+        const bell = simulate({ ...base, exitDia: 20, chamberPressureBar }, { altitudeKm: 0, throttle });
+        expect(r.thrust).toBeGreaterThan(0);
+        expect(r.thrust).toBeGreaterThanOrEqual(bell.thrust);
+      }
+    }
   });
 });
 

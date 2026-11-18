@@ -32,7 +32,7 @@ export function drawAerospike(
   const g = result.gamma;
   const cellPts = cell.points;
   const chamberR = cellPts[0].r;
-  const throatR = cellPts.reduce((m, p) => Math.min(m, p.r), Infinity);
+  const throatR = cell.throatR;
   const wall = Math.min(Math.max(cfg.wall, 2 / ppm), Math.max(2 / ppm, 0.45 * chamberR));
   const cos = Math.cos(cell.tilt);
   const sin = Math.sin(cell.tilt);
@@ -72,9 +72,13 @@ export function drawAerospike(
     };
   };
   const flicker = (i: number) => (anim.overlay === 'none' ? 0.94 + 0.06 * Math.sin(anim.timeS * 47 + i * 1.7) : 1);
-  // A cell is a slot seen edge-on, so its area ratio is a ratio of heights.
-  const cellMach = (s: number, r: number) =>
-    s < cell.throatS ? subsonicMachFromAreaRatio(r / throatR, g) : machFromAreaRatio(r / throatR, g);
+  // Round up to the throat. Past it the nozzle flattens into a slot, and its area grows steadily
+  // to the exit whatever its height from the side.
+  const cellMach = (s: number, r: number) => {
+    if (s < cell.throatS) return subsonicMachFromAreaRatio((r / throatR) ** 2, g);
+    const t = Math.min(1, (s - cell.throatS) / Math.max(1e-9, cell.exitS - cell.throatS));
+    return machFromAreaRatio(1 + (cell.exitAreaRatio - 1) * t, g);
+  };
 
   // --- Spike ---------------------------------------------------------------
   // The central body: behind each cell's inner wall, then the spike's curved surface to its base.
