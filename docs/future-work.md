@@ -34,15 +34,16 @@ hold whatever the plume grid has there. It was built in three stages:
   it: nothing makes the gas let go of the wall, so left alone it stands a shock across the
   whole nozzle with slow gas behind it, which is not what an engine does. Finding the point
   properly needs a boundary layer at the wall, which is a different class of solver.
-- **Two kinds of separated jet are not linked.** A free jet inside the bell gives up momentum
-  to the outside air beside it, and in the engine grid some jets break up before they reach
-  the exit. Those keep the older treatment (the engine grid runs alone, the view is clipped to
-  where the formula puts the jet, and the plume starts from the formula):
-  - a separated jet of very light exhaust: nuclear thermal and salt-water engines, whose gas
-    is dozens of times thinner than the air beside it;
-  - the RL10B-2 with its extension seated, while separated: the engine grid then stops at the
-    fixed nozzle, as for a sliding extension, because the jet would otherwise have the whole
-    length of a very large bell to cross.
+- **Two kinds of separated jet get less than the full treatment.** A free jet inside the bell
+  gives up momentum to the outside air beside it, and in the engine grid some jets break up
+  before they reach the exit:
+  - a separated jet of very light exhaust (nuclear thermal and salt-water engines, whose gas
+    is dozens of times thinner than the air beside it) is not linked at all. The engine grid
+    runs alone, the view is clipped to where the formula puts the jet, and the plume starts
+    from the formula;
+  - the RL10B-2 with its extension seated, while separated, is linked, but the engine grid
+    stops at the fixed nozzle as it does for a sliding extension. The jet would otherwise have
+    the whole length of a very large bell to cross.
 - **The exit is only two-way where the gas is slower than sound.** Supersonic gas is let go
   without looking at the plume grid, and the pressure the plume grid can press back with is
   capped at about twice the still air's. Without both, the front of a starting jet (briefly at
