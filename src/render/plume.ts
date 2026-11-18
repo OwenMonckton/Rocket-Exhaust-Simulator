@@ -1,4 +1,6 @@
-import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
+import { ENGINE_NX, createEngineSim, type EngineSim, type EngineSimInputs } from './engineSim';
+import { SIM_NX, SIM_NY, createFluidSim, wallShape, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
+import { stepGas } from './gasSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
 import { VACUUM_FLOOR, type PlumeParams } from './plumeParams';
 
@@ -13,20 +15,51 @@ export interface PlumeTarget {
   wall?: SimWall | null;
 }
 
+/** The gas inside the engine, from its own simulation, and where and how to draw it. */
+export interface EngineGas {
+  inputs: EngineSimInputs;
+  /** Device pixel x of the injector face */
+  originX: number;
+  /** Device pixels per metre */
+  scale: number;
+  /** What to colour the gas by */
+  mode: 'flame' | 'mach' | 'temp';
+  /** Temperature at the nozzle exit over chamber temperature: the cold end of the colour scales */
+  exitTemp: number;
+  /** Mach number at the top of the speed scale */
+  machMax: number;
+  /**
+   * Mach number the plume simulation takes its units from, when the plume should start from
+   * the gas this simulation delivers to the nozzle exit. Left out, the plume starts from a formula.
+   */
+  feedsPlumeAtMach?: number;
+  /**
+   * Where this simulation's stretch of engine ends, in plume radii from the plume's origin, and
+   * the nozzle's radius there. Left out, it ends where the plume begins. With a nozzle extension
+   * seated it carries on through the extension to the true exit.
+   */
+  exit?: { x: number; radius: number };
+}
+
 export interface PlumeRenderer {
   /** Pass `sim` to draw the plume from the gas simulation instead of the hand-shaped model. */
-  draw(p: PlumeParams, target: PlumeTarget, timeS: number, sim?: SimInputs | null): void;
+  draw(p: PlumeParams, target: PlumeTarget, timeS: number, sim?: SimInputs | null, engine?: EngineGas | null): void;
   resize(widthPx: number, heightPx: number): void;
   /** Start the gas simulation again from still air. */
   resetSim(): void;
+  /** Start the simulation of the gas inside the engine again. */
+  resetEngineSim(): void;
   /** False when this browser cannot run the gas simulation */
   readonly simAvailable: boolean;
+  /** False when this browser cannot run the simulation of the gas inside the engine */
+  readonly engineSimAvailable: boolean;
 }
 
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uWallShape', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
+  'uInOn', 'uIn', 'uInRad', 'uInStations', 'uInOrigin', 'uInScale', 'uInLen', 'uInMode', 'uInGamma', 'uInExitT', 'uInMachMax', 'uInRestT', 'uInOpacity',
 ] as const;
 
 /** Longest stretch of plume the gas simulation covers, in exit radii. */
@@ -60,6 +93,7 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
   let u: Record<string, WebGLUniformLocation | null> = {};
   let program: WebGLProgram | null = null;
   let sim: FluidSim | null = null;
+  let engineSim: EngineSim | null = null;
 
   const build = (): boolean => {
     try {
@@ -79,6 +113,7 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       u = {};
       for (const name of UNIFORMS) u[name] = gl.getUniformLocation(program, name);
       sim = createFluidSim(gl);
+      engineSim = sim ? createEngineSim(gl) : null;
       return true;
     } catch (err) {
       console.error('Plume shader failed to build', err);
@@ -100,8 +135,14 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
     get simAvailable() {
       return sim !== null;
     },
+    get engineSimAvailable() {
+      return engineSim !== null;
+    },
     resetSim() {
       sim?.reset();
+    },
+    resetEngineSim() {
+      engineSim?.reset();
     },
     resize(widthPx, heightPx) {
       if (canvas.width !== widthPx || canvas.height !== heightPx) {
@@ -109,8 +150,9 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         canvas.height = heightPx;
       }
     },
-    draw(p, target, timeS, simInputs) {
+    draw(p, target, timeS, simInputs, engine) {
       if (lost) return;
+      const useEngine = !!engine && engineSim !== null && engine.scale > 0 && engine.inputs.length > 0;
       const useSim = !!simInputs && sim !== null && target.radiusPx > 0.5;
       let cell = 1;
       let upstream = 0;
@@ -129,8 +171,27 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         const height = SIM_NY * cell;
         fadeX = Math.min(0.3 * length, 1.1 + 1.5 * Math.max(0, across - length));
         fadeY = Math.min(0.3 * height, 0.45 + 1.5 * Math.max(0, up - height));
-        sim!.step(simInputs!, length + upstream, target.wall, upstream);
       }
+      // With both simulated they run as one, linked across the nozzle exit; see gasSim.
+      stepGas(
+        sim,
+        engineSim,
+        useSim ? { inputs: simInputs!, span: cell * SIM_NX, upstream, wall: target.wall } : null,
+        useEngine
+          ? {
+              inputs: engine!.inputs,
+              link:
+                useSim && engine!.feedsPlumeAtMach !== undefined
+                  ? {
+                      mach: engine!.feedsPlumeAtMach,
+                      unitRadius: target.radiusPx / engine!.scale,
+                      exitX: engine!.exit?.x ?? 0,
+                      exitRadius: engine!.exit?.radius ?? 1,
+                    }
+                  : undefined,
+            }
+          : null,
+      );
 
       gl.useProgram(program);
       gl.viewport(0, 0, canvas.width, canvas.height);
@@ -162,7 +223,11 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       const wall = target.wall;
       const hasWall = !!wall && wall.x1 > 0 && wall.x1 > wall.x0;
       gl.uniform1f(u.uWallOn, hasWall ? 1 : 0);
-      if (hasWall) gl.uniform4f(u.uWall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+      if (hasWall) {
+        gl.uniform4f(u.uWall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+        const shape = wallShape(wall!);
+        gl.uniform2f(u.uWallShape, shape.slope, shape.curve);
+      }
 
       gl.uniform1f(u.uUseSim, useSim ? 1 : 0);
       gl.uniform1i(u.uSim, 0);
@@ -186,6 +251,26 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         gl.uniform1f(u.uSimT0, simInputs!.t0);
         gl.uniform1f(u.uSimAmbP, simInputs!.pAmb);
         gl.uniform1f(u.uSimFloor, VACUUM_FLOOR);
+      }
+      gl.uniform1f(u.uInOn, useEngine ? 1 : 0);
+      gl.uniform1i(u.uIn, 2);
+      gl.uniform1i(u.uInRad, 3);
+      if (useEngine) {
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, engineSim!.radiusTexture);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, engineSim!.texture);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.uniform1f(u.uInStations, ENGINE_NX);
+        gl.uniform1f(u.uInOrigin, engine!.originX);
+        gl.uniform1f(u.uInScale, engine!.scale);
+        gl.uniform1f(u.uInLen, engine!.inputs.length);
+        gl.uniform1i(u.uInMode, engine!.mode === 'mach' ? 1 : engine!.mode === 'temp' ? 2 : 0);
+        gl.uniform1f(u.uInGamma, engine!.inputs.gamma);
+        gl.uniform1f(u.uInExitT, engine!.exitTemp);
+        gl.uniform1f(u.uInMachMax, engine!.machMax);
+        gl.uniform1f(u.uInRestT, engine!.inputs.restTemp);
+        gl.uniform1f(u.uInOpacity, p.opacity);
       }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },

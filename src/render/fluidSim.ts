@@ -12,7 +12,7 @@
 
 export const SIM_NX = 384;
 export const SIM_NY = 162;
-const STEPS_PER_FRAME = 48;
+export const STEPS_PER_FRAME = 48;
 const CFL = 0.3;
 
 export interface SimInputs {
@@ -47,6 +47,49 @@ export interface SimWall {
   r0: number;
   x1: number;
   r1: number;
+  /**
+   * Slope (dr/dx) of the wall at its upstream end. The wall curves from that slope to meet
+   * (x1, r1), as a bell does: steeper where it leaves the fixed nozzle, shallower at the exit.
+   * Left out, the wall is a straight cone.
+   */
+  slope0?: number;
+}
+
+/**
+ * The curve of an extension's wall: its slope at the upstream end and the curvature that takes
+ * it from there to its downstream end. The starting slope is capped so the wall never turns
+ * back inward before the exit.
+ */
+export function wallShape(wall: SimWall): { slope: number; curve: number } {
+  const length = wall.x1 - wall.x0;
+  const chord = (wall.r1 - wall.r0) / length;
+  const slope = wall.slope0 === undefined ? chord : Math.min(wall.slope0, 1.8 * chord);
+  return { slope, curve: (chord - slope) / length };
+}
+
+/**
+ * The gas arriving at the nozzle exit, taken from the simulation of the inside of the engine
+ * instead of from a formula.
+ */
+export interface SimInlet {
+  /** That simulation's gas state (see engineSim) and the size of its grid */
+  texture: WebGLTexture;
+  columns: number;
+  rows: number;
+  /** Factors that turn its density, speed and pressure into this solver's units */
+  density: number;
+  speed: number;
+  pressure: number;
+  /** Temperature of the still gas in an unlit engine, in this solver's units: colder gas than about twice this is not exhaust */
+  coldTemp: number;
+  /**
+   * Where that simulation's grid ends, in this solver's radii from its origin: 0 normally, the
+   * length of a seated nozzle extension when its grid carries on through one. Cells of this
+   * grid that lie inside the extension then hold that simulation's gas.
+   */
+  exitX: number;
+  /** How many of that simulation's columns span one of this solver's radii */
+  columnsPerRadius: number;
 }
 
 export interface FluidSim {
@@ -59,7 +102,15 @@ export interface FluidSim {
    * `lengthRadii` is the whole span of the grid in exit radii, of which the first `upstreamRadii`
    * lie beside the nozzle, upstream of its exit plane.
    */
-  step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii?: number): void;
+  step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii?: number, inlet?: SimInlet | null): void;
+  /**
+   * The same in pieces, for running in step with the engine solver: egin once a frame
+   * (it returns the time step, in this solver's units), dvance a number of steps at a time,
+   * then inish. inlet is the engine solver's current gas state.
+   */
+  begin(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii?: number, inlet?: SimInlet | null): number;
+  advance(steps: number, inlet?: WebGLTexture | null): void;
+  finish(): void;
   reset(): void;
 }
 
@@ -90,8 +141,15 @@ uniform vec2 uAmb;          // density, pressure
 uniform float uWallOn;      // 1 when a solid cone (a nozzle extension) stands in the flow
 uniform vec4 uWall;         // its inner surface: (x, r) at the upstream end, (x, r) at the downstream end
 uniform float uWallThick;
+uniform vec2 uWallShape;    // the extension's slope at its upstream end, and its curvature
 uniform float uUpstream;    // how far the grid reaches upstream of the nozzle exit, in exit radii
 uniform float uWallCurve;   // curvature of the nozzle wall upstream of the lip
+uniform float uInletOn;     // 1 when the exhaust arriving comes from the simulation of the inside of the engine
+uniform sampler2D uInlet;   // that simulation's gas state
+uniform ivec2 uInletGrid;
+uniform vec3 uInletScale;   // its density, speed and pressure in this solver's units
+uniform float uInletCold;   // temperature of the still gas in an unlit engine
+uniform vec2 uInletGeom;    // where its grid ends (0: at this grid's origin), and its columns per radius
 
 layout(location = 0) out vec4 outU;
 layout(location = 1) out vec4 outS;
@@ -128,11 +186,18 @@ float nozzleRadius(float x) {
   return max(0.3, 1.0 + uDiverge * x + uWallCurve * x * x);
 }
 
+float extensionRadius(float x);
+
+// Inside a seated nozzle extension that the engine's own grid covers.
+bool inEngineExtension(vec2 p) {
+  return uInletOn > 0.5 && uWallOn > 0.5 && p.x >= 0.0 && p.x < uInletGeom.x && p.y < extensionRadius(p.x);
+}
+
 // Inside the nozzle itself. These cells are not simulated: they hold the exhaust as it arrives.
 bool inNozzle(ivec2 c) {
   if (c.x < 0 || c.y < 0) return false;
   vec2 p = position(c);
-  return p.x < 0.0 && p.y < nozzleRadius(p.x);
+  return (p.x < 0.0 && p.y < nozzleRadius(p.x)) || inEngineExtension(p);
 }
 
 // The exhaust arriving at the nozzle exit, at radius r (as a fraction of the nozzle's radius).
@@ -146,6 +211,38 @@ vec4 exhaustState(float r) {
   float angle = uDiverge * r;
   return vec4(uFire * pow(f, 1.0 / uGamma), speed / sqrt(1.0 + angle * angle),
               speed * angle / sqrt(1.0 + angle * angle), uFire * f);
+}
+
+// The same, read from the last column of the simulation of the inside of the engine: what
+// that simulation says is leaving the nozzle at this radius, right now. Also returns how much
+// of it is exhaust: before the flow has reached the exit there is only cold still gas there.
+vec4 inletState(vec2 at, out float exhaust) {
+  float r = at.y / (at.x < 0.0 ? nozzleRadius(at.x) : extensionRadius(at.x));
+  float f = clamp(r, 0.0, 1.0) * float(uInletGrid.y) - 0.5;
+  int j = int(floor(f));
+  int j0 = clamp(j, 0, uInletGrid.y - 1);
+  int j1 = clamp(j + 1, 0, uInletGrid.y - 1);
+  // Normally the engine's grid ends at this grid's origin and its last column is what arrives.
+  // Where it carries on through a seated extension, each cell here takes the column it lies in.
+  int i = uInletGrid.x - 1;
+  if (uInletGeom.x > 0.0) {
+    i = clamp(int(floor(float(uInletGrid.x) - (uInletGeom.x - at.x) * uInletGeom.y)), 0, uInletGrid.x - 1);
+  }
+  vec4 U = mix(texelFetch(uInlet, ivec2(i, j0), 0), texelFetch(uInlet, ivec2(i, j1), 0), f - float(j));
+  float rho = max(U.x, 1e-7);
+  vec2 vel = U.yz / rho;
+  float p = max((uGamma - 1.0) * (U.w - 0.5 * rho * dot(vel, vel)), 1e-9);
+  vec4 w = vec4(rho * uInletScale.x, vel * uInletScale.y, p * uInletScale.z);
+  // No upper limit: gas that has come through a shock inside the nozzle arrives at many times
+  // the pressure it would have had leaving freely.
+  w.x = max(w.x, RHO_MIN);
+  w.w = max(w.w, P_MIN);
+  exhaust = smoothstep(1.3 * uInletCold, 2.2 * uInletCold, w.w / w.x);
+  if (any(isnan(w)) || any(isinf(w))) {
+    w = exhaustState(r);
+    exhaust = 1.0;
+  }
+  return w;
 }
 
 // Primitive state of a cell, including the cells just outside the grid.
@@ -162,8 +259,13 @@ vec4 cell(ivec2 c, out float frac) {
   if (inNozzle(c)) {
     if (uFire > 0.02) {
       vec2 p = position(c);
-      w = exhaustState(p.y / nozzleRadius(p.x));
-      frac = 1.0;
+      float r = p.y / nozzleRadius(p.x);
+      if (uInletOn > 0.5) {
+        w = inletState(p, frac);
+      } else {
+        w = exhaustState(r);
+        frac = 1.0;
+      }
     } else {
       w = ambient();
     }
@@ -177,15 +279,16 @@ vec4 cell(ivec2 c, out float frac) {
 }
 
 // Van Leer slope limiter: sharper than minmod, still free of overshoots.
-vec4 limited(vec4 a, vec4 b) {
-  vec4 ab = a * b;
-  vec4 same = step(vec4(1e-30), ab);   // 1 where both slopes point the same way
-  return same * 2.0 * ab / mix(vec4(1.0), a + b, same);
-}
-
+// Worked out one component at a time. Blending between 1 and the sum of the slopes to avoid a
+// division by zero looks neater, but when the slopes are tiny that blend rounds to exactly
+// zero, and the division it was there to protect blows up.
 float limited1(float a, float b) {
   float ab = a * b;
   return ab > 1e-30 ? 2.0 * ab / (a + b) : 0.0;
+}
+
+vec4 limited(vec4 a, vec4 b) {
+  return vec4(limited1(a.x, b.x), limited1(a.y, b.y), limited1(a.z, b.z), limited1(a.w, b.w));
 }
 
 vec4 floorState(vec4 w) {
@@ -238,12 +341,18 @@ vec4 faceFlux(vec4 a, vec4 b, vec4 c, vec4 d, float fa, float fb, float fc, floa
   return F;
 }
 
+// Inner radius of a nozzle extension at x. It is curved like the bell it is part of.
+float extensionRadius(float x) {
+  float t = x - uWall.x;
+  return uWall.y + uWallShape.x * t + uWallShape.y * t * t;
+}
+
 // The wall of a nozzle extension, wherever it currently is.
 bool solidExtension(ivec2 c) {
   if (uWallOn < 0.5 || c.x < 0 || c.y < 0) return false;
   vec2 p = position(c);
   if (p.x < uWall.x || p.x > uWall.z) return false;
-  float inner = mix(uWall.y, uWall.w, (p.x - uWall.x) / max(1e-6, uWall.z - uWall.x));
+  float inner = extensionRadius(p.x);
   return p.y >= inner && p.y <= inner + uWallThick;
 }
 
@@ -260,7 +369,7 @@ bool blocked(ivec2 c, ivec2 neighbour) {
 vec4 bounce(vec4 w, ivec2 wallCell) {
   vec2 n = inNozzle(wallCell)
     ? normalize(vec2(uDiverge + 2.0 * uWallCurve * position(wallCell).x, -1.0))
-    : normalize(vec2(uWall.w - uWall.y, uWall.x - uWall.z));
+    : normalize(vec2(uWallShape.x + 2.0 * uWallShape.y * (position(wallCell).x - uWall.x), -1.0));
   w.yz -= 2.0 * dot(w.yz, n) * n;
   return w;
 }
@@ -448,7 +557,8 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     prev: u('uPrev'), cur: u('uCur'), prevS: u('uPrevS'), curS: u('uCurS'), stage: u('uStage'),
     grid: u('uGrid'), dx: u('uDx'), dt: u('uDt'), gamma: u('uGamma'), relax: u('uRelax'), fire: u('uFire'),
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
-    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'),
+    wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'), wallShape: u('uWallShape'),
+    inletOn: u('uInletOn'), inlet: u('uInlet'), inletGrid: u('uInletGrid'), inletScale: u('uInletScale'), inletCold: u('uInletCold'), inletGeom: u('uInletGeom'),
   };
   const r = (name: string) => gl.getUniformLocation(resampler, name);
   const rloc = {
@@ -545,7 +655,12 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     reset() {
       needsReset = true;
     },
-    step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii = 0) {
+    step(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii = 0, inlet?: SimInlet | null) {
+      sim.begin(inputs, lengthRadii, wall, upstreamRadii, inlet);
+      sim.advance(STEPS_PER_FRAME, inlet?.texture);
+      sim.finish();
+    },
+    begin(inputs: SimInputs, lengthRadii: number, wall?: SimWall | null, upstreamRadii = 0, inlet?: SimInlet | null) {
       if (needsReset) {
         fill(inputs, lengthRadii);
         needsReset = false;
@@ -562,7 +677,6 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       const dt = (CFL * dx) / maxSpeed;
 
       gl.useProgram(program);
-      gl.viewport(0, 0, SIM_NX, SIM_NY);
       gl.uniform2i(loc.grid, SIM_NX, SIM_NY);
       gl.uniform1f(loc.dx, dx);
       gl.uniform1f(loc.dt, dt);
@@ -575,7 +689,11 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform2f(loc.amb, inputs.rhoAmb, inputs.pAmb);
       const hasWall = !!wall && wall.x1 > -upstreamRadii && wall.x1 > wall.x0;
       gl.uniform1f(loc.wallOn, hasWall ? 1 : 0);
-      if (hasWall) gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+      if (hasWall) {
+        gl.uniform4f(loc.wall, wall!.x0, wall!.r0, wall!.x1, wall!.r1);
+        const shape = wallShape(wall!);
+        gl.uniform2f(loc.wallShape, shape.slope, shape.curve);
+      }
       // Walls are thick enough that gas cannot leak through between neighbouring cells.
       gl.uniform1f(loc.wallThick, Math.max(3 * dx, 0.05));
       gl.uniform1f(loc.upstream, upstreamRadii);
@@ -584,8 +702,21 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
       gl.uniform1i(loc.cur, 1);
       gl.uniform1i(loc.prevS, 2);
       gl.uniform1i(loc.curS, 3);
-
-      for (let n = 0; n < STEPS_PER_FRAME; n++) {
+      gl.uniform1i(loc.inlet, 4);
+      gl.uniform1f(loc.inletOn, inlet ? 1 : 0);
+      if (inlet) {
+        gl.uniform2i(loc.inletGrid, inlet.columns, inlet.rows);
+        gl.uniform3f(loc.inletScale, inlet.density, inlet.speed, inlet.pressure);
+        gl.uniform1f(loc.inletCold, inlet.coldTemp);
+        gl.uniform2f(loc.inletGeom, inlet.exitX, inlet.columnsPerRadius);
+      }
+      return dt;
+    },
+    advance(steps: number, inlet?: WebGLTexture | null) {
+      gl.useProgram(program);
+      gl.viewport(0, 0, SIM_NX, SIM_NY);
+      bind(4, inlet ?? null);
+      for (let n = 0; n < steps; n++) {
         const a = targets[current];
         const b = targets[(current + 1) % 3];
         const c = targets[(current + 2) % 3];
@@ -605,10 +736,12 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         current = (current + 2) % 3;
       }
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      for (const unit of [3, 2, 1, 0]) bind(unit, null);
       sim.texture = targets[current].state;
       sim.scalarTexture = targets[current].scalar;
+    },
+    finish() {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      for (const unit of [4, 3, 2, 1, 0]) bind(unit, null);
     },
   };
   return sim;

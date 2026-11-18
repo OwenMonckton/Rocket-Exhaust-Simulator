@@ -361,3 +361,47 @@ export function viewTransform(profile: EngineProfile, widthPx: number, heightPx:
   );
   return { ppm, originX, centreY: heightPx / 2 };
 }
+
+/** A solid motor's grain stops this fraction of the way along the case. */
+export const GRAIN_END = 0.97;
+
+/**
+ * Radius of the bore through a solid motor's grain at a distance x along the case, or Infinity
+ * past the end of the grain. The bore is a cone: a narrow point at the head of the motor,
+ * opening out toward the nozzle. The flame front is the surface of that cone.
+ *
+ * `burnt` runs from 0 (a freshly cast grain) to 1 (nothing left). The grain burns back from
+ * its surface at the same rate everywhere, so the whole cone widens, reaching the case wall
+ * first at the nozzle end and last at the head. Where the result is at least the case radius,
+ * the grain there is gone.
+ */
+export function grainBore(cfg: EngineConfig, x: number, burnt = 0): number {
+  const rc = cfg.chamberDia / 2;
+  const end = cfg.chamberLen * GRAIN_END;
+  if (x >= end) return Infinity;
+  const tip = 0.07 * rc;
+  // Never narrower at its mouth than the throat, or the bore would choke the flow instead.
+  const mouth = Math.min(0.9 * rc, Math.max(0.4 * rc, 0.6 * cfg.throatDia));
+  // The last of the grain is cut back to the case wall instead of ending in a square step.
+  const chamfer = Math.min(0.3 * rc, 0.15 * end);
+  const coneEnd = end - chamfer;
+  const burnedBack = Math.min(1, Math.max(0, burnt)) * 0.95 * rc;
+  if (x <= coneEnd) return tip + (mouth - tip) * Math.max(0, x / coneEnd) + burnedBack;
+  const t = (x - coneEnd) / chamfer;
+  return mouth + (rc - mouth) * t * t * (3 - 2 * t) + burnedBack;
+}
+
+/** How much of a solid motor's propellant is left, as a fraction of a fresh grain. */
+export function grainLeft(cfg: EngineConfig, burnt: number): number {
+  const rc = cfg.chamberDia / 2;
+  const end = cfg.chamberLen * GRAIN_END;
+  const N = 60;
+  let left = 0;
+  let fresh = 0;
+  for (let i = 0; i < N; i++) {
+    const x = ((i + 0.5) / N) * end;
+    left += Math.max(0, rc * rc - Math.min(rc, grainBore(cfg, x, burnt)) ** 2);
+    fresh += rc * rc - Math.min(rc, grainBore(cfg, x, 0)) ** 2;
+  }
+  return fresh > 0 ? left / fresh : 0;
+}

@@ -29,8 +29,24 @@ uniform float uParticles;   // glowing particles carried in the exhaust
 
 uniform float uWallOn;           // 1 when a nozzle extension stands in the plume
 uniform vec4 uWall;              // its inner surface in exit radii: (x, r) upstream end, (x, r) downstream end
+uniform vec2 uWallShape;         // the extension's slope at its upstream end, and its curvature
 uniform int uExitCount;          // how many nozzle exits to draw a plume from (1 or 2)
 uniform float uExitOffsets[2];   // their vertical offsets from uExit, in pixels
+
+// Gas inside the engine, from its own simulation.
+uniform float uInOn;
+uniform sampler2D uIn;           // gas state: one column per station along the engine, one row per step from centreline to wall
+uniform sampler2D uInRad;        // radius of the gas passage at each station, m
+uniform float uInStations;       // how many columns there are
+uniform float uInOrigin;         // pixel x of the injector face
+uniform float uInScale;          // pixels per metre
+uniform float uInLen;            // length of the simulated stretch of engine, m
+uniform int uInMode;             // 0 flame, 1 gas speed, 2 gas temperature
+uniform float uInGamma;
+uniform float uInExitT;          // temperature at the nozzle exit over chamber temperature
+uniform float uInMachMax;        // Mach number at the top of the speed scale
+uniform float uInRestT;          // temperature of the still gas in an unlit engine, over chamber temperature
+uniform float uInOpacity;
 
 uniform vec2 uRes;
 uniform vec2 uExit;
@@ -86,6 +102,12 @@ float fbm(vec2 p) {
   return v;
 }
 
+// Inner radius of a nozzle extension at x. It is curved like the bell it is part of.
+float extensionRadius(float x) {
+  float t = x - uWall.x;
+  return uWall.y + uWallShape.x * t + uWallShape.y * t * t;
+}
+
 // Density and temperature of the simulated gas at a point (in exit radii), relative to the nozzle exit.
 // Also returns the fraction of the gas that is exhaust rather than air.
 vec3 simGas(vec2 q) {
@@ -133,6 +155,61 @@ vec3 simGlow(vec3 gas) {
   // Their glow is in proportion to how many there are, so it thins out as the exhaust spreads.
   glow += mix(uMid, uCore, 0.6) * uParticles * exhaust * clamp(gas.x, 0.0, 1.6) * 1.25;
   return glow * aboveFloor(gas);
+}
+
+// Blue, cyan, green, yellow, red: the scale the engine view's legend shows.
+vec3 heatMap(float t) {
+  t = clamp(t, 0.0, 0.9999) * 4.0;
+  vec3 a = vec3(0.1, 0.2, 0.75);
+  vec3 b = vec3(0.1, 0.7, 0.9);
+  vec3 c = vec3(0.2, 0.8, 0.3);
+  vec3 d = vec3(0.98, 0.85, 0.2);
+  vec3 e = vec3(0.92, 0.2, 0.15);
+  if (t < 1.0) return mix(a, b, t);
+  if (t < 2.0) return mix(b, c, t - 1.0);
+  if (t < 3.0) return mix(c, d, t - 2.0);
+  return mix(d, e, t - 3.0);
+}
+
+// The inside of one chamber, seen in cross-section: the simulated gas over the dark of the
+// empty passage. centreY is the pixel height of the chamber's centreline. Leaves the colour
+// alone outside the passage.
+vec3 engineGas(vec3 col, vec2 frag, float centreY) {
+  float x = (frag.x - uInOrigin) / uInScale;
+  float r = abs(frag.y - centreY) / uInScale;
+  // A few pixels spare all round: the engine drawn on top shakes as it runs.
+  float spare = 4.0 / uInScale;
+  if (x < -spare || x > uInLen) return col;
+  float f = clamp(x / uInLen, 0.0, 1.0) * uInStations;
+  int i = min(int(f), int(uInStations) - 1);
+  float wall = mix(texelFetch(uInRad, ivec2(i, 0), 0).x, texelFetch(uInRad, ivec2(i + 1, 0), 0).x, f - float(i));
+  if (r > wall + spare) return col;
+
+  float across = min(r / wall, 1.0);
+  vec4 U = texture(uIn, vec2(clamp(x / uInLen, 0.0, 1.0), across));
+  float rho = max(U.x, 1e-7);
+  float speed2 = (U.y * U.y + U.z * U.z) / (rho * rho);
+  float temp = max((uInGamma - 1.0) * (U.w - 0.5 * rho * speed2), 1e-9) / rho;
+  float mach = sqrt(speed2 / (uInGamma * temp));
+  // 0 at the temperature the gas leaves the nozzle at, 1 at chamber temperature.
+  float heat = clamp((temp - uInExitT) / max(1e-4, 1.0 - uInExitT), 0.0, 1.0);
+
+  vec3 gas;
+  float alpha = 0.95;
+  if (uInMode == 1) {
+    gas = heatMap(mach / uInMachMax);
+  } else if (uInMode == 2) {
+    gas = heatMap(heat);
+  } else {
+    gas = mix(uMid, mix(uCore, vec3(1.0), 0.35), 0.3 + 0.7 * smoothstep(0.0, 0.9, pow(heat, 0.3)));
+    // Dimmer toward the walls, so the gas reads as a round column.
+    gas *= 1.0 - 0.3 * across * across;
+    gas *= 0.95 + 0.05 * sin(uTime * 47.0 + x * 9.0 / max(uInLen, 1e-3));
+    alpha = (0.72 + 0.25 * heat) * (0.6 + 0.4 * min(1.0, uInOpacity + 0.35));
+  }
+  // Still, cold gas in an unlit engine is not shown.
+  alpha *= smoothstep(1.3 * uInRestT, 2.2 * uInRestT, temp);
+  return mix(vec3(0.051, 0.059, 0.078), gas, alpha);
 }
 
 void main() {
@@ -234,11 +311,43 @@ void main() {
         // Looking into a nozzle extension, the far wall hides whatever is behind it, so only the
         // gas inside counts. Beside the extension the view is clear, and any exhaust that has
         // curled back around the outside of it is visible as usual.
-        if (uWallOn > 0.5 && xs >= uWall.x && xs <= uWall.z) {
-          float inner = mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x));
-          if (q.y < inner) reach = min(reach, inner);
+        const float EXTENSION_DEPTH = 0.93;
+        float wallDepth = 1e6;
+        if (uWallOn > 0.5 && xs >= uWall.x) {
+          if (xs <= uWall.z) {
+            float inner = extensionRadius(xs);
+            if (q.y < inner) {
+              reach = min(reach, inner);
+              wallDepth = EXTENSION_DEPTH * inner;
+            }
+          } else {
+            // Past the end of the extension the view opens out from the lip instead of jumping
+            // straight to full width. Without this the plume shows a hard vertical edge at the
+            // exit, taller than the bell, because the wall is far thicker in the simulation
+            // than it is drawn.
+            reach = min(reach, uWall.w + (xs - uWall.z) * 2.0);
+            // The depth counted carries on from what was counted at the exit at this height
+            // (nothing at all above the lip) and grows from there. Measured from the axis
+            // instead, the depth near the lip jumped by half within a tenth of a radius, which
+            // showed as a faint vertical step where the extension ends.
+            float atExit = min(sqrt(max(0.0, uWall.w * uWall.w - q.y * q.y)), EXTENSION_DEPTH * uWall.w);
+            // It grows slowly at first: the dense layer that ran along the wall is still just
+            // outside the counted depth here, and needs room to thin out before it is taken in.
+            float past = xs - uWall.z;
+            // Slowest of all through the middle, where taking that layer in early showed as the
+            // centreline brightening again just after the exit. Above the lip nothing was
+            // counted at the exit, so there the depth opens at once and the plume can flare.
+            float shallow = 1.0 - atExit / (EXTENSION_DEPTH * uWall.w);
+            wallDepth = atExit + past * (0.3 * shallow + 0.25 * past);
+          }
         }
-        float depth = sqrt(max(0.0, reach * reach - q.y * q.y));
+        // The gas pressed against the inside of the extension is much denser and brighter than
+        // the flow down the middle. Looking all the way through the cone, every line of sight
+        // crosses that layer, which lit the whole interior evenly and then dropped away at the
+        // exit, where the layer expands and thins. So inside the extension only a shallow depth
+        // is counted, which shows the bright layer where it is (along the walls), and past the
+        // exit that depth grows gradually to take in the whole plume.
+        float depth = min(sqrt(max(0.0, reach * reach - q.y * q.y)), wallDepth);
         const int SAMPLES = 16;
         // Each pixel starts its samples at a slightly different depth so the steps don't show
         // as bands. A smooth, ordered pattern is used for that offset (interleaved gradient
@@ -300,7 +409,7 @@ void main() {
       // (The simulated plume needs none of this: the gas itself cannot pass through the wall.)
       if (uWallOn > 0.5 && uUseSim < 0.5 && xs >= uWall.x) {
         float allowed = xs <= uWall.z
-          ? mix(uWall.y, uWall.w, (xs - uWall.x) / max(1e-6, uWall.z - uWall.x))
+          ? extensionRadius(xs)
           : uWall.w + (xs - uWall.z) * 1.6;
         em *= 1.0 - smoothstep(allowed - 0.04, allowed + 0.12, y);
       }
@@ -313,6 +422,13 @@ void main() {
     vec3 lit = 1.0 - exp(-emTotal * 2.4);
     float cover = clamp(max(lit.r, max(lit.g, lit.b)) * 1.5, 0.0, 1.0);
     col = col * (1.0 - cover) + lit;
+  }
+
+  if (uInOn > 0.5) {
+    for (int e = 0; e < 2; e++) {
+      if (e >= uExitCount) break;
+      col = engineGas(col, frag, uExit.y + uExitOffsets[e]);
+    }
   }
 
   outColor = vec4(col, 1.0);
