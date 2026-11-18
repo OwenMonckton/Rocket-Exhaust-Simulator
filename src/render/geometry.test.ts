@@ -25,6 +25,28 @@ describe('engine profile', () => {
       expect(radiusAt(prof, 1e9)).toBeCloseTo(cfg.exitDia / 2, 9);
     });
   }
+  it('turns the wall out of the throat along an arc, with no corner', () => {
+    for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
+      const cfg = p.config;
+      const prof = engineProfile(cfg);
+      const bell = prof.points.filter((q) => q.x >= prof.throatX - 1e-12);
+      const angles = bell.slice(1).map((q, i) => Math.atan2(q.r - bell[i].r, q.x - bell[i].x));
+      // It leaves the throat nearly straight along the engine, and never turns sharply after.
+      expect(angles[0], p.id).toBeLessThan((6 * Math.PI) / 180);
+      for (let i = 1; i < angles.length; i++) {
+        expect(Math.abs(angles[i] - angles[i - 1]), `${p.id} point ${i}`).toBeLessThan((6 * Math.PI) / 180);
+      }
+      // The arc is the size real bells use, or smaller where the bell is too short for one.
+      const rt = cfg.throatDia / 2;
+      const steepest = Math.max(...angles);
+      const arcEnd = bell[angles.indexOf(steepest)];
+      expect(arcEnd.x - prof.throatX, p.id).toBeLessThanOrEqual(0.382 * rt * Math.sin(steepest) * 1.05);
+      // The lip still has the slope the plume is told the bell ends with.
+      const lipSlope = (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
+      expect(Math.tan(angles.at(-1)!) / lipSlope, p.id).toBeGreaterThan(0.9);
+      expect(Math.tan(angles.at(-1)!) / lipSlope, p.id).toBeLessThan(1.2);
+    }
+  });
   it('makes a longer bell at 100% than at 60%', () => {
     const cfg = PRESETS[0].config;
     const short = engineProfile({ ...cfg, nozzleLenPct: 60 });

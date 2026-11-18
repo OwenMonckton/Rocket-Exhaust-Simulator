@@ -120,17 +120,35 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   }
   const throatX = cfg.chamberLen + convLen;
 
-  // Quadratic Bezier bell: steep just after the throat, shallow at the exit.
+  // The bell: steep just after the throat, shallow at the exit.
   const bellLen = (cfg.nozzleLenPct / 100) * ((re - rt) / Math.tan(15 * DEG));
-  const p1x = 0.379 * bellLen;
-  const p1r = rt + 0.72 * (re - rt);
+  // Slope of the wall where the bell proper begins, and at the lip.
+  const startSlope = (0.72 * (re - rt)) / (0.379 * bellLen);
+  const exitSlope = (0.28 * (re - rt)) / (0.621 * bellLen);
+  // The wall cannot turn from the throat straight onto that slope: a sharp corner there is not
+  // how nozzles are made, and the gas solver marks it with a layer of spoiled gas down the whole
+  // wall. It turns along a short arc instead, of the radius real bell nozzles use (0.382 throat
+  // radii), made smaller where the bell is too short to fit one.
+  const turn = Math.atan(startSlope);
+  const arcR = Math.min(0.382 * rt, (0.25 * bellLen) / Math.sin(turn), (0.25 * (re - rt)) / (1 - Math.cos(turn)));
+  const N_ARC = 8;
+  for (let i = 1; i <= N_ARC; i++) {
+    const a = (turn * i) / N_ARC;
+    points.push({ x: throatX + arcR * Math.sin(a), r: rt + arcR * (1 - Math.cos(a)) });
+  }
+  // From the end of the arc, a quadratic Bezier: it leaves along the arc's slope and arrives at
+  // the lip along the exit slope, so its middle point is where those two lines cross.
+  const ax = arcR * Math.sin(turn);
+  const ar = rt + arcR * (1 - Math.cos(turn));
+  const p1x = (re - exitSlope * bellLen - ar + startSlope * ax) / (startSlope - exitSlope);
+  const p1r = ar + startSlope * (p1x - ax);
   const N_BELL = 28;
   for (let i = 1; i <= N_BELL; i++) {
     const t = i / N_BELL;
     const u = 1 - t;
     points.push({
-      x: throatX + 2 * u * t * p1x + t * t * bellLen,
-      r: u * u * rt + 2 * u * t * p1r + t * t * re,
+      x: throatX + u * u * ax + 2 * u * t * p1x + t * t * bellLen,
+      r: u * u * ar + 2 * u * t * p1r + t * t * re,
     });
   }
   // Guard against any floating-point wobble in the final point.
