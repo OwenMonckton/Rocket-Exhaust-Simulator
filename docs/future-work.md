@@ -58,10 +58,52 @@ hold whatever the plume grid has there. It was built in three stages:
   drawing adjusted to hide what that does to the gas beside it (see `EXTENSION_DEPTH` in
   `src/render/plume.frag.ts`). A grid fitted to a moving, free-standing cone would be the
   proper fix.
-- **Thrust and the readouts** still come from the formula model, not from the simulated flow.
+- **The readouts' own figures still come from the formula model.** Thrust, efficiency and
+  propellant flow worked out from the simulated gas are shown beside them
+  (`src/render/simFigures.ts`): thrust where the gas leaves the engine's grid, flow at the
+  throat. For attached flow the two agree to about 1% on thrust; the simulation gives about 2%
+  less flow and 1% more efficiency. There are none for an aerospike (its flow is in the plume
+  grid, which is not read back), for a separated jet of very light exhaust, or with a nozzle
+  extension partly seated.
 - **The two grids are still two solvers in two files.** They share their method (and a slope
   limiter that had to be fixed in both at once); the shared parts could be pulled into one
   place.
+
+### How accurate it is, as measured
+
+Measured with `src/dev/accuracy.ts`, which runs the solvers and reads the gas state back, against
+one-dimensional nozzle theory. (Its header says how to run it.) That theory uses the same
+idealised gas the solvers do, so this shows the equations are solved correctly, not that they
+describe a real engine. Attached flow only: separated nozzles, solid motors and a seated
+extension were not measured.
+
+- **The engine grid is within about 1%** on the bulk numbers, across six engines: mass flow
+  constant along the engine to 0.2–1.4%, Mach 1 at the throat, exit Mach and pressure within
+  1–2% of theory, and thrust at the exit within 1.2% of the formula readout.
+- **The exit hands the plume the right amount of gas**, to within 1–2%, whatever the zoom. A
+  cell of the plume grid that the nozzle wall cuts through delivers its share of the flow
+  (`nozzleCover` in `src/render/fluidSim.ts`). Before that the exit was a whole number of cells
+  across and the plume got from 5% too little to 4% too much.
+- **A seated extension's exit is still a whole number of cells across**, so the same error
+  remains there.
+- **The wall just after the throat picks up a little entropy that is not real**: 3–5% in the
+  worst cell, costing about 1% of total pressure by the exit. It was 8–16% and 2–4% while the
+  contour had a sharp corner at the throat; the wall now turns out of the throat along an arc
+  (`engineProfile` in `src/render/geometry.ts`). What is left is the grid: the arc is only a
+  handful of columns long.
+- **The plume carries what the nozzle gives it.** Out to four exit radii, thrust stays within
+  2% and exhaust within 4%, for every bell engine at sea level and in vacuum. Thrust used to
+  grow by 8–26% over that distance at sea level. Holding the surrounding air at ambient density
+  (`uRelax`) topped up air that was already moving with the jet, at the speed it had; air added
+  now brings no momentum of its own. (Air let out keeps its speed: speeding the rest up instead
+  runs away in a vacuum.) Honest mixing with dense air slows the edge of the jet a good deal,
+  so the speed below which stray exhaust is cleared away came down to match, or it would have
+  taken the plume's own edge.
+- **Every bell engine lights from cold without the solver running away**, at sea level and in
+  vacuum. `joined(..., ramp)` in the measuring tool counts cells holding nonsense; a change to
+  the plume solver should be checked with it, lit from cold, not only already running.
+- **Shock diamonds are spaced about right**: 6.4–6.8 exit radii for a Merlin at sea level,
+  against 7.1 from the Prandtl–Pack estimate.
 
 ### Not recommended
 

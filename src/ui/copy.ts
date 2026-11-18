@@ -42,6 +42,10 @@ export const AEROSPIKE_DIMS = {
   },
 };
 
+/** Tooltip for the figures worked out from the simulated gas. */
+export const SIMULATED_TIP =
+  'The same figure worked out from the simulated gas, and how far it is from the one above, which comes from a formula. Thrust is measured where the gas leaves the nozzle and propellant flow at the throat. It needs the engine firing with Engine gas set to Simulated, and Plume set to Simulated too while the flow is separated. There is none for an aerospike, for a separated nuclear engine, or with a nozzle extension partly seated.';
+
 export const STATE_COPY: Record<ExpansionState, { label: string; text: string }> = {
   ideal: {
     label: 'Ideally expanded',

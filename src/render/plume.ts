@@ -1,4 +1,4 @@
-import { ENGINE_NX, createEngineSim, type EngineSim, type EngineSimInputs } from './engineSim';
+import { ENGINE_NX, createEngineSim, type ColumnReading, type EngineSim, type EngineSimInputs } from './engineSim';
 import { SIM_NX, SIM_NY, createFluidSim, wallShape, type FluidSim, type SimInputs, type SimWall } from './fluidSim';
 import { stepGas } from './gasSim';
 import { FRAGMENT_SHADER, VERTEX_SHADER } from './plume.frag';
@@ -55,6 +55,11 @@ export interface PlumeRenderer {
   resetSim(): void;
   /** Start the simulation of the gas inside the engine again. */
   resetEngineSim(): void;
+  /**
+   * The simulated gas where it leaves the engine's grid, as it was a few frames ago (see
+   * `EngineSim.readColumns`). Null when there is nothing to read yet, or no such simulation.
+   */
+  engineColumns(stamp: number, station: number, ask: boolean): ColumnReading | null;
   /** False when this browser cannot run the gas simulation */
   readonly simAvailable: boolean;
   /** False when this browser cannot run the simulation of the gas inside the engine */
@@ -149,6 +154,9 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
     },
     resetEngineSim() {
       engineSim?.reset();
+    },
+    engineColumns(stamp, station, ask) {
+      return lost ? null : (engineSim?.readColumns(stamp, station, ask) ?? null);
     },
     resize(widthPx, heightPx) {
       if (canvas.width !== widthPx || canvas.height !== heightPx) {

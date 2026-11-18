@@ -86,6 +86,26 @@ export interface EngineSim {
   advance(dt: number, substeps: number, plume: WebGLTexture | null): void;
   finish(): void;
   reset(): void;
+  /**
+   * The gas in two columns of the grid: the last (the end of the simulated stretch of engine)
+   * and column `station`. Each is four numbers a cell from the centreline to the wall: density,
+   * momentum (x, r), energy. It is the state of a few frames ago, or null before the first
+   * reading has come back: the graphics card is asked, and answers when it is ready, so that
+   * nothing waits on it. Each call picks up an answer if there is one; with `ask`, and nothing
+   * already asked for, it asks again. `stamp` and `station` are handed back with the reading
+   * asked for in that call, so the caller can tell how old a reading is and where it was taken.
+   *
+   * Asking is not free. Measured, each reading makes about one frame arrive late, so ask about
+   * once a second, not every frame.
+   */
+  readColumns(stamp: number, station: number, ask: boolean): ColumnReading | null;
+}
+
+export interface ColumnReading {
+  exit: Float32Array;
+  at: Float32Array;
+  station: number;
+  stamp: number;
 }
 
 const VERT = `#version 300 es
@@ -502,6 +522,23 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
   let needsReset = true;
   let current = 0;
 
+  // Reading columns back: into a buffer on the graphics card first, then across once a marker
+  // placed after it says the card has got that far.
+  const COLUMN_BYTES = ENGINE_NY * 16;
+  const readBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, readBuffer);
+  gl.bufferData(gl.PIXEL_PACK_BUFFER, 2 * COLUMN_BYTES, gl.STREAM_READ);
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  const both = new Float32Array(2 * ENGINE_NY * 4);
+  const reading: ColumnReading = {
+    exit: both.subarray(0, ENGINE_NY * 4),
+    at: both.subarray(ENGINE_NY * 4),
+    station: 0,
+    stamp: 0,
+  };
+  let readingReady = false;
+  let pending: { sync: WebGLSync; stamp: number; station: number } | null = null;
+
   const bind = (unit: number, texture: WebGLTexture | null) => {
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -512,6 +549,38 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
     radiusTexture,
     reset() {
       needsReset = true;
+      // Whatever comes back next is the engine as it was before.
+      readingReady = false;
+    },
+    readColumns(stamp: number, station: number, ask: boolean) {
+      if (pending) {
+        const status = gl.clientWaitSync(pending.sync, 0, 0);
+        if (status === gl.TIMEOUT_EXPIRED) return readingReady ? reading : null;
+        gl.deleteSync(pending.sync);
+        if (status !== gl.WAIT_FAILED && !needsReset) {
+          gl.bindBuffer(gl.PIXEL_PACK_BUFFER, readBuffer);
+          gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, both);
+          gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+          reading.stamp = pending.stamp;
+          reading.station = pending.station;
+          readingReady = true;
+        }
+        pending = null;
+      }
+      if (ask && !needsReset) {
+        const column = Math.min(ENGINE_NX - 1, Math.max(0, Math.round(station)));
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targets[current].fbo);
+        gl.readBuffer(gl.COLOR_ATTACHMENT0);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, readBuffer);
+        gl.readPixels(ENGINE_NX - 1, 0, 1, ENGINE_NY, gl.RGBA, gl.FLOAT, 0);
+        gl.readPixels(column, 0, 1, ENGINE_NY, gl.RGBA, gl.FLOAT, COLUMN_BYTES);
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        if (sync) pending = { sync, stamp, station: column };
+        gl.flush();
+      }
+      return readingReady ? reading : null;
     },
     begin(inputs: EngineSimInputs, link: EngineLink | null) {
       bind(0, radiusTexture);

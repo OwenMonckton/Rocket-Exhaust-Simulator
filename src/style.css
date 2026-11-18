@@ -344,6 +344,13 @@ main {
   min-height: 1.4em;
 }
 
+.sim {
+  color: #b9c2d3;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.4em;
+}
+
 .state {
   font-weight: 650;
   margin-top: 2px;
@@ -441,7 +448,8 @@ main {
   .v.small {
     font-size: 14px;
   }
-  .d {
+  .d,
+  .sim {
     font-size: 11px;
     min-height: 0;
   }

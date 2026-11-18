@@ -257,7 +257,33 @@ bool inNozzle(ivec2 c) {
   // An aerospike: everything forward of the lip's plane, out to the lip. Any cell the lip cuts
   // through counts, so the ring delivers exactly the flow it should however coarse the grid.
   if (uSpikeOn > 0.5) return p.x < 0.0 && p.y - 0.5 * uDx < 1.0;
-  return (p.x < 0.0 && p.y < nozzleRadius(p.x)) || inEngineExtension(p);
+  // A bell: out to its wall, counting the cell the wall cuts through (see nozzleCover).
+  return (p.x < 0.0 && p.y - 0.5 * uDx < nozzleRadius(p.x)) || inEngineExtension(p);
+}
+
+// How much of a cell forward of the exit plane lies inside the nozzle: all of it for most, a
+// share for the one the wall cuts through. Without this the exit would be a whole number of
+// cells across, and the plume would get up to a cell's width too much or too little gas
+// depending on how the grid happens to fall, which changes with the zoom.
+float nozzleCover(vec2 p) {
+  return clamp((nozzleRadius(p.x) - (p.y - 0.5 * uDx)) / uDx, 0.0, 1.0);
+}
+
+// The gas a cell in the nozzle delivers, given the gas arriving there and how much of the cell
+// is inside the wall.
+vec4 covered(vec4 w, float cover, inout float frac) {
+  if (cover >= 1.0) return w;
+  if (w.y > sqrt(uGamma * w.w / w.x)) {
+    // Faster than sound, what crosses into the plume is set by this cell alone, so thinning the
+    // gas (at the same speed and temperature) delivers exactly its share.
+    w.x *= cover;
+    w.w *= cover;
+    return w;
+  }
+  // Slower gas also feels the plume's pressure, which thinning would upset. The rest of such a
+  // cell is the still air outside the wall, so it holds a blend of the two.
+  frac *= cover;
+  return mix(ambient(), w, cover);
 }
 
 // The exhaust arriving from an aerospike's thrust cells: uniform, heading inward, through the
@@ -330,11 +356,14 @@ vec4 cell(ivec2 c, out float frac) {
       if (uSpikeOn > 0.5) {
         w = ringState(p);
         frac = 1.0;
-      } else if (uInletOn > 0.5) {
-        w = inletState(p, frac);
       } else {
-        w = exhaustState(r);
-        frac = 1.0;
+        if (uInletOn > 0.5) {
+          w = inletState(p, frac);
+        } else {
+          w = exhaustState(r);
+          frac = 1.0;
+        }
+        if (p.x < 0.0) w = covered(w, nozzleCover(p), frac);
       }
     } else {
       w = ambient();
@@ -521,15 +550,23 @@ void main() {
   float frac = S1 / w.x;
   if (uFire > 0.02) {
     // Hold the surrounding air at ambient, leaving anything containing exhaust alone.
-    float k = uRelax * (1.0 - smoothstep(0.01, 0.08, frac));
+    float k = uRelax * (1.0 - smoothstep(0.002, 0.02, frac));
+    float before = w.x;
     w.x = mix(w.x, uAmb.x, k);
     w.w = mix(w.w, uAmb.y, k);
+    // Air added to top a cell up is still air: it brings no momentum of its own. Air beside the
+    // jet is moving with it, and warmer and thinner than ambient, so topping it up at the speed
+    // it already had would hand the plume momentum from nowhere.
+    // Air let out of a cell takes its momentum with it, so what is left keeps its speed. (Speeding
+    // the rest up to keep the cell's momentum feeds on itself in a vacuum, where gas is forever
+    // being let out, and the solver runs away.)
+    w.yz *= min(1.0, before / w.x);
     // Wisps of exhaust left drifting in still air disperse (the grid has no wind to carry them off).
     // Only exhaust beside air counts, so a lingering cloud wears away from its edges. Slow gas
     // inside the jet (behind a shock in its core) is left alone: turned into air there, it would
     // be pulled up to the density of the air outside and sit in the jet's path as a dense plug,
     // and every plug the jet pushed out of the way would run down it as a shock front.
-    float slow = 1.0 - smoothstep(0.05, 0.2, length(w.yz) / uExitSpeed);
+    float slow = 1.0 - smoothstep(0.02, 0.08, length(w.yz) / uExitSpeed);
     float besideAir = 1.0 - smoothstep(0.3, 0.7, min(min(fxm1, fxp1), min(fym1, fyp1)));
     frac *= 1.0 - 0.02 * slow * besideAir;
   } else {

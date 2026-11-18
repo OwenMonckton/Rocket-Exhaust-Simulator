@@ -2,14 +2,15 @@ import { createRumble } from '../audio/rumble';
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
-import { PROPELLANTS } from '../physics/propellants';
+import { PROPELLANTS, gasProps } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
-import { ENGINE_NX } from '../render/engineSim';
+import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
 
 export interface FrameInfo {
@@ -20,6 +21,10 @@ export interface FrameInfo {
   /** Altitude sweep in progress: 1 climbing, -1 descending, 0 none */
   sweep: Sweep;
   failure: Failure;
+  /** Thrust, flow and efficiency worked out from the simulated gas; null when there are none to show */
+  simulated: SimulatedFigures | null;
+  /** Why there are none, in a few words; empty when there are, or when there is nothing to say */
+  simulatedNote: string;
 }
 
 export interface Runtime {
@@ -50,6 +55,10 @@ export type Sweep = 0 | 1 | -1;
 const RAMP_UP_S = 1.0;
 const RAMP_DOWN_S = 0.6;
 const SWEEP_S = 30;
+/** Frames at full power before figures are taken from the simulated gas: about a second, for it to settle. */
+const SETTLE_FRAMES = 60;
+/** Seconds between readings of the simulated gas for those figures. */
+const READ_EVERY_S = 1;
 /** How long a solid motor's grain lasts at full burn. Longer than an altitude sweep, so one motor can fly it. */
 const SOLID_BURN_S = 60;
 export const ZOOM_MIN = 0.3;
@@ -80,6 +89,12 @@ export function createRuntime(
   let burnt = 0;
   let burningMotor = '';
   const radii = new Float32Array(ENGINE_NX + 1);
+  // Thrust and efficiency worked out from the simulated gas: how many frames it has had to
+  // settle at full power, and the figures themselves, smoothed.
+  let settledFrames = 0;
+  let latestReading: ColumnReading | null = null;
+  let lastAskedS = -Infinity;
+  let simulated: SimulatedFigures | null = null;
   let zoom = 1;
   let lastGood: AppState = store.get();
   // Remember the most recent engine that would survive firing, for the Rebuild button.
@@ -284,7 +299,11 @@ export function createRuntime(
       const exitPressure = Math.pow(exitTemp, g / (g - 1));
       // A different stretch of engine starts afresh, as a different engine does.
       const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.propellant}`;
-      if (engine !== simulatedEngine) plume?.resetEngineSim();
+      if (engine !== simulatedEngine) {
+        plume?.resetEngineSim();
+        settledFrames = 0;
+        latestReading = null;
+      }
       simulatedEngine = engine;
       gas = {
         inputs: {
@@ -337,6 +356,67 @@ export function createRuntime(
       gas,
     );
 
+    // Thrust and efficiency from the simulated gas where it leaves the engine's grid, to set
+    // beside the formula's. Only where that says what the formula's figures say: the grid has to
+    // end where the gas really leaves the engine, and to be simulating the flow the engine has.
+    // The notes are kept to a few words so they fit on one line; SIMULATED_TIP spells them out.
+    let simulatedNote = '';
+    if (!gas) {
+      simulatedNote = failure ? '' : profile.spike ? 'not for aerospikes' : 'engine gas is drawn';
+      settledFrames = 0;
+      latestReading = null;
+      simulated = null;
+    } else {
+      // Reading the grid back is not free. Measured on a 144 Hz display, each reading makes one
+      // frame arrive late: asked for every frame, 7 frames in a hundred were late and the frame
+      // rate fell from 141 to 124. So it is asked for only once the engine has settled, and only
+      // once a second, which is all the readouts need. Each reading comes back marked with how
+      // settled the engine was when it was asked for; one from before it restarted does not count.
+      settledFrames = fire >= 1 ? settledFrames + 1 : 0;
+      if (settledFrames === 0) latestReading = null;
+      if (settledFrames >= SETTLE_FRAMES) {
+        const ask = timeS - lastAskedS >= READ_EVERY_S;
+        if (ask) lastAskedS = timeS;
+        latestReading = plume!.engineColumns(settledFrames, (profile.throatX / engineExitX) * ENGINE_NX, ask);
+      }
+      const latest = latestReading;
+      const reading = latest && latest.stamp >= SETTLE_FRAMES && latest.stamp <= settledFrames ? latest : null;
+      if (fire < 1) {
+        simulatedNote = firing ? 'starting up' : 'fire the engine';
+      } else if (result.state === 'separated' && !wholeNozzle) {
+        // On its own the engine's grid knows nothing of the jet tearing off the wall.
+        simulatedNote = lightExhaust && useSim ? 'not for this jet' : 'plume is drawn';
+      } else if (Math.abs(radii[ENGINE_NX] / (result.flowExitDia / 2) - 1) > 0.01) {
+        simulatedNote = 'not for this nozzle';
+      } else if (settledFrames < SETTLE_FRAMES || !reading) {
+        simulatedNote = 'settling';
+      }
+      if (simulatedNote === '' && reading) {
+        // Each column's wall radius is that of the middle of its cells.
+        const wall = (i: number) => 0.5 * (radii[i] + radii[i + 1]);
+        const exit = { gas: reading.exit, radius: wall(ENGINE_NX - 1) };
+        const throat = { gas: reading.at, radius: wall(reading.station) };
+        const now = simulatedFigures(exit, throat, {
+          gamma: result.gamma,
+          pc: result.pc,
+          pa: result.pa,
+          tc: result.tc,
+          gasR: gasProps(state.config.propellant, state.config.mixtureRatio).R,
+          combustionEff: result.combustionEff,
+          chambers: state.config.chambers,
+        });
+        // The flow never sits perfectly still; a little smoothing keeps the last digit readable.
+        const k = simulated ? 0.15 : 1;
+        simulated = {
+          thrust: (simulated?.thrust ?? 0) * (1 - k) + now.thrust * k,
+          massFlow: (simulated?.massFlow ?? 0) * (1 - k) + now.massFlow * k,
+          isp: (simulated?.isp ?? 0) * (1 - k) + now.isp * k,
+        };
+      } else {
+        simulated = null;
+      }
+    }
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null, wholeNozzle, burnt }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
@@ -353,6 +433,8 @@ export function createRuntime(
         firing,
         sweep,
         failure,
+        simulated,
+        simulatedNote,
       });
     }
     requestAnimationFrame(frame);

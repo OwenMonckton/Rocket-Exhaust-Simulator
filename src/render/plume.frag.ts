@@ -327,9 +327,10 @@ void main() {
                        * smoothstep(-uSimUp, -0.4 * uSimUp, x);
         // The nozzle itself is drawn separately; nothing shows through it. The margin stops the
         // exhaust held inside the nozzle from blurring out past the wall where the grid is coarse.
+        // The cell the wall cuts through holds exhaust too, and can reach a whole cell past it.
         if (x < 0.0) {
           float wallR = max(0.3, 1.0 + uSimLip * x + uSimCurve * x * x);
-          edgeFade *= smoothstep(wallR + 0.7 * uSimCell, wallR + 1.4 * uSimCell + 0.02, y);
+          edgeFade *= smoothstep(wallR + 1.2 * uSimCell, wallR + 1.9 * uSimCell + 0.02, y);
         }
 
         // The plume is a round column and a camera sees right through it, so add up

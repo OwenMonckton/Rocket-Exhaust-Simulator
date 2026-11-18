@@ -1,11 +1,16 @@
 import type { Limits, SimResult } from '../physics/types';
-import { LIMIT_COPY, STATE_COPY } from './copy';
+import type { SimulatedFigures } from '../render/simFigures';
+import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY } from './copy';
 
 export interface ReadoutInfo {
   result: SimResult;
   /** The unmodified preset at the same altitude and throttle, when the engine has been changed */
   stock: SimResult | null;
   stockName: string | null;
+  /** The same figures worked out from the simulated gas, when there are any */
+  simulated: SimulatedFigures | null;
+  /** Why there are none, in a few words */
+  simulatedNote: string;
 }
 
 function fmtThrust(n: number): string {
@@ -23,6 +28,17 @@ function fmtPressure(pa: number): string {
   return `${(bar * 1000).toFixed(3)} mbar`;
 }
 
+/** A figure from the simulated gas, with how far it is from the formula's. */
+function simulatedLine(text: string, simulated: number, formula: number): string {
+  const pct = formula > 0 ? ((simulated - formula) / formula) * 100 : 0;
+  const diff = Math.abs(pct) < 0.05 ? 'same' : `${pct > 0 ? '+' : '\u2212'}${Math.abs(pct).toFixed(1)}%`;
+  return `Simulated: ${text} (${diff})`;
+}
+
+function fmtFlow(kgs: number): string {
+  return kgs >= 100 ? `${kgs.toFixed(0)} kg/s` : `${kgs.toFixed(1)} kg/s`;
+}
+
 function delta(now: number, stock: number): string {
   const pct = ((now - stock) / stock) * 100;
   if (Math.abs(pct) < 0.05) return 'same as stock';
@@ -32,15 +48,18 @@ function delta(now: number, stock: number): string {
 const html = `
   <div class="stat big" title="The push the engine produces right now.">
     <span class="k">Thrust</span><span class="v" data-r="thrust"></span><span class="d" data-r="thrustSub"></span>
+    <span class="sim" data-r="thrustSim" title="${SIMULATED_TIP}"></span>
   </div>
   <div class="stat big" title="Specific impulse: how much push you get per kilogram of propellant each second. Higher is more efficient.">
     <span class="k">Efficiency (Isp)</span><span class="v" data-r="isp"></span><span class="d" data-r="ispSub"></span>
+    <span class="sim" data-r="ispSim" title="${SIMULATED_TIP}"></span>
   </div>
   <div class="stat" title="Efficiency this engine would have on the ground, and in space.">
     <span class="k">Isp sea level / vacuum</span><span class="v small" data-r="ispBoth"></span><span class="d" data-r="ispBothSub"></span>
   </div>
   <div class="stat" title="How much propellant the engine burns every second.">
     <span class="k">Propellant flow</span><span class="v small" data-r="flow"></span><span class="d" data-r="flowSub"></span>
+    <span class="sim" data-r="flowSim" title="${SIMULATED_TIP}"></span>
   </div>
   <div class="stat" title="Flame temperature inside the chamber, and how fast the exhaust leaves the nozzle.">
     <span class="k">Flame temp / exhaust speed</span><span class="v small" data-r="temp"></span><span class="d" data-r="tempSub"></span>
@@ -74,7 +93,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     if (node.textContent !== text) node.textContent = text;
   };
 
-  return ({ result: r, stock, stockName }) => {
+  return ({ result: r, stock, stockName, simulated: sim, simulatedNote }) => {
     set('thrust', fmtThrust(r.thrust));
     const tonnes = r.thrust / 9806.65;
     const lift = tonnes >= 10 ? `${tonnes.toFixed(0)} tonnes of push` : `${tonnes.toFixed(1)} tonnes of push`;
@@ -83,7 +102,11 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     set('ispSub', stock ? delta(r.isp, stock.isp) : stockName ? `stock ${stockName}` : 'custom engine');
     set('ispBoth', `${r.ispSeaLevel.toFixed(0)} s / ${r.ispVacuum.toFixed(0)} s`);
     set('ispBothSub', stock ? `stock ${stock.ispSeaLevel.toFixed(0)} s / ${stock.ispVacuum.toFixed(0)} s` : '');
-    set('flow', r.massFlow >= 100 ? `${r.massFlow.toFixed(0)} kg/s` : `${r.massFlow.toFixed(1)} kg/s`);
+    set('flow', fmtFlow(r.massFlow));
+    // The same three figures from the simulated gas, or a word on why there are none.
+    set('thrustSim', sim ? simulatedLine(fmtThrust(sim.thrust), sim.thrust, r.thrust) : `Simulated: ${simulatedNote || '\u2014'}`);
+    set('ispSim', sim ? simulatedLine(`${sim.isp.toFixed(0)} s`, sim.isp, r.isp) : 'Simulated: \u2014');
+    set('flowSim', sim ? simulatedLine(fmtFlow(sim.massFlow), sim.massFlow, r.massFlow) : 'Simulated: \u2014');
     set('flowSub', stock ? delta(r.massFlow, stock.massFlow) : `chamber at ${(r.pc / 1e5).toFixed(0)} bar`);
     set('temp', `${r.tc.toFixed(0)} K / ${(r.exitVelocity / 1000).toFixed(2)} km/s`);
     set('tempSub', `Mach ${r.exitMach.toFixed(1)} at the exit`);
