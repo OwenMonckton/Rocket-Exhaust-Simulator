@@ -34,6 +34,20 @@ hold whatever the plume grid has there. It was built in three stages:
   it: nothing makes the gas let go of the wall, so left alone it stands a shock across the
   whole nozzle with slow gas behind it, which is not what an engine does. Finding the point
   properly needs a boundary layer at the wall, which is a different class of solver.
+- **Two kinds of separated jet are not linked.** A free jet inside the bell gives up momentum
+  to the outside air beside it, and in the engine grid some jets break up before they reach
+  the exit. Those keep the older treatment (the engine grid runs alone, the view is clipped to
+  where the formula puts the jet, and the plume starts from the formula):
+  - a separated jet of very light exhaust: nuclear thermal and salt-water engines, whose gas
+    is dozens of times thinner than the air beside it;
+  - the RL10B-2 with its extension seated, while separated: the engine grid then stops at the
+    fixed nozzle, as for a sliding extension, because the jet would otherwise have the whole
+    length of a very large bell to cross.
+- **The exit is only two-way where the gas is slower than sound.** Supersonic gas is let go
+  without looking at the plume grid, and the pressure the plume grid can press back with is
+  capped at about twice the still air's. Without both, the front of a starting jet (briefly at
+  far higher pressure in the plume grid) stands a shock in the nozzle mouth that the two grids
+  then hold in place between them.
 - **The smallest cells lag.** The engine grid's cells across the throat are far smaller than
   the plume grid's. The engine grid takes up to two steps of its own for each plume step
   (`MAX_ENGINE_SUBSTEPS`); cells that would need more fall behind true time. Steady flow is

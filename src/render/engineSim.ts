@@ -164,6 +164,13 @@ vec4 inflow(vec4 inside) {
 // outside, and air can come back in.
 // On its own, supersonic gas leaves freely and slower gas feels a set outside pressure.
 vec4 outflow(vec4 inside, ivec2 c) {
+  // Gas leaving faster than sound cannot be reached from outside, so it is simply let go.
+  // Leaving that to the flux between the two grids' cells is right in principle, but the plume
+  // grid's cells just outside can briefly hold far more pressure than the air does (the front
+  // of the jet as it starts), enough to stand a shock in the nozzle mouth that the two grids
+  // then hold in place between them.
+  float a = sqrt(uGamma * inside.w / inside.x);
+  if (inside.y >= a) return inside;
   if (uLinkOn > 0.5) {
     float x = uPlumeExit.x + (float(c.x - uGrid.x) + 0.5) * uDx / uPlumeGeom.z;
     float r = uPlumeExit.y * (float(c.y) + 0.5) / float(uGrid.y);
@@ -176,10 +183,16 @@ vec4 outflow(vec4 inside, ivec2 c) {
     vec2 vel = U.yz / rho;
     float p = max((uGamma - 1.0) * (U.w - 0.5 * rho * dot(vel, vel)), 1e-12);
     vec4 w = vec4(rho * uPlumeScale.x, vel * uPlumeScale.y, p * uPlumeScale.z);
-    if (!(any(isnan(w)) || any(isinf(w)))) return vec4(max(w.x, RHO_MIN), w.yz, max(w.w, P_MIN));
+    if (!(any(isnan(w)) || any(isinf(w)))) {
+      // The outside can press back with about the pressure of the still air, and no more. The
+      // plume grid can show far higher just beyond the exit: the front of a light jet ramming
+      // into dense air as the engine starts. In a real engine that front moves off downstream.
+      // Here the plume grid is slow to let it, and passed on in full it stands a shock inside
+      // the nozzle that then never leaves.
+      w.w = min(w.w, max(2.0 * uRest.y, inside.w));
+      return vec4(max(w.x, RHO_MIN), w.yz, max(w.w, P_MIN));
+    }
   }
-  float a = sqrt(uGamma * inside.w / inside.x);
-  if (inside.y >= a) return inside;
   if (inside.y < 0.0) return vec4(uRest.x * uBack / uRest.y, 0.0, 0.0, uBack);
   return vec4(inside.xyz, uBack);
 }

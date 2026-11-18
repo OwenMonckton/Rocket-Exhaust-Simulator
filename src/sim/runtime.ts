@@ -167,7 +167,19 @@ export function createRuntime(
     // and work out for themselves what an over-expanded nozzle does: where the shock stands,
     // whether outside air gets in. Nothing is taken from the formula that says where the jet
     // tears off the wall, so everything is laid out as if the gas filled the whole nozzle.
-    const wholeNozzle = useSim && engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure;
+    //
+    // One exception: a separated jet of very light exhaust (hot hydrogen from a nuclear engine,
+    // or a salt-water engine's far hotter gas). Beside outside air dozens of times denser, such
+    // a jet gives up its momentum within a few diameters in the engine's grid and dies inside
+    // the bell. Those keep the simpler treatment: the engine's gas runs on its own, the view is
+    // clipped to where the formula puts the jet, and the plume starts from the formula.
+    const lightExhaust = PROPELLANTS[state.config.propellant].mixKind === 'temperature';
+    const wholeNozzle =
+      useSim &&
+      engineGas === 'sim' &&
+      (plume?.engineSimAvailable ?? false) &&
+      !failure &&
+      !(lightExhaust && result.state === 'separated');
     const ext = profile.extension;
     const fixedFlow = ext ? fixedExitFlow(state.config, result, wholeNozzle) : null;
     const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
@@ -219,7 +231,12 @@ export function createRuntime(
     // it to the true exit. (Sliding or stowed, it is a loose cone standing in the plume, which
     // only the plume's grid can hold.) The plume's grid stays where it is either way, so
     // nothing jumps as the extension seats.
-    const extensionInEngine = wholeNozzle && !!fromFixed && state.config.extDeploy > 0.995;
+    // Not while the jet is separated, though: torn off the wall near the throat, it would have
+    // the whole length of a very large bell to cross as a free jet, and in the engine's grid
+    // it breaks up on the way and never settles. Ending the engine's grid at the fixed nozzle,
+    // as for a sliding extension, gives a clean jet.
+    const extensionInEngine =
+      wholeNozzle && !!fromFixed && state.config.extDeploy > 0.995 && result.state !== 'separated';
     const engineExitX = extensionInEngine ? profile.exitX : flowExitX;
     let gas: EngineGas | null = null;
     if (engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure) {
