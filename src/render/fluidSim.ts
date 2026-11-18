@@ -550,15 +550,23 @@ void main() {
   float frac = S1 / w.x;
   if (uFire > 0.02) {
     // Hold the surrounding air at ambient, leaving anything containing exhaust alone.
-    float k = uRelax * (1.0 - smoothstep(0.01, 0.08, frac));
+    float k = uRelax * (1.0 - smoothstep(0.002, 0.02, frac));
+    float before = w.x;
     w.x = mix(w.x, uAmb.x, k);
     w.w = mix(w.w, uAmb.y, k);
+    // Air added to top a cell up is still air: it brings no momentum of its own. Air beside the
+    // jet is moving with it, and warmer and thinner than ambient, so topping it up at the speed
+    // it already had would hand the plume momentum from nowhere.
+    // Air let out of a cell takes its momentum with it, so what is left keeps its speed. (Speeding
+    // the rest up to keep the cell's momentum feeds on itself in a vacuum, where gas is forever
+    // being let out, and the solver runs away.)
+    w.yz *= min(1.0, before / w.x);
     // Wisps of exhaust left drifting in still air disperse (the grid has no wind to carry them off).
     // Only exhaust beside air counts, so a lingering cloud wears away from its edges. Slow gas
     // inside the jet (behind a shock in its core) is left alone: turned into air there, it would
     // be pulled up to the density of the air outside and sit in the jet's path as a dense plug,
     // and every plug the jet pushed out of the way would run down it as a shock front.
-    float slow = 1.0 - smoothstep(0.05, 0.2, length(w.yz) / uExitSpeed);
+    float slow = 1.0 - smoothstep(0.02, 0.08, length(w.yz) / uExitSpeed);
     float besideAir = 1.0 - smoothstep(0.3, 0.7, min(min(fxm1, fxp1), min(fym1, fyp1)));
     frac *= 1.0 - 0.02 * slow * besideAir;
   } else {
