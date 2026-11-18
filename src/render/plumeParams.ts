@@ -2,8 +2,8 @@ import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
 import { PROPELLANTS, gasProps, richness } from '../physics/propellants';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
-import type { SimInputs } from './fluidSim';
-import { engineProfile, spikeJetRadius } from './geometry';
+import { SPIKE_SAMPLES, type SimInputs } from './fluidSim';
+import { engineProfile, spikeJetRadius, spikeSurfaceRadius, type SpikeGeometry } from './geometry';
 
 export interface PlumeParams {
   /** Exit pressure over ambient pressure, capped to 0.05–400 */
@@ -140,6 +140,40 @@ export function simInputs(
     wallCurve: 0,
   };
 }
+/**
+ * Boundary conditions for simulating an aerospike. The simulation's origin is the plane of the
+ * lip and its unit of length the lip's radius. It is given the spike's shape and the gas as it
+ * leaves the thrust cells; everything from there on, it works out for itself.
+ */
+export function spikeSimInputs(cfg: EngineConfig, r: SimResult, fire: number, spike: SpikeGeometry): SimInputs {
+  const lipR = spike.lip.r;
+  // The gas leaving the cells: part-expanded, at the Mach number the spike's surface starts from.
+  const mach = spike.contour[0].mach;
+  const flow = { radiusM: lipR, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
+  const length = spike.base.x - spike.lip.x;
+  const radii: number[] = [];
+  for (let i = 0; i < SPIKE_SAMPLES; i++) {
+    radii.push(spikeSurfaceRadius(spike, spike.lip.x + (i / (SPIKE_SAMPLES - 1)) * length) / lipR);
+  }
+  // The last point is the edge of the flat base, not the nothing behind it.
+  radii[SPIKE_SAMPLES - 1] = spike.base.r / lipR;
+  // How much further the whole spike would expand the gas.
+  const g = r.gamma;
+  const expansion = pressureRatio(machFromAreaRatio(r.expansionRatio, g), g) / pressureRatio(mach, g);
+  return {
+    ...simInputs(cfg, r, fire, { flow, wallSlope: 0 }),
+    // The cells deliver the same gas all the way across the ring.
+    profile: 0,
+    spike: {
+      radii,
+      length: length / lipR,
+      tilt: spike.cell.tilt,
+      designDensity: Math.pow(expansion, 1 / g),
+      designTemp: Math.pow(expansion, (g - 1) / g),
+    },
+  };
+}
+
 /** Turn the physics result into what the plume should look like. `fire` is the 0–1 ignition ramp. */
 export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState, fire: number): PlumeParams {
   const prop = PROPELLANTS[cfg.propellant];

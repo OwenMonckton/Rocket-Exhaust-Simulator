@@ -9,7 +9,7 @@ import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
-import { fixedExitFlow, plumeParams, simInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { isModified, type AppState, type Store } from '../state/store';
 
 export interface FrameInfo {
@@ -176,22 +176,27 @@ export function createRuntime(
     const lightExhaust = PROPELLANTS[state.config.propellant].mixKind === 'temperature';
     // The engine's gas simulation follows the wall of a bell from the injector to the exit. An
     // aerospike has no such wall: its gas runs along the outside of a spike, with open air on the
-    // other side. So an aerospike's gas is drawn by its own view, and only its plume is simulated,
-    // starting from the spike's base.
+    // other side. That is the plume grid's kind of flow, so with the plume simulated the spike
+    // stands in the plume's grid as a solid body, the gas enters as a ring at the lip, and the
+    // grid works out the flow along the spike along with the plume. (With the plume drawn, the
+    // aerospike's own view draws the gas on the spike from a formula.)
     const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike;
     const wholeNozzle = useSim && engineSimOn && !(lightExhaust && result.state === 'separated');
+    const spikeSim = useSim && profile.spike ? profile.spike : null;
     const ext = profile.extension;
     const fixedFlow = ext ? fixedExitFlow(state.config, result, wholeNozzle) : null;
     const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
-    const flowExitX = fromFixed ? fromFixed.ext.seam.x : profile.exitX;
+    const flowExitX = spikeSim ? spikeSim.lip.x : fromFixed ? fromFixed.ext.seam.x : profile.exitX;
     const wholeFlow = wholeNozzle && !fromFixed ? wholeNozzleFlow(state.config, result) : null;
-    const plumeRadiusM = fromFixed
-      ? useSim
-        ? fromFixed.flow.radiusM
-        : Math.min(params.exitRadiusM, fromFixed.ext.seam.r)
-      : wholeFlow
-        ? wholeFlow.radiusM
-        : params.exitRadiusM;
+    const plumeRadiusM = spikeSim
+      ? spikeSim.lip.r
+      : fromFixed
+        ? useSim
+          ? fromFixed.flow.radiusM
+          : Math.min(params.exitRadiusM, fromFixed.ext.seam.r)
+        : wholeFlow
+          ? wholeFlow.radiusM
+          : params.exitRadiusM;
     const wall = fromFixed
       ? {
           x0: -fromFixed.ext.shift / plumeRadiusM,
@@ -203,18 +208,20 @@ export function createRuntime(
         }
       : null;
 
-    const sim = useSim
-      ? simInputs(
-          state.config,
-          result,
-          fire,
-          fromFixed
-            ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope }
-            : wholeFlow
-              ? { flow: wholeFlow }
-              : undefined,
-        )
-      : null;
+    const sim = spikeSim
+      ? spikeSimInputs(state.config, result, fire, spikeSim)
+      : useSim
+        ? simInputs(
+            state.config,
+            result,
+            fire,
+            fromFixed
+              ? { flow: fromFixed.flow, wallSlope: fromFixed.ext.seamSlope }
+              : wholeFlow
+                ? { flow: wholeFlow }
+                : undefined,
+          )
+        : null;
     // An aerospike has no bell for the jet to follow.
     if (sim && !profile.spike && (wholeNozzle || result.state !== 'separated')) {
       // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
@@ -315,6 +322,15 @@ export function createRuntime(
         radiusPx: plumeRadiusM * view.ppm * dpr,
         offsetsPx: profile.offsets.map((o) => o * pixelsPerMetre),
         wall,
+        // The same scales the aerospike's own view colours its thrust cells by.
+        spikeView:
+          spikeSim && overlay !== 'none' && !failure
+            ? {
+                mode: overlay,
+                machMax: Math.max(1.5, result.exitMach),
+                exitTemp: 1 / (1 + ((result.gamma - 1) / 2) * Math.max(1.01, result.exitMach) ** 2),
+              }
+            : null,
       },
       timeS,
       sim,
@@ -322,7 +338,7 @@ export function createRuntime(
     );
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null, wholeNozzle, burnt }, w, h);
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null, wholeNozzle, burnt }, w, h);
     const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 

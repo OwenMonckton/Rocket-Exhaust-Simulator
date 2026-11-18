@@ -13,6 +13,12 @@ export interface PlumeTarget {
   offsetsPx: number[];
   /** A nozzle extension standing in the plume, in exit radii from the plume's origin; the plume cannot pass through it */
   wall?: SimWall | null;
+  /**
+   * Colour the simulated gas over an aerospike's spike by its speed or temperature, as "Show
+   * inside" does for the gas in a bell engine. `machMax` is the Mach number at the top of the
+   * speed scale, `exitTemp` the bottom of the temperature scale over chamber temperature.
+   */
+  spikeView?: { mode: 'mach' | 'temp'; machMax: number; exitTemp: number } | null;
 }
 
 /** The gas inside the engine, from its own simulation, and where and how to draw it. */
@@ -58,7 +64,7 @@ export interface PlumeRenderer {
 const UNIFORMS = [
   'uRes', 'uExit', 'uRadius', 'uTime', 'uIntensity', 'uSettle', 'uBloom', 'uSpacing', 'uDiamond',
   'uPhase', 'uTurb', 'uLen', 'uOpacity', 'uSoot', 'uSmoke', 'uStars', 'uCore', 'uMid', 'uEdge',
-  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uWallShape', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor',
+  'uSkyTop', 'uSkyBottom', 'uUseSim', 'uSim', 'uSimGrid', 'uSimCell', 'uSimGamma', 'uSimAmbT', 'uSimT0', 'uSimAmbP', 'uSimS', 'uAfter', 'uAfterCol', 'uParticles', 'uExitCount', 'uExitOffsets', 'uWallOn', 'uWall', 'uWallShape', 'uSimUp', 'uSimLip', 'uSimCurve', 'uSimFade', 'uSimFloor', 'uSimUnit', 'uSpikeView', 'uSpikeScale',
   'uInOn', 'uIn', 'uInRad', 'uInStations', 'uInOrigin', 'uInScale', 'uInLen', 'uInMode', 'uInGamma', 'uInExitT', 'uInMachMax', 'uInRestT', 'uInOpacity',
 ] as const;
 
@@ -247,11 +253,20 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         gl.uniform1f(u.uSimLip, simInputs!.divergence);
         gl.uniform1f(u.uSimCurve, simInputs!.wallCurve);
         gl.uniform1f(u.uSimGamma, simInputs!.gamma);
-        gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb);
-        gl.uniform1f(u.uSimT0, simInputs!.t0);
-        gl.uniform1f(u.uSimAmbP, simInputs!.pAmb);
-        gl.uniform1f(u.uSimFloor, VACUUM_FLOOR);
+        // The glow is judged against exhaust as it leaves a nozzle. An aerospike's gas enters the
+        // grid before the spike has expanded it, so measure it against where the spike takes it.
+        const unitDensity = simInputs!.spike?.designDensity ?? 1;
+        const unitTemp = simInputs!.spike?.designTemp ?? 1;
+        gl.uniform2f(u.uSimUnit, unitDensity, unitTemp);
+        gl.uniform1f(u.uSimAmbT, simInputs!.pAmb / simInputs!.rhoAmb / unitTemp);
+        gl.uniform1f(u.uSimT0, simInputs!.t0 / unitTemp);
+        gl.uniform1f(u.uSimAmbP, simInputs!.pAmb / (unitDensity * unitTemp));
+        gl.uniform1f(u.uSimFloor, VACUUM_FLOOR / (unitDensity * unitTemp));
       }
+      const spike = useSim ? simInputs!.spike : undefined;
+      const spikeView = spike ? target.spikeView : null;
+      gl.uniform1i(u.uSpikeView, spikeView ? (spikeView.mode === 'mach' ? 1 : 2) : 0);
+      if (spike && spikeView) gl.uniform3f(u.uSpikeScale, spike.length, spikeView.machMax, spikeView.exitTemp);
       gl.uniform1f(u.uInOn, useEngine ? 1 : 0);
       gl.uniform1i(u.uIn, 2);
       gl.uniform1i(u.uInRad, 3);
