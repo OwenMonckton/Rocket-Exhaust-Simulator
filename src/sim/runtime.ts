@@ -6,7 +6,7 @@ import { PROPELLANTS, gasProps } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
-import { ENGINE_NX } from '../render/engineSim';
+import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
@@ -57,6 +57,8 @@ const RAMP_DOWN_S = 0.6;
 const SWEEP_S = 30;
 /** Frames at full power before figures are taken from the simulated gas: about a second, for it to settle. */
 const SETTLE_FRAMES = 60;
+/** Seconds between readings of the simulated gas for those figures. */
+const READ_EVERY_S = 1;
 /** How long a solid motor's grain lasts at full burn. Longer than an altitude sweep, so one motor can fly it. */
 const SOLID_BURN_S = 60;
 export const ZOOM_MIN = 0.3;
@@ -90,6 +92,8 @@ export function createRuntime(
   // Thrust and efficiency worked out from the simulated gas: how many frames it has had to
   // settle at full power, and the figures themselves, smoothed.
   let settledFrames = 0;
+  let latestReading: ColumnReading | null = null;
+  let lastAskedS = -Infinity;
   let simulated: SimulatedFigures | null = null;
   let zoom = 1;
   let lastGood: AppState = store.get();
@@ -298,6 +302,7 @@ export function createRuntime(
       if (engine !== simulatedEngine) {
         plume?.resetEngineSim();
         settledFrames = 0;
+        latestReading = null;
       }
       simulatedEngine = engine;
       gas = {
@@ -359,14 +364,22 @@ export function createRuntime(
     if (!gas) {
       simulatedNote = failure ? '' : profile.spike ? 'not for aerospikes' : 'engine gas is drawn';
       settledFrames = 0;
+      latestReading = null;
       simulated = null;
     } else {
-      // Asked for every frame, so that an answer is there when it is wanted. Each reading comes
-      // back marked with how settled the engine was when it was asked for; only ones taken
-      // after the engine had settled count.
+      // Reading the grid back is not free. Measured on a 144 Hz display, each reading makes one
+      // frame arrive late: asked for every frame, 7 frames in a hundred were late and the frame
+      // rate fell from 141 to 124. So it is asked for only once the engine has settled, and only
+      // once a second, which is all the readouts need. Each reading comes back marked with how
+      // settled the engine was when it was asked for; one from before it restarted does not count.
       settledFrames = fire >= 1 ? settledFrames + 1 : 0;
-      const throatStation = (profile.throatX / engineExitX) * ENGINE_NX;
-      const latest = plume!.engineColumns(settledFrames, throatStation);
+      if (settledFrames === 0) latestReading = null;
+      if (settledFrames >= SETTLE_FRAMES) {
+        const ask = timeS - lastAskedS >= READ_EVERY_S;
+        if (ask) lastAskedS = timeS;
+        latestReading = plume!.engineColumns(settledFrames, (profile.throatX / engineExitX) * ENGINE_NX, ask);
+      }
+      const latest = latestReading;
       const reading = latest && latest.stamp >= SETTLE_FRAMES && latest.stamp <= settledFrames ? latest : null;
       if (fire < 1) {
         simulatedNote = firing ? 'starting up' : 'fire the engine';

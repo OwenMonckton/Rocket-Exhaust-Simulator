@@ -59,7 +59,7 @@ export interface PlumeRenderer {
    * The simulated gas where it leaves the engine's grid, as it was a few frames ago (see
    * `EngineSim.readColumns`). Null when there is nothing to read yet, or no such simulation.
    */
-  engineColumns(stamp: number, station: number): ColumnReading | null;
+  engineColumns(stamp: number, station: number, ask: boolean): ColumnReading | null;
   /** False when this browser cannot run the gas simulation */
   readonly simAvailable: boolean;
   /** False when this browser cannot run the simulation of the gas inside the engine */
@@ -155,8 +155,8 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
     resetEngineSim() {
       engineSim?.reset();
     },
-    engineColumns(stamp, station) {
-      return lost ? null : (engineSim?.readColumns(stamp, station) ?? null);
+    engineColumns(stamp, station, ask) {
+      return lost ? null : (engineSim?.readColumns(stamp, station, ask) ?? null);
     },
     resize(widthPx, heightPx) {
       if (canvas.width !== widthPx || canvas.height !== heightPx) {

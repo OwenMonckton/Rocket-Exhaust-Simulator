@@ -91,11 +91,14 @@ export interface EngineSim {
    * and column `station`. Each is four numbers a cell from the centreline to the wall: density,
    * momentum (x, r), energy. It is the state of a few frames ago, or null before the first
    * reading has come back: the graphics card is asked, and answers when it is ready, so that
-   * nothing waits on it. Each call picks up an answer if there is one and asks again. `stamp`
-   * and `station` are handed back with the reading asked for in that call, so the caller can
-   * tell how old a reading is and where it was taken.
+   * nothing waits on it. Each call picks up an answer if there is one; with `ask`, and nothing
+   * already asked for, it asks again. `stamp` and `station` are handed back with the reading
+   * asked for in that call, so the caller can tell how old a reading is and where it was taken.
+   *
+   * Asking is not free. Measured, each reading makes about one frame arrive late, so ask about
+   * once a second, not every frame.
    */
-  readColumns(stamp: number, station: number): ColumnReading | null;
+  readColumns(stamp: number, station: number, ask: boolean): ColumnReading | null;
 }
 
 export interface ColumnReading {
@@ -549,7 +552,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
       // Whatever comes back next is the engine as it was before.
       readingReady = false;
     },
-    readColumns(stamp: number, station: number) {
+    readColumns(stamp: number, station: number, ask: boolean) {
       if (pending) {
         const status = gl.clientWaitSync(pending.sync, 0, 0);
         if (status === gl.TIMEOUT_EXPIRED) return readingReady ? reading : null;
@@ -564,7 +567,7 @@ export function createEngineSim(gl: WebGL2RenderingContext): EngineSim | null {
         }
         pending = null;
       }
-      if (!needsReset) {
+      if (ask && !needsReset) {
         const column = Math.min(ENGINE_NX - 1, Math.max(0, Math.round(station)));
         gl.bindFramebuffer(gl.FRAMEBUFFER, targets[current].fbo);
         gl.readBuffer(gl.COLOR_ATTACHMENT0);
