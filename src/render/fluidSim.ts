@@ -257,7 +257,33 @@ bool inNozzle(ivec2 c) {
   // An aerospike: everything forward of the lip's plane, out to the lip. Any cell the lip cuts
   // through counts, so the ring delivers exactly the flow it should however coarse the grid.
   if (uSpikeOn > 0.5) return p.x < 0.0 && p.y - 0.5 * uDx < 1.0;
-  return (p.x < 0.0 && p.y < nozzleRadius(p.x)) || inEngineExtension(p);
+  // A bell: out to its wall, counting the cell the wall cuts through (see nozzleCover).
+  return (p.x < 0.0 && p.y - 0.5 * uDx < nozzleRadius(p.x)) || inEngineExtension(p);
+}
+
+// How much of a cell forward of the exit plane lies inside the nozzle: all of it for most, a
+// share for the one the wall cuts through. Without this the exit would be a whole number of
+// cells across, and the plume would get up to a cell's width too much or too little gas
+// depending on how the grid happens to fall, which changes with the zoom.
+float nozzleCover(vec2 p) {
+  return clamp((nozzleRadius(p.x) - (p.y - 0.5 * uDx)) / uDx, 0.0, 1.0);
+}
+
+// The gas a cell in the nozzle delivers, given the gas arriving there and how much of the cell
+// is inside the wall.
+vec4 covered(vec4 w, float cover, inout float frac) {
+  if (cover >= 1.0) return w;
+  if (w.y > sqrt(uGamma * w.w / w.x)) {
+    // Faster than sound, what crosses into the plume is set by this cell alone, so thinning the
+    // gas (at the same speed and temperature) delivers exactly its share.
+    w.x *= cover;
+    w.w *= cover;
+    return w;
+  }
+  // Slower gas also feels the plume's pressure, which thinning would upset. The rest of such a
+  // cell is the still air outside the wall, so it holds a blend of the two.
+  frac *= cover;
+  return mix(ambient(), w, cover);
 }
 
 // The exhaust arriving from an aerospike's thrust cells: uniform, heading inward, through the
@@ -330,11 +356,14 @@ vec4 cell(ivec2 c, out float frac) {
       if (uSpikeOn > 0.5) {
         w = ringState(p);
         frac = 1.0;
-      } else if (uInletOn > 0.5) {
-        w = inletState(p, frac);
       } else {
-        w = exhaustState(r);
-        frac = 1.0;
+        if (uInletOn > 0.5) {
+          w = inletState(p, frac);
+        } else {
+          w = exhaustState(r);
+          frac = 1.0;
+        }
+        if (p.x < 0.0) w = covered(w, nozzleCover(p), frac);
       }
     } else {
       w = ambient();
