@@ -1,7 +1,7 @@
 # Engine builder, part 2: fuel and oxidiser chemistry — Design
 
 Date: 2026-11-20
-Status: Draft, awaiting approval
+Status: Built
 
 ## Intent
 
