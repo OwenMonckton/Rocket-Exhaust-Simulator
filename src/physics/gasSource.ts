@@ -12,6 +12,8 @@ const R_UNIVERSAL = 8314.46;
 export interface GasSource {
   /** True when the solver worked the gas out */
   calculated: boolean;
+  /** False when `gas` is the cold-air stand-in because there was no settled solve: no figure from it is real */
+  settled: boolean;
   gas: GasProps;
   /** Characteristic chamber length (m) needed for complete combustion */
   lStarRef: number;
@@ -79,6 +81,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
       const drops = dropletNote(solved);
       return {
         calculated: true,
+        settled: solved.ok,
         gas: gasOf(solved),
         lStarRef: 0,
         look: p.look,
@@ -91,6 +94,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
     }
     return {
       calculated: false,
+      settled: true,
       gas: gasProps(cfg.propellant, cfg.mixtureRatio),
       lStarRef: p.lStarRef,
       look: p.look,
@@ -114,6 +118,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
   }
   return {
     calculated: true,
+    settled: solved.ok,
     gas: gasOf(solved),
     lStarRef: borrowed.lStarRef,
     look: borrowed.look,

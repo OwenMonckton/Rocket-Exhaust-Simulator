@@ -179,4 +179,6 @@ export interface SimResult {
   notes: string[];
   /** True when the gas was worked out by the chemistry solver rather than taken from a table */
   calculated: boolean;
+  /** False when no solve settled and the figures come from a stand-in gas; none of them is real */
+  settled: boolean;
 }

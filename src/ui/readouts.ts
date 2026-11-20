@@ -1,6 +1,6 @@
 import type { Limits, SimResult } from '../physics/types';
 import type { SimulatedFigures } from '../render/simFigures';
-import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, exhaustLine, showsFigures } from './copy';
+import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, exhaustLine, limitNote, showsFigures } from './copy';
 
 export interface ReadoutInfo {
   result: SimResult;
@@ -74,13 +74,6 @@ const html = `
   </div>
 `;
 
-/** What the line under the limit bars says about a failure, when it is not the usual one. */
-const FAILURE_NOTE: Partial<Record<NonNullable<SimResult['failure']>, string>> = {
-  flameout: 'This mixture will not keep burning.',
-  inert: 'Nothing here will burn.',
-  unsolved: 'No figures: the chemistry would not settle.',
-};
-
 export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   root.innerHTML = html;
   const get = (name: string) => root.querySelector<HTMLElement>(`[data-r="${name}"]`)!;
@@ -120,7 +113,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
       for (const name of gasFigures) set(name, name.endsWith('Sub') || name === 'stateText' ? '' : dash);
       delete get('state').dataset.state;
       for (const name of ['thrustSim', 'ispSim', 'flowSim']) set(name, `Simulated: ${dash}`);
-      set('notes', FAILURE_NOTE.unsolved!);
+      set('notes', limitNote(r));
       return;
     }
 
@@ -154,7 +147,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
       m.box.dataset.level = v >= 1 ? 'red' : v >= 0.85 ? 'amber' : 'ok';
     }
     const msgs: string[] = [];
-    if (r.failure) msgs.push(FAILURE_NOTE[r.failure] ?? 'Past a limit: this engine will fail when fired.');
+    if (r.failure) msgs.push(limitNote(r));
     if (r.shudder > 0 && !r.failure) msgs.push('The chamber is shuddering, close to combustion instability.');
     if (r.rough) msgs.push('Running rough: the mixture is at the edge of what will burn.');
     if (r.combustionEff < 0.95 && r.shudder === 0 && !r.rough) {

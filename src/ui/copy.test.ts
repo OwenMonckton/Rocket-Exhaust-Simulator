@@ -3,7 +3,7 @@ import { simulate } from '../physics/engine';
 import { pairRange, solvePair } from '../physics/chem/pair';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
-import { SPECIES_NAMES, exhaustLine, failureCopy, showsFigures, speciesName } from './copy';
+import { SPECIES_NAMES, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
 
 describe('failure copy for the chemistry failures', () => {
   for (const kind of ['flameout', 'inert', 'detonation', 'unsolved'] as const) {
@@ -55,15 +55,61 @@ describe('exhaust species names', () => {
     expect(exhaustLine(exhaust)).toBe('Steam 63% · Hydrogen 29% · Hydroxyl (OH) <1% · …');
     expect(exhaustLine([])).toBe('');
   });
+
+  it('adds up species that share a plain name, without touching the list', () => {
+    const exhaust = Object.freeze([
+      Object.freeze({ name: 'BeO(a)', share: 0.3 }),
+      Object.freeze({ name: 'H2', share: 0.25 }),
+      Object.freeze({ name: 'BeO(b)', share: 0.2 }),
+      Object.freeze({ name: 'H2O', share: 0.248 }),
+    ]) as { name: string; share: number }[];
+    expect(exhaustLine(exhaust)).toBe('Solid beryllium oxide 50% · Hydrogen 25% · Steam 25%');
+    expect(exhaust.map((e) => e.name)).toEqual(['BeO(a)', 'H2', 'BeO(b)', 'H2O']);
+  });
 });
 
 describe('showsFigures', () => {
+  const sl = { altitudeKm: 0, throttle: 1 };
+  const base = simulate(starterEngine(), sl);
+  const as = (failure: Failure, settled: boolean) => ({ ...base, failure, settled });
+  it('shows the figures exactly when the gas settled, whatever the failure', () => {
+    expect(showsFigures(as('unsolved', false))).toBe(false);
+    expect(showsFigures(as('detonation', false))).toBe(false);
+    expect(showsFigures(as('inert', false))).toBe(false);
+    expect(showsFigures(as('detonation', true))).toBe(true);
+    expect(showsFigures(as('flameout', true))).toBe(true);
+    expect(showsFigures(as('burst', true))).toBe(true);
+    expect(showsFigures(as(null, true))).toBe(true);
+  });
+  it('hides them for RP-1 with nothing to burn it', () => {
+    expect(showsFigures(simulate({ ...starterEngine(), oxidiser: 'none' }, sl))).toBe(false);
+  });
+});
+
+describe('the line under the limit bars', () => {
   const base = simulate(starterEngine(), { altitudeKm: 0, throttle: 1 });
-  const as = (failure: Failure) => ({ ...base, failure });
-  it('hides the figures only when the chemistry did not settle', () => {
-    expect(showsFigures(as('unsolved'))).toBe(false);
-    expect(showsFigures(as('flameout'))).toBe(true);
-    expect(showsFigures(as('burst'))).toBe(true);
-    expect(showsFigures(as(null))).toBe(true);
+  const as = (failure: Failure, settled: boolean) => limitNote({ ...base, failure, settled });
+  it('names the failure the engine actually has', () => {
+    expect(as(null, true)).toBe('');
+    expect(as('flameout', true)).toBe('This mixture will not keep burning.');
+    expect(as('inert', false)).toBe('Nothing here will burn.');
+    expect(as('unsolved', false)).toBe('No figures: the chemistry would not settle.');
+    expect(as('burst', true)).toBe('Past a limit: this engine will fail when fired.');
+    expect(as('detonation', true)).toBe('Past a limit: this engine will fail when fired.');
+  });
+  it('says there are no figures when a failure with no note of its own did not settle', () => {
+    expect(as('detonation', false)).toBe('No figures: the chemistry would not settle.');
+  });
+});
+
+describe('unsolved wording', () => {
+  it('speaks of the core temperature, not a mixture ratio, for a reactor', () => {
+    for (const energy of ['reactor', 'saltwater'] as const) {
+      const copy = failureCopy('unsolved', energy);
+      expect(copy.title).toBe('No answer');
+      expect(copy.text).not.toMatch(/mixture ratio/);
+      expect(copy.text).toMatch(/temperature/);
+    }
+    expect(failureCopy('unsolved', 'combustion').text).toMatch(/mixture ratio/);
   });
 });

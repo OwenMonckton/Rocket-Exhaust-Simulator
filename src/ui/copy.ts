@@ -1,3 +1,4 @@
+import { ENERGY_SOURCES } from '../physics/parts';
 import type { EnergyId, ExpansionState, Failure, SimResult } from '../physics/types';
 
 export const TIPS = {
@@ -14,6 +15,7 @@ export const TIPS = {
   fuel: 'What burns in the chamber. Changing it works the flame out afresh from the chemistry and sets the mixture ratio to suit.',
   oxidiser: 'What the fuel burns with. Changing it works the flame out afresh from the chemistry and sets the mixture ratio to suit.',
   mixtureRatio: 'Kilograms of oxidiser burned per kilogram of fuel. Lower is fuel-rich, higher is oxidiser-rich.',
+  noMixture: 'There is no oxidiser, so there is nothing to mix the fuel with and no ratio to set. Pick an oxidiser to set one.',
   deploy: 'Slide the nozzle extension into place, or stow it. The longer nozzle is far more efficient in vacuum.',
   altitudeKm: 'How high the engine is. The air thins out as you climb, and is effectively gone by 86 km.',
   throttle: 'Run the engine below full power by lowering chamber pressure.',
@@ -120,9 +122,24 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
 };
 
-/** False when the figures cannot be trusted at all: the chemistry did not settle, so none are shown. */
+/** False when the figures cannot be trusted at all: no solve settled, so none are shown. */
 export function showsFigures(result: SimResult): boolean {
-  return result.failure !== 'unsolved';
+  return result.settled;
+}
+
+/** What the line under the limit bars says about a failure, when it is not the usual one. */
+const FAILURE_NOTE: Partial<Record<Exclude<Failure, null>, string>> = {
+  flameout: 'This mixture will not keep burning.',
+  inert: 'Nothing here will burn.',
+  unsolved: 'No figures: the chemistry would not settle.',
+};
+
+/** The line under the limit bars about the engine's failure, or '' when it has none. */
+export function limitNote(result: SimResult): string {
+  const f = result.failure;
+  if (!showsFigures(result)) return (f && FAILURE_NOTE[f]) ?? FAILURE_NOTE.unsolved!;
+  if (!f) return '';
+  return FAILURE_NOTE[f] ?? 'Past a limit: this engine will fail when fired.';
 }
 
 /** Plain names for what the exhaust is made of, keyed by the thermo data's species names. */
@@ -240,7 +257,14 @@ export function speciesName(name: string): string {
 /** The exhaust as "Steam 63% · Hydrogen 29% · …", the dots marking what is too small to list. Never changes `exhaust`. */
 export function exhaustLine(exhaust: readonly { name: string; share: number }[]): string {
   if (exhaust.length === 0) return '';
-  const parts = exhaust.map(({ name, share }) => `${speciesName(name)} ${share < 0.005 ? '<1' : Math.round(share * 100)}%`);
+  // Species with the same plain name (two solid forms of one oxide) are one thing to the reader.
+  const byName = new Map<string, number>();
+  for (const { name, share } of exhaust) {
+    const plain = speciesName(name);
+    byName.set(plain, (byName.get(plain) ?? 0) + share);
+  }
+  const merged = [...byName].sort((a, b) => b[1] - a[1]);
+  const parts = merged.map(([name, share]) => `${name} ${share < 0.005 ? '<1' : Math.round(share * 100)}%`);
   const listed = exhaust.reduce((sum, e) => sum + e.share, 0);
   if (listed < 0.99) parts.push('…');
   return parts.join(' · ');
@@ -252,6 +276,12 @@ export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): 
     return {
       title: 'Nozzle vaporised',
       text: 'The fission reaction ran hotter than the layer of water protecting the nozzle could take. Turn down the reaction temperature, lower the chamber pressure or widen the throat.',
+    };
+  }
+  if (failure === 'unsolved' && ENERGY_SOURCES[energy].mixKind === 'temperature') {
+    return {
+      title: FAILURE_COPY.unsolved.title,
+      text: 'The chemistry of this fluid would not settle at this temperature, so there is no way to say how the engine runs, and no figures are shown. Try a different temperature or chamber pressure.',
     };
   }
   return FAILURE_COPY[failure];

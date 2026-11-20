@@ -46,6 +46,36 @@ const ingredientOption = (i: Ingredient) => ({ value: i.id, label: i.name, tip: 
 const burnsPair = (s: AppState) => s.config.energy === 'combustion';
 /** True when the solver works the gas out from the picked fuel and oxidiser. */
 const calculatedBurn = (s: AppState) => burnsPair(s) && s.config.propellant === 'calculated';
+/** True when a calculated engine has no oxidiser, so there is no mixture to set. */
+const noOxidiser = (s: AppState) => calculatedBurn(s) && s.config.oxidiser === NO_OXIDISER;
+/** The mixture slider is spread by ratio for a calculated pair whose range starts above zero. */
+const mixLog = (s: AppState) => calculatedBurn(s) && mixRange(s.config).ofMin > 0;
+
+type MixKind = 'ratio' | 'temperature' | 'none';
+
+/**
+ * The mixture setting a slider position stands for, in round numbers. Temperatures step by an amount
+ * suited to their range: 10 K for a reactor core, 10,000 K for a fission plasma. A log-scaled ratio
+ * keeps three significant figures, so its small fuel-rich end does not collapse onto a few values;
+ * a linear one keeps hundredths.
+ */
+export function roundMixture(v: number, kind: MixKind, log: boolean, range: { ofMin: number; ofMax: number }): number {
+  if (kind === 'temperature') {
+    const step = Math.pow(10, Math.floor(Math.log10(range.ofMax - range.ofMin)) - 2);
+    return Math.round(v / step) * step;
+  }
+  if (log && v > 0) return Number(v.toPrecision(3));
+  return Math.round(v * 100) / 100;
+}
+
+/** The mixture slider's readout. Small ratios keep three significant figures. */
+export function formatMixture(v: number, kind: MixKind, noOxidiser: boolean): string {
+  if (kind === 'ratio') {
+    if (noOxidiser) return 'nothing to mix with';
+    return `${v >= 1 || v === 0 ? v.toFixed(2) : v.toPrecision(3)} : 1`;
+  }
+  return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
+}
 
 /** Value of the Examples menu entry that starts a blank engine. */
 export const NEW_ENGINE = '__new';
@@ -130,7 +160,9 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           options: () => FUEL_IDS.map((id) => ingredientOption(FUELS[id])),
           get: (s) => s.config.fuel,
           set: (v) => store.setFuel(v),
-          note: (s) => (calculatedBurn(s) ? FUELS[s.config.fuel].tip : "Tuned to the real engine's published figures"),
+          // An example on its hand-tuned table says so; a tabled engine with no example (an old link) says nothing.
+          note: (s) =>
+            calculatedBurn(s) ? FUELS[s.config.fuel].tip : s.config.presetId ? "Tuned to the real engine's published figures" : '',
           hidden: (s) => !burnsPair(s),
         },
         {
@@ -207,29 +239,22 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           label: 'Mixture ratio',
           tip: TIPS.mixtureRatio,
           // A burning pair's ratio can span a hundredfold, so it is spread by ratio.
-          log: (s) => calculatedBurn(s) && mixRange(s.config).ofMin > 0,
+          log: mixLog,
           range: (s) => {
             const p = mixRange(s.config);
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
           },
           get: (s) => s.config.mixtureRatio,
           set: (v) => {
-            const p = mixRange(store.get().config);
-            // Temperatures step in round numbers suited to their range: 10 K for a reactor core,
-            // 10,000 K for a fission plasma.
-            const step = Math.pow(10, Math.floor(Math.log10(p.ofMax - p.ofMin)) - 2);
-            const rounded = ENERGY_SOURCES[store.get().config.energy].mixKind === 'temperature' ? Math.round(v / step) * step : Math.round(v * 100) / 100;
-            store.set({ config: { mixtureRatio: rounded } });
-          },
-          format: (v, s) => {
+            const s = store.get();
             const kind = ENERGY_SOURCES[s.config.energy].mixKind;
-            if (kind === 'ratio') return `${v.toFixed(2)} : 1`;
-            return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
+            store.set({ config: { mixtureRatio: roundMixture(v, kind, mixLog(s), mixRange(s.config)) } });
           },
-          disabled: (s) =>
-            ENERGY_SOURCES[s.config.energy].mixKind === 'none' || (calculatedBurn(s) && s.config.oxidiser === NO_OXIDISER),
+          format: (v, s) => formatMixture(v, ENERGY_SOURCES[s.config.energy].mixKind, noOxidiser(s)),
+          disabled: (s) => ENERGY_SOURCES[s.config.energy].mixKind === 'none' || noOxidiser(s),
           describe: (s) =>
-            ENERGY_SOURCES[s.config.energy].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
+            ENERGY_SOURCES[s.config.energy].mixLabel ??
+            { label: 'Mixture ratio', tip: noOxidiser(s) ? TIPS.noMixture : TIPS.mixtureRatio },
         },
       ],
     },

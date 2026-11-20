@@ -165,3 +165,34 @@ describe('every pick gives finite figures', () => {
     for (const oxidiser of OXIDISER_IDS) finite({ ...starterEngine(), fuel: 'h2', oxidiser }, `h2/${oxidiser}`);
   }, 120_000);
 });
+
+describe('whether the gas settled', () => {
+  it('is settled for a tabled example and a solved pair, not for the stand-in gas', () => {
+    const cfg = starterEngine();
+    expect(simulate(getPreset('merlin-1d')!.config, sl).settled).toBe(true);
+    expect(simulate(cfg, sl).settled).toBe(true);
+    // Nothing to burn RP-1 with: the solver is never asked, and the gas is the cold-air stand-in.
+    expect(simulate({ ...cfg, oxidiser: 'none' }, sl).settled).toBe(false);
+  });
+
+  it('follows the solve, not the failure, for a pair that detonates', () => {
+    const cfg = sanitize({ ...starterEngine(), fuel: 'h2', oxidiser: 'o3', propellant: 'calculated' });
+    const eps = (cfg.exitDia / cfg.throatDia) ** 2;
+    const solved = solvePair('h2', 'o3', cfg.mixtureRatio, cfg.chamberPressureBar, eps);
+    const r = simulate(cfg, sl);
+    expect(r.failure).toBe('detonation');
+    expect(r.settled).toBe(solved.ok);
+    // A solve that cannot settle (no pressure at all) still detonates, and is not settled.
+    const unsettled = resolveGas(cfg, Number.NaN, eps);
+    expect(unsettled.failure).toBe('detonation');
+    expect(unsettled.settled).toBe(false);
+    expect(resolveGas(cfg, cfg.chamberPressureBar, eps).settled).toBe(solved.ok);
+  });
+
+  it('is unsettled for a reactor fluid whose solve fails, and settled for the tabled one', () => {
+    const nerva = getPreset('nerva')!.config;
+    const eps = (nerva.exitDia / nerva.throatDia) ** 2;
+    expect(resolveGas(sanitize({ ...nerva, propellant: 'ntr-co2', mixtureRatio: 2360 }), 0, eps).settled).toBe(false);
+    expect(resolveGas(nerva, nerva.chamberPressureBar, eps).settled).toBe(true);
+  });
+});

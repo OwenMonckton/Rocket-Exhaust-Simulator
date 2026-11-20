@@ -264,5 +264,6 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     exhaust: gasSource.exhaust,
     notes: gasSource.notes,
     calculated: gasSource.calculated,
+    settled: gasSource.settled,
   };
 }
