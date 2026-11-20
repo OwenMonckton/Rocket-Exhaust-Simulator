@@ -49,14 +49,24 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId): EngineConfig {
   const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, prop.lStarRef);
   // Sanitise first: the wall has to follow the chamber the engine really ends up with.
   const shaped = sanitize({ ...cfg, energy, propellant, mixtureRatio: prop.ofDefault, ...shape });
-  let next = sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia });
-  // A source that runs on temperature may be too hot for a throat this size at its usual
-  // setting (a salt-water reaction in a small nozzle). Start it as hot as the engine can take.
-  if (source.mixKind === 'temperature') {
-    const heat = computeLimits(next, next.chamberPressureBar, gasProps(propellant, next.mixtureRatio).tc).heating;
-    if (heat > SAFE_HEAT) next = sanitize({ ...next, mixtureRatio: (next.mixtureRatio * SAFE_HEAT) / heat });
-  }
-  return next;
+  return cooled(sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia }));
+}
+
+/**
+ * An engine whose temperature is a setting (a reactor, a salt-water reaction) may come out of a
+ * part swap too hot for its throat: a salt-water reaction in a small nozzle, or in the small
+ * throats of an aerospike's cells. Turn it down to as hot as the engine can take, so that
+ * swapping a part never destroys the engine by itself. A flame's temperature is not a setting,
+ * so a burning engine is left as it is.
+ */
+function cooled(cfg: EngineConfig): EngineConfig {
+  if (ENERGY_SOURCES[cfg.energy].mixKind !== 'temperature') return cfg;
+  const heat = computeLimits(cfg, cfg.chamberPressureBar, gasProps(cfg.propellant, cfg.mixtureRatio).tc).heating;
+  if (heat <= SAFE_HEAT) return cfg;
+  // Rounded down to two figures, so the setting reads as a round number.
+  const target = (cfg.mixtureRatio * SAFE_HEAT) / heat;
+  const step = Math.pow(10, Math.floor(Math.log10(target)) - 1);
+  return sanitize({ ...cfg, mixtureRatio: Math.floor(target / step) * step });
 }
 
 /**
@@ -71,7 +81,7 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
   const k = Math.sqrt(cfg.chambers / count);
   // A chamber a liquid burns in keeps its length, and with it the time the propellant has to burn.
   const burnsInChamber = PROPELLANTS[cfg.propellant].lStarRef > 0;
-  return sanitize({
+  return cooled(sanitize({
     ...cfg,
     exhaust,
     chambers: count,
@@ -83,7 +93,7 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
     // A spike has no bell to extend.
     extFixedDia: exhaust === 'aerospike' ? 0 : cfg.extFixedDia,
     extDeploy: exhaust === 'aerospike' ? 1 : cfg.extDeploy,
-  });
+  }));
 }
 
 /** The blank engine the simulator opens on: a mid-sized kerolox engine, well inside every limit. */

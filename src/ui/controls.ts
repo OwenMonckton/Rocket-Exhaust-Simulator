@@ -1,10 +1,10 @@
 import { RANGES } from '../physics/engine';
-import { ENERGY_SOURCES } from '../physics/parts';
+import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
 import { PRESETS } from '../physics/presets';
-import { PROPELLANTS, PROPELLANT_IDS } from '../physics/propellants';
-import type { PropellantId } from '../physics/types';
+import { PROPELLANTS } from '../physics/propellants';
+import type { EnergyId, ExhaustId, PropellantId } from '../physics/types';
 import type { AppState, Store } from '../state/store';
-import { AEROSPIKE_DIMS, TIPS } from './copy';
+import { AEROSPIKE_DIMS, COUNT_COPY, TIPS } from './copy';
 
 interface SliderSpec {
   id: string;
@@ -19,6 +19,21 @@ interface SliderSpec {
   /** Label and tooltip that depend on the engine (overrides `label` and `tip`) */
   describe?(s: AppState): { label: string; tip: string };
 }
+
+/** A menu that picks one of the engine's parts. */
+interface SelectSpec {
+  id: string;
+  label: string;
+  tip: string;
+  options(s: AppState): { value: string; label: string; tip?: string }[];
+  get(s: AppState): string;
+  set(v: string): void;
+  /** A line of small print under the menu */
+  note?(s: AppState): string;
+}
+
+/** Value of the Examples menu entry that starts a blank engine. */
+export const NEW_ENGINE = '__new';
 
 const STEPS = 1000;
 
@@ -55,7 +70,44 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
   });
 
-  const groups: { title: string; sliders: SliderSpec[]; extra?: (box: HTMLElement) => void }[] = [
+  const groups: { title: string; selects?: SelectSpec[]; sliders: SliderSpec[] }[] = [
+    {
+      title: 'Parts',
+      selects: [
+        {
+          id: 'energy',
+          label: 'Energy source',
+          tip: TIPS.energy,
+          options: () => ENERGY_IDS.map((id) => ({ value: id, label: ENERGY_SOURCES[id].name, tip: ENERGY_SOURCES[id].tip })),
+          get: (s) => s.config.energy,
+          set: (v) => store.setEnergy(v as EnergyId),
+          note: (s) => ENERGY_SOURCES[s.config.energy].tip,
+        },
+        {
+          id: 'exhaust',
+          label: 'Exhaust',
+          tip: TIPS.exhaust,
+          options: () => EXHAUST_IDS.map((id) => ({ value: id, label: EXHAUSTS[id].name, tip: EXHAUSTS[id].tip })),
+          get: (s) => s.config.exhaust,
+          set: (v) => store.setExhaust(v as ExhaustId),
+          note: (s) => EXHAUSTS[s.config.exhaust].tip,
+        },
+        {
+          id: 'propellant',
+          label: 'Propellant',
+          tip: TIPS.propellant,
+          // Only what this energy source can use.
+          options: (s) => propellantsFor(s.config.energy).map((id) => ({ value: id, label: PROPELLANTS[id].name })),
+          get: (s) => s.config.propellant,
+          set: (v) => store.set({ config: { propellant: v as PropellantId } }),
+          note: (s) => {
+            const p = PROPELLANTS[s.config.propellant];
+            return `${p.fuel} + ${p.oxidiser}`;
+          },
+        },
+      ],
+      sliders: [],
+    },
     {
       title: 'Engine',
       sliders: [
@@ -68,6 +120,16 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.config.scale,
           set: (v) => store.setScale(v),
           format: (v) => `× ${v.toFixed(2)}`,
+        },
+        {
+          id: 'chambers',
+          label: COUNT_COPY.bell.label,
+          tip: COUNT_COPY.bell.tip,
+          range: (s) => (s.config.exhaust === 'aerospike' ? RANGES.cells : RANGES.chambers),
+          get: (s) => s.config.chambers,
+          set: (v) => store.set({ config: { chambers: Math.round(v) } }),
+          format: (v) => String(Math.round(v)),
+          describe: (s) => COUNT_COPY[s.config.exhaust],
         },
         dim('chamberDia', 'Chamber diameter'),
         dim('chamberLen', 'Chamber length'),
@@ -158,33 +220,39 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
 
   const syncers: ((s: AppState) => void)[] = [];
 
-  const propellantSelect = el('select');
-  propellantSelect.id = 'propellant';
-  for (const id of PROPELLANT_IDS) {
-    const opt = el('option', undefined, PROPELLANTS[id].name);
-    opt.value = id;
-    propellantSelect.append(opt);
-  }
-  const propellantNote = el('p', 'note');
-  propellantSelect.addEventListener('change', () =>
-    store.set({ config: { propellant: propellantSelect.value as PropellantId } }),
-  );
-  syncers.push((s) => {
-    propellantSelect.value = s.config.propellant;
-    const p = PROPELLANTS[s.config.propellant];
-    propellantNote.textContent = `${p.fuel} + ${p.oxidiser}`;
-  });
-
   for (const group of groups) {
     const box = el('section', 'group');
     box.append(el('h2', undefined, group.title));
-    if (group.title === 'Propellant') {
+    for (const spec of group.selects ?? []) {
       const row = el('label', 'row');
-      row.title = TIPS.propellant;
+      row.title = spec.tip;
       const head = el('span', 'row-head');
-      head.append(el('span', 'name', 'Type'));
-      row.append(head, propellantSelect, propellantNote);
+      head.append(el('span', 'name', spec.label));
+      const select = el('select');
+      select.id = spec.id;
+      const note = el('p', 'note');
+      row.append(head, select, note);
       box.append(row);
+      select.addEventListener('change', () => spec.set(select.value));
+      // The menu is only rebuilt when what it offers changes, so it stays open while in use.
+      let offered = '';
+      syncers.push((s) => {
+        const options = spec.options(s);
+        const key = options.map((o) => o.value).join('|');
+        if (key !== offered) {
+          offered = key;
+          select.replaceChildren(
+            ...options.map((o) => {
+              const opt = el('option', undefined, o.label);
+              opt.value = o.value;
+              if (o.tip) opt.title = o.tip;
+              return opt;
+            }),
+          );
+        }
+        select.value = spec.get(s);
+        note.textContent = spec.note?.(s) ?? '';
+      });
     }
     for (const spec of group.sliders) {
       const row = el('label', 'row');
@@ -238,12 +306,16 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
 }
 
 export function fillPresetSelect(select: HTMLSelectElement): void {
+  const fresh = el('option', undefined, 'New engine');
+  fresh.value = NEW_ENGINE;
+  fresh.title = 'Start again from a blank engine.';
+  select.append(fresh);
   for (const p of PRESETS) {
     const opt = el('option', undefined, p.name);
     opt.value = p.id;
     select.append(opt);
   }
-  const custom = el('option', undefined, 'Custom engine');
+  const custom = el('option', undefined, 'Your engine');
   custom.value = '';
   custom.hidden = true;
   select.append(custom);

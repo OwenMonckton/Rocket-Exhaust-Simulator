@@ -95,6 +95,14 @@ describe('changing the exhaust type', () => {
     expect(ratio).toBeLessThan(1.03);
   });
 
+  for (const e of ENERGY_IDS) {
+    it(`gives a ${e} aerospike that runs`, () => {
+      const spike = withExhaust(withEnergy(starterEngine(), e), 'aerospike');
+      expect(simulate(spike, ground).failure).toBeNull();
+      expect(simulate(spike, space).failure).toBeNull();
+    });
+  }
+
   it('comes back to the same bell engine (review focus)', () => {
     const from = starterEngine();
     const back = withExhaust(withExhaust(from, 'aerospike'), 'bell');

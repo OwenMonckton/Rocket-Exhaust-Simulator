@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { simulate } from '../physics/engine';
+import { sanitize, simulate } from '../physics/engine';
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { PRESETS } from '../physics/presets';
+import { starterEngine, withExhaust } from '../physics/reshape';
 import { engineProfile, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
@@ -205,4 +206,26 @@ describe('engine profile', () => {
       expect(2 * prof.maxRadius * v.ppm).toBeLessThanOrEqual(0.55 * 600 + 1e-6);
     }
   });
+});
+
+describe('thrust cell count (review focus)', () => {
+  const allFinite = (v: unknown, path = 'profile'): void => {
+    if (typeof v === 'number') expect(Number.isFinite(v), path).toBe(true);
+    else if (Array.isArray(v)) v.forEach((x, i) => allFinite(x, `${path}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) allFinite(x, `${path}.${k}`);
+  };
+  for (const cells of [1, 2, 40]) {
+    it(`draws and runs an aerospike with ${cells} thrust cells`, () => {
+      const cfg = sanitize({ ...withExhaust(starterEngine(), 'aerospike'), chambers: cells });
+      expect(cfg.chambers).toBe(cells);
+      const profile = engineProfile(cfg);
+      expect(profile.spike).toBeDefined();
+      allFinite(profile);
+      for (const altitudeKm of [0, 100]) {
+        const r = simulate(cfg, { altitudeKm, throttle: 1 });
+        expect(Number.isFinite(r.thrust)).toBe(true);
+        expect(r.thrust).toBeGreaterThan(0);
+      }
+    });
+  }
 });
