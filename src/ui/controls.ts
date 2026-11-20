@@ -11,8 +11,11 @@ interface SliderSpec {
   label: string;
   tip: string;
   log?: boolean;
-  /** Counts in whole numbers: the slider steps by one, so an arrow key moves it by one */
-  whole?: boolean;
+  /**
+   * The size of one step of the setting. The slider then runs over the range itself in steps of
+   * this size, so an arrow key always moves it; without one it runs over a thousand positions.
+   */
+  step?(s: AppState): number;
   range(s: AppState): { min: number; max: number };
   get(s: AppState): number;
   set(v: number): void;
@@ -72,6 +75,18 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
   });
 
+  /**
+   * One step of the mixture setting: a hundredth for a mixture ratio; for a temperature a round
+   * number suited to its range, 10 K for a reactor core and 1,000 K for a fission reaction.
+   */
+  const mixStep = (s: AppState) => {
+    const p = PROPELLANTS[s.config.propellant];
+    const span = p.ofMax - p.ofMin;
+    return ENERGY_SOURCES[s.config.energy].mixKind === 'temperature' && span > 0
+      ? Math.pow(10, Math.floor(Math.log10(span)) - 2)
+      : 0.01;
+  };
+
   const groups: { title: string; selects?: SelectSpec[]; sliders: SliderSpec[] }[] = [
     {
       title: 'Parts',
@@ -127,7 +142,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'chambers',
           label: COUNT_COPY.bell.label,
           tip: COUNT_COPY.bell.tip,
-          whole: true,
+          step: () => 1,
           range: (s) => (s.config.exhaust === 'aerospike' ? RANGES.cells : RANGES.chambers),
           get: (s) => s.config.chambers,
           set: (v) => store.set({ config: { chambers: Math.round(v) } }),
@@ -142,6 +157,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'nozzleLenPct',
           label: 'Nozzle length',
           tip: TIPS.nozzleLenPct,
+          step: () => 1,
           range: () => RANGES.nozzleLenPct,
           get: (s) => s.config.nozzleLenPct,
           set: (v) => store.set({ config: { nozzleLenPct: Math.round(v) } }),
@@ -156,6 +172,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'chamberPressureBar',
           label: 'Chamber pressure',
           tip: TIPS.chamberPressureBar,
+          step: () => 1,
           range: () => RANGES.chamberPressureBar,
           get: (s) => s.config.chamberPressureBar,
           set: (v) => store.set({ config: { chamberPressureBar: Math.round(v) } }),
@@ -170,18 +187,15 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'mixtureRatio',
           label: 'Mixture ratio',
           tip: TIPS.mixtureRatio,
+          step: (s) => mixStep(s),
           range: (s) => {
             const p = PROPELLANTS[s.config.propellant];
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
           },
           get: (s) => s.config.mixtureRatio,
           set: (v) => {
-            const p = PROPELLANTS[store.get().config.propellant];
-            // Temperatures step in round numbers suited to their range: 10 K for a reactor core,
-            // 10,000 K for a fission plasma.
-            const step = Math.pow(10, Math.floor(Math.log10(p.ofMax - p.ofMin)) - 2);
-            const rounded = ENERGY_SOURCES[store.get().config.energy].mixKind === 'temperature' ? Math.round(v / step) * step : Math.round(v * 100) / 100;
-            store.set({ config: { mixtureRatio: rounded } });
+            const step = mixStep(store.get());
+            store.set({ config: { mixtureRatio: Math.round(v / step) * step } });
           },
           format: (v, s) => {
             const kind = ENERGY_SOURCES[s.config.energy].mixKind;
@@ -210,6 +224,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'throttle',
           label: 'Throttle',
           tip: TIPS.throttle,
+          step: () => 0.01,
           range: () => RANGES.throttle,
           get: (s) => s.flight.throttle,
           set: (v) => store.set({ flight: { throttle: Math.round(v * 100) / 100 } }),
@@ -274,13 +289,13 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       box.append(row);
 
       const toValue = (pos: number, s: AppState) => {
-        if (spec.whole) return pos;
+        if (spec.step) return pos;
         const { min, max } = spec.range(s);
         const f = pos / STEPS;
         return spec.log ? min * Math.pow(max / min, f) : min + (max - min) * f;
       };
       const toPos = (v: number, s: AppState) => {
-        if (spec.whole) return Math.round(v);
+        if (spec.step) return v;
         const { min, max } = spec.range(s);
         const f = spec.log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
         return Math.round(Math.min(1, Math.max(0, f)) * STEPS);
@@ -288,14 +303,16 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));
       syncers.push((s) => {
         const v = spec.get(s);
-        if (spec.whole) {
-          // The slider's own ends are the range's, which changes with the exhaust.
+        if (spec.step) {
+          // The slider's own ends and step are the setting's, which change with the engine's parts.
           const { min, max } = spec.range(s);
+          const step = String(spec.step(s));
           if (input.min !== String(min)) input.min = String(min);
           if (input.max !== String(max)) input.max = String(max);
+          if (input.step !== step) input.step = step;
         }
         const pos = String(toPos(v, s));
-        if (input.value !== pos) input.value = pos;
+        if (Number(input.value) !== Number(pos)) input.value = pos;
         value.textContent = spec.format(v, s);
         const text = spec.describe?.(s);
         if (text) {

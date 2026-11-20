@@ -145,3 +145,31 @@ describe('store', () => {
     expect(calls).toBe(2);
   });
 });
+
+describe('part swaps through the store (code review)', () => {
+  it('does not lower the pressure again each time a throttled engine goes to a solid and back', () => {
+    const store = createStore(defaultState());
+    store.set({ flight: { throttle: 0.4 } });
+    const running = (s = store.get()) => simulate(s.config, s.flight).limits.structural;
+    const before = running();
+    store.setEnergy('solid');
+    expect(store.get().config.chamberPressureBar).toBe(40);
+    // The throttle it was at is now its pressure, so the throttle goes back to full.
+    expect(store.get().flight.throttle).toBe(1);
+    store.setEnergy('combustion');
+    expect(store.get().config.chamberPressureBar).toBe(40);
+    expect(running()).toBeCloseTo(before, 2);
+    store.setEnergy('solid');
+    expect(store.get().config.chamberPressureBar).toBe(40);
+  });
+
+  it('checks the heat when the propellant is changed', () => {
+    const store = createStore(defaultState());
+    store.setEnergy('reactor');
+    store.set({ config: { throatDia: 0.02, chamberDia: 0.12, exitDia: 0.08, wall: 0.016, chamberPressureBar: 400, mixtureRatio: 1500 } });
+    expect(simulate(store.get().config, store.get().flight).failure).toBeNull();
+    store.set({ config: { propellant: 'ntr-ammonia' } });
+    expect(store.get().config.propellant).toBe('ntr-ammonia');
+    expect(simulate(store.get().config, store.get().flight).failure).toBeNull();
+  });
+});

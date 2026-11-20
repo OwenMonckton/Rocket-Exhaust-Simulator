@@ -1,7 +1,7 @@
 import { RANGES, sanitize, sanitizeFlight } from '../physics/engine';
+import { ENERGY_SOURCES, isEnergyId } from '../physics/parts';
 import { getPreset } from '../physics/presets';
-import { PROPELLANTS } from '../physics/propellants';
-import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
+import { starterEngine, withEnergy, withExhaust, withPropellant } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, FlightState } from '../physics/types';
 import type { AppState } from './share';
 
@@ -61,12 +61,10 @@ export function createStore(initial: AppState): Store {
     set(patch) {
       let config = state.config;
       if (patch.config) {
-        const merged = { ...config, ...patch.config };
-        // A new propellant starts at its own sensible mixture ratio.
-        if (patch.config.propellant && patch.config.propellant !== config.propellant) {
-          merged.mixtureRatio = PROPELLANTS[patch.config.propellant]?.ofDefault ?? merged.mixtureRatio;
-        }
-        config = sanitize(merged);
+        // A new propellant starts at its own sensible mixture ratio, turned down if that would overheat the engine.
+        const { propellant, ...rest } = patch.config;
+        if (propellant && propellant !== config.propellant) config = withPropellant(config, propellant);
+        config = sanitize({ ...config, ...rest });
       }
       const flight = patch.flight ? sanitizeFlight({ ...state.flight, ...patch.flight }) : state.flight;
       state = { config, flight };
@@ -87,7 +85,13 @@ export function createStore(initial: AppState): Store {
       emit();
     },
     setEnergy(id) {
-      state = { config: sanitize(withEnergy(state.config, id, state.flight.throttle)), flight: state.flight };
+      if (!isEnergyId(id)) return;
+      const config = sanitize(withEnergy(state.config, id, state.flight.throttle));
+      // A source that cannot throttle takes the pressure the engine was throttled down to as its
+      // own, so the throttle goes back to full: left where it was, it would be applied a second
+      // time on the way back.
+      const baked = ENERGY_SOURCES[state.config.energy].throttleable && !ENERGY_SOURCES[id].throttleable;
+      state = { config, flight: baked ? { ...state.flight, throttle: 1 } : state.flight };
       emit();
     },
     setExhaust(id) {

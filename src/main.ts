@@ -188,7 +188,11 @@ store.subscribe(() => {
 });
 window.addEventListener('hashchange', () => {
   const next = decodeState(location.hash);
-  if (next && encodeState(next) !== encodeState(store.get())) store.replace(next);
+  if (next && encodeState(next) !== encodeState(store.get())) {
+    // A link is a whole engine too.
+    runtime.clearFailure();
+    store.replace(next);
+  }
 });
 
 const toast = $('toast');

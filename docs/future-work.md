@@ -137,7 +137,9 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
   them.
 - **Swapping a part is not allowed to destroy the engine by itself**, with one exception. A
   reactor or salt-water reaction is turned down if the swap would overheat it, a flame that a new
-  energy source would make too hot for its throat runs at a lower chamber pressure, and an engine given
+  energy source or propellant would make too hot for its throat runs at a lower chamber pressure,
+  a spike's cells merge into more than one bell where one chamber would be wide enough to be
+  unstable, and an engine given
   an aerospike gets fewer than twenty cells where twenty would have throats too small to make or
   to keep cool (a Raptor gets two). The exception is honest physics: a very large engine rebuilt
   round a combustion chamber is unstable, as the F-1 nearly was, and says so.

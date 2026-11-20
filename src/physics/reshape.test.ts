@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from './engine';
 import { ENERGY_IDS, propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
-import { DEFAULT_CELLS, starterEngine, withEnergy, withExhaust } from './reshape';
+import { DEFAULT_CELLS, starterEngine, withEnergy, withExhaust, withPropellant } from './reshape';
 import type { EngineConfig } from './types';
 
 const ground = { altitudeKm: 0, throttle: 1 };
@@ -240,5 +240,48 @@ describe('part swaps at the edges of what can be built (Copilot review)', () => 
     const bell = withExhaust(spike, 'bell');
     expect(bell.chambers).toBe(4);
     expect(sanitize(bell)).toEqual(bell);
+  });
+});
+
+describe('swaps that used to destroy the engine by themselves (code review)', () => {
+  it('does not burn through a turned-down reactor by changing its propellant', () => {
+    const from = sanitize({
+      ...withEnergy(starterEngine(), 'reactor'),
+      throatDia: 0.02,
+      chamberDia: 0.12,
+      exitDia: 0.08,
+      wall: 0.016,
+      chamberPressureBar: 400,
+      mixtureRatio: 1500,
+    });
+    expect(simulate(from, ground).failure).toBeNull();
+    const next = withPropellant(from, 'ntr-ammonia');
+    expect(next.propellant).toBe('ntr-ammonia');
+    expect(simulate(next, ground).failure).toBeNull();
+    expect(simulate(next, ground).limits.heating).toBeLessThanOrEqual(0.9);
+  });
+
+  it('gives a new propellant its usual setting where that is safe', () => {
+    expect(withPropellant(starterEngine(), 'hydrolox')).toMatchObject({ propellant: 'hydrolox', mixtureRatio: 6 });
+    const reactor = withEnergy(starterEngine(), 'reactor');
+    expect(withPropellant(reactor, 'ntr-water')).toMatchObject({ propellant: 'ntr-water', mixtureRatio: 2360 });
+    expect(withPropellant(reactor, 'ntr-hydrogen')).toBe(reactor);
+  });
+
+  it('merges a spike into enough bells to stay stable, where one wide chamber would not be', () => {
+    const spike = sanitize({
+      ...withExhaust(starterEngine(), 'aerospike'),
+      chambers: 20,
+      throatDia: 0.2,
+      chamberDia: 0.4,
+      exitDia: 0.8,
+      wall: 0.02,
+    });
+    expect(simulate(spike, ground).failure).toBeNull();
+    const bell = withExhaust(spike, 'bell');
+    expect(bell.exhaust).toBe('bell');
+    expect(bell.chambers).toBeGreaterThan(1);
+    expect(simulate(bell, ground).failure).toBeNull();
+    expect(bell.chambers * bell.throatDia ** 2).toBeCloseTo(spike.chambers * spike.throatDia ** 2, 6);
   });
 });

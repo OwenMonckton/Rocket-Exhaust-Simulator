@@ -1,8 +1,8 @@
 import { RANGES, sanitize, simulate } from './engine';
 import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
-import { PROPELLANTS } from './propellants';
-import type { EnergyId, EngineConfig, ExhaustId } from './types';
+import { PROPELLANTS, isPropellantId } from './propellants';
+import type { EnergyId, EngineConfig, ExhaustId, PropellantId } from './types';
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
 
@@ -14,6 +14,9 @@ const CELL_HEAT = 0.97;
 
 /** Share of its heat limit an engine is brought down to when a new energy source would overheat it. */
 const SAFE_HEAT = 0.9;
+
+/** The most of its instability limit an engine's chambers may run at when its cells are merged into bells. */
+const SAFE_INSTABILITY = 0.9;
 
 /**
  * Chamber diameter and length for a throat. `contraction` is chamber diameter over throat
@@ -113,7 +116,21 @@ function eased(cfg: EngineConfig, heatBefore: number): EngineConfig {
 }
 
 /**
- * How many bell chambers an engine's cells merge into: one, unless a single chamber of the same
+ * The same engine on a different propellant, at that propellant's usual mixture or temperature.
+ * Where that would overheat an engine the old propellant did not, it is turned down as a change
+ * of energy source is: the temperature where that is a setting, the chamber pressure where a
+ * flame sets it.
+ */
+export function withPropellant(cfg: EngineConfig, propellant: PropellantId): EngineConfig {
+  if (cfg.propellant === propellant) return cfg;
+  const mixtureRatio = isPropellantId(propellant) ? PROPELLANTS[propellant].ofDefault : cfg.mixtureRatio;
+  const next = sanitize({ ...cfg, propellant, mixtureRatio });
+  const heatBefore = heatLoad(cfg);
+  return ENERGY_SOURCES[next.energy].mixKind === 'temperature' ? cooled(next, heatBefore) : eased(next, heatBefore);
+}
+
+/**
+ * The fewest bell chambers an engine's cells fit into: one, unless a single chamber of the same
  * total area would be bigger than a chamber, a throat or a nozzle can be, and then as few as
  * hold it. A spike too big even for the most chambers a bell engine can have gets that many, at
  * their largest size, and is the one merge that loses area.
@@ -160,14 +177,27 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
  * The same engine with a different exhaust. An aerospike's dimensions describe one of its
  * thrust cells, so going to one divides the engine into cells with the same total throat and
  * exit area, and coming back merges them into one chamber (or more, where one would be bigger
- * than a chamber can be): thrust stays about the same either way. It gets `DEFAULT_CELLS` cells unless that would destroy it: fewer where the throats
+ * than a chamber can be, or so wide that it would be unstable when the cells were not): thrust
+ * stays about the same either way. It gets `DEFAULT_CELLS` cells unless that would destroy it: fewer where the throats
  * would be smaller than a throat can be, and fewer where a flame would burn through throats
  * that small (small throats are the hardest to keep cool).
  */
 export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
   if (cfg.exhaust === exhaust) return cfg;
   const heatBefore = heatLoad(cfg);
-  if (exhaust !== 'aerospike') return cooled(divided(cfg, exhaust, bellsFor(cfg)), heatBefore);
+  if (exhaust !== 'aerospike') {
+    // A wide chamber is an unstable one: more, smaller chambers where the fewest would shake
+    // themselves apart. Where even the most would, the fewest stand: that is the physics, not the swap.
+    const instability = (c: EngineConfig) => simulate(c, { altitudeKm: 0, throttle: 1 }).limits.instability;
+    const calm = Math.max(SAFE_INSTABILITY, instability(cfg));
+    const fewest = divided(cfg, exhaust, bellsFor(cfg));
+    let merged = fewest;
+    for (let bells = fewest.chambers; instability(merged) > calm; ) {
+      if (++bells > RANGES.chambers.max) { merged = fewest; break; }
+      merged = divided(cfg, exhaust, bells);
+    }
+    return cooled(merged, heatBefore);
+  }
   const smallest = RANGES.throatDia.min;
   let count = Math.max(1, Math.min(DEFAULT_CELLS, Math.floor(cfg.chambers * (cfg.throatDia / smallest) ** 2 + 1e-9)));
   let next = divided(cfg, exhaust, count);
