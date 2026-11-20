@@ -150,6 +150,13 @@ describe('the cache', () => {
     expect(total, '200 calls, ms').toBeLessThan(400);
   });
 
+  it('finds a pair\'s mixtures quickly enough for a click', () => {
+    clearChemCache();
+    const t0 = performance.now();
+    pairRange('al-slurry', 'lox');
+    expect(performance.now() - t0, 'cold pairRange, ms').toBeLessThan(600);
+  });
+
   it('keeps at most 2,000 results', () => {
     clearChemCache();
     for (let i = 0; i < 2100; i++) solvePair('h2', 'lox', 2 + i * 0.01, 70, 40);

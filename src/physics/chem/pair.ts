@@ -1,7 +1,7 @@
 // A fuel and oxidiser's calculated exhaust, fitted to the one-gamma, one-molar-mass gas the rest of
 // the simulator uses, with a cache so a slider can be dragged without re-solving.
 import { cStar as cStarOf, exitVelocity, machFromAreaRatio, pressureRatio } from '../nozzle';
-import { mixtureFrom, type Mixture, type Problem } from './equilibrium';
+import { equilibrate, mixtureFrom, type EqState, type Mixture, type Problem } from './equilibrium';
 import { mixtureOf, NO_OXIDISER, reactantOf } from './ingredients';
 import { rocket, type RocketResult } from './rocket';
 
@@ -167,46 +167,63 @@ export function solveFluid(reactant: string, tK: number, pcBar: number, eps: num
 const GRID_LO = 0.05;
 const GRID_HI = 100;
 const GRID_POINTS = 49;
-const REFINE_TOL = 0.002;     // golden-section stops when the bracket is this wide in O/F
-const BISECT_STEPS = 40;
+const ISP_SCAN_SHARE = 0.5;   // vacuum Isp is scanned only where the chamber is at least this share of its hottest
+const REFINE_TOL = 0.004;     // golden-section stops when the bracket is this wide in O/F
+const EDGE_TOL = 0.01;        // the 700 K ends are found to about 1% in O/F
 
 /**
  * The span of mixtures for a pair, at 70 bar and area ratio 40: `ofPeak` gives the hottest chamber,
  * `ofDefault` (to 0.01) the highest vacuum Isp, and `ofMin`, `ofMax` are where the chamber cools to
- * 700 K either side, held within ofDefault/50 and ofDefault × 50. A solve that does not settle counts
- * as colder than 700 K. All zeros with NO_OXIDISER. Cached per pair.
+ * 700 K either side (to about 1%), held within ofDefault/50 and ofDefault × 50. A solve that does not
+ * settle counts as colder than 700 K. All zeros with NO_OXIDISER. Cached per pair.
+ *
+ * Chamber temperatures come from the chamber solve alone; only Isp needs the nozzle, and the nozzle
+ * is slow where the chamber is cold (an exit far below 200 K is walked down to it).
  */
 export function pairRange(fuel: string, oxidiser: string): MixRange {
   if (oxidiser === NO_OXIDISER) return { ofMin: 0, ofMax: 0, ofDefault: 0, ofPeak: 0 };
   const key = `${fuel}|${oxidiser}`;
   const hit = ranges.get(key);
   if (hit) return hit;
+  const flame = (of: number) => { const mix = mixtureOf(fuel, oxidiser, of); return { mix, chamber: { kind: 'hp', h: mix.h0, pBar: RANGE_PC } as Problem }; };
 
+  // Each solve starts from a nearby settled one, and cold if that fails. Only from nearby: a start
+  // far away can carry in a condensed species that holds the solve on a false answer (solid
+  // gibbsite from an oxygen-rich 312 K state once gave 2009 K where the flame is at 3955 K).
+  let warmCh: EqState | undefined;
+  const tcAt = (of: number) => {
+    const { mix, chamber } = flame(of);
+    let st = equilibrate(mix, chamber, undefined, warmCh);
+    if (!st.ok && warmCh) st = equilibrate(mix, chamber);
+    if (!st.ok) return -Infinity;
+    warmCh = st;
+    return st.t;
+  };
   let warm: RocketResult | undefined;
-  /** Rocket at `of`, warm-started from the last settled point; cold if that fails. */
-  const run = (of: number) => {
-    const mix = mixtureOf(fuel, oxidiser, of);
-    const chamber: Problem = { kind: 'hp', h: mix.h0, pBar: RANGE_PC };
+  const ispAt = (of: number) => {
+    const { mix, chamber } = flame(of);
     let r = rocket(mix, chamber, RANGE_EPS, warm);
     if (!r.ok && warm) r = rocket(mix, chamber, RANGE_EPS);
-    if (r.ok) warm = r;
-    return r;
+    if (!r.ok) return -Infinity;
+    warm = r;
+    return r.ispVac * (1 - DROPLET_LOSS * r.exit.condensedMassFraction);
   };
-  const tcOf = (r: RocketResult) => (r.chamber.ok ? r.chamber.t : -Infinity);
-  const ispOf = (r: RocketResult) => (r.ok ? r.ispVac * (1 - DROPLET_LOSS * r.exit.condensedMassFraction) : -Infinity);
 
-  // Coarse scan, log-spaced.
-  const grid: number[] = [];
-  const tcs: number[] = [];
-  const isps: number[] = [];
-  for (let k = 0; k < GRID_POINTS; k++) {
-    const of = GRID_LO * (GRID_HI / GRID_LO) ** (k / (GRID_POINTS - 1));
-    const r = run(of);
-    grid.push(of); tcs.push(tcOf(r)); isps.push(ispOf(r));
-  }
+  // Coarse scan, log-spaced: chamber temperature everywhere, Isp where the chamber is hot.
+  const grid = Array.from({ length: GRID_POINTS }, (_, k) => GRID_LO * (GRID_HI / GRID_LO) ** (k / (GRID_POINTS - 1)));
+  const chambers: (EqState | undefined)[] = [];
+  const rockets: (RocketResult | undefined)[] = [];
+  const tcs = grid.map((of) => { const t = tcAt(of); chambers.push(Number.isFinite(t) ? warmCh : undefined); return t; });
   const argmax = (v: number[]) => v.reduce((best, x, k) => (x > v[best] ? k : best), 0);
-  const kIsp = argmax(isps);
   const kTc = argmax(tcs);
+  const hot = ISP_SCAN_SHARE * tcs[kTc];
+  const isps = grid.map((of, k) => {
+    if (!(tcs[k] >= hot)) { rockets.push(undefined); return -Infinity; }
+    const isp = ispAt(of);
+    rockets.push(Number.isFinite(isp) ? warm : undefined);
+    return isp;
+  });
+  const kIsp = argmax(isps);
   if (!Number.isFinite(isps[kIsp]) || !Number.isFinite(tcs[kTc])) {
     const none = { ofMin: 0, ofMax: 0, ofDefault: 0, ofPeak: 0 };
     ranges.set(key, none);
@@ -214,33 +231,41 @@ export function pairRange(fuel: string, oxidiser: string): MixRange {
   }
 
   /** Golden-section search for the maximum of f between the grid neighbours of point k. */
-  const refine = (k: number, f: (r: RocketResult) => number) => {
+  const refine = (k: number, f: (of: number) => number) => {
     let a = grid[Math.max(0, k - 1)];
     let b = grid[Math.min(GRID_POINTS - 1, k + 1)];
     const phi = (Math.sqrt(5) - 1) / 2;
     let c = b - phi * (b - a);
     let d = a + phi * (b - a);
-    let fc = f(run(c));
-    let fd = f(run(d));
+    let fc = f(c);
+    let fd = f(d);
     while (b - a > REFINE_TOL) {
-      if (fc >= fd) { b = d; d = c; fd = fc; c = b - phi * (b - a); fc = f(run(c)); }
-      else { a = c; c = d; fc = fd; d = a + phi * (b - a); fd = f(run(d)); }
+      if (fc >= fd) { b = d; d = c; fd = fc; c = b - phi * (b - a); fc = f(c); }
+      else { a = c; c = d; fc = fd; d = a + phi * (b - a); fd = f(d); }
     }
     return 0.5 * (a + b);
   };
-  const ofDefault = round2(refine(kIsp, ispOf));
-  const ofPeak = refine(kTc, tcOf);
+  warm = rockets[kIsp];
+  const ofDefault = round2(refine(kIsp, ispAt));
+  warmCh = chambers[kTc];
+  const ofPeak = refine(kTc, tcAt);
+  // The chamber at ofDefault, to start the searches for the ends from.
+  warmCh = undefined;
+  const tcDefault = tcAt(ofDefault);
+  const hotStart = warmCh;
 
-  /** Where the chamber cools to 700 K between `hot` and the hold `limit`, or the hold. */
+  /** Where the chamber cools to 700 K between ofDefault and the hold `limit`, or the hold. */
   const edge = (limit: number) => {
-    const hot = ofDefault;
-    warm = undefined;
-    if (tcOf(run(limit)) >= FLAME_OUT_T) return limit;
-    let lo = Math.log(hot);   // hot side
-    let hi = Math.log(limit); // cold side
-    for (let i = 0; i < BISECT_STEPS; i++) {
+    warmCh = undefined;
+    if (tcAt(limit) >= FLAME_OUT_T) return limit;
+    if (!(tcDefault >= FLAME_OUT_T)) return limit;
+    let lo = Math.log(ofDefault); // hot side
+    let hi = Math.log(limit);     // cold side
+    let hotSide = hotStart;
+    while (Math.abs(hi - lo) > EDGE_TOL) {
       const mid = 0.5 * (lo + hi);
-      if (tcOf(run(Math.exp(mid))) >= FLAME_OUT_T) lo = mid;
+      warmCh = hotSide; // each probe starts from the hot side's state
+      if (tcAt(Math.exp(mid)) >= FLAME_OUT_T) { lo = mid; hotSide = warmCh; }
       else hi = mid;
     }
     return Math.exp(hi);
