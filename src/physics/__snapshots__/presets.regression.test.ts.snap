@@ -1,0 +1,421 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`example engines > figures for f-1 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 3.609949813,
+    "failure": null,
+    "heating": 0.1982936946,
+    "instability": 0.8181825459,
+    "isp": 267.0871939,
+    "ispSeaLevel": 267.0871939,
+    "ispVacuum": 307.6132162,
+    "massFlow": 2584.746306,
+    "pe": 47169.1304,
+    "state": "over",
+    "structural": 0.5510172144,
+    "tc": 3457.666667,
+    "thrust": 6770046.695,
+  },
+  "vacuum": {
+    "exitMach": 3.609949813,
+    "failure": null,
+    "heating": 0.1982936946,
+    "instability": 0.8181825459,
+    "isp": 307.6132162,
+    "ispSeaLevel": 267.0871939,
+    "ispVacuum": 307.6132162,
+    "massFlow": 2584.746306,
+    "pe": 47169.1304,
+    "state": "under",
+    "structural": 0.5510172144,
+    "tc": 3457.666667,
+    "thrust": 7797288.246,
+  },
+}
+`;
+
+exports[`example engines > figures for merlin-1d 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 3.593069857,
+    "failure": null,
+    "heating": 0.3376126742,
+    "instability": 0.2528645895,
+    "isp": 283.478327,
+    "ispSeaLevel": 283.478327,
+    "ispVacuum": 313.191944,
+    "massFlow": 304.0307728,
+    "pe": 66311.79313,
+    "state": "over",
+    "structural": 0.5991019284,
+    "tc": 3549.231713,
+    "thrust": 845197.2591,
+  },
+  "vacuum": {
+    "exitMach": 3.593069857,
+    "failure": null,
+    "heating": 0.3376126742,
+    "instability": 0.2528645895,
+    "isp": 313.191944,
+    "ispSeaLevel": 283.478327,
+    "ispVacuum": 313.191944,
+    "massFlow": 304.0307728,
+    "pe": 66311.79313,
+    "state": "under",
+    "structural": 0.5991019284,
+    "tc": 3549.231713,
+    "thrust": 933789.1028,
+  },
+}
+`;
+
+exports[`example engines > figures for merlin-vac 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 4.294268013,
+    "failure": null,
+    "heating": 0.3394070659,
+    "instability": 0.2431160074,
+    "isp": 248.484945,
+    "ispSeaLevel": 248.484945,
+    "ispVacuum": 346.8112658,
+    "massFlow": 288.3342075,
+    "pe": 17961.93679,
+    "state": "separated",
+    "structural": 0.598440678,
+    "tc": 3549.231713,
+    "thrust": 702614.2057,
+  },
+  "vacuum": {
+    "exitMach": 5.228399738,
+    "failure": null,
+    "heating": 0.3394070659,
+    "instability": 0.2431160074,
+    "isp": 346.8112658,
+    "ispSeaLevel": 248.484945,
+    "ispVacuum": 346.8112658,
+    "massFlow": 288.3342075,
+    "pe": 3463.949732,
+    "state": "under",
+    "structural": 0.598440678,
+    "tc": 3549.231713,
+    "thrust": 980640.9884,
+  },
+}
+`;
+
+exports[`example engines > figures for nerva 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 4.087225955,
+    "failure": null,
+    "heating": 0.8137931034,
+    "instability": 0.09494286071,
+    "isp": 589.6358631,
+    "ispSeaLevel": 589.6358631,
+    "ispVacuum": 819.150991,
+    "massFlow": 30.71552827,
+    "pe": 18624.54243,
+    "state": "separated",
+    "structural": 0.4001409018,
+    "tc": 2360,
+    "thrust": 177608.0128,
+  },
+  "vacuum": {
+    "exitMach": 6.115692028,
+    "failure": null,
+    "heating": 0.8137931034,
+    "instability": 0.09494286071,
+    "isp": 819.150991,
+    "ispSeaLevel": 589.6358631,
+    "ispVacuum": 819.150991,
+    "massFlow": 30.71552827,
+    "pe": 1374.908306,
+    "state": "under",
+    "structural": 0.4001409018,
+    "tc": 2360,
+    "thrust": 246741.7415,
+  },
+}
+`;
+
+exports[`example engines > figures for nswr 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 4.742355991,
+    "failure": null,
+    "heating": 0.7947275921,
+    "instability": 0.05203721272,
+    "isp": 5303.877027,
+    "ispSeaLevel": 5303.877027,
+    "ispVacuum": 6697.855498,
+    "massFlow": 196.3860068,
+    "pe": 16713.89297,
+    "state": "separated",
+    "structural": 0.5006001847,
+    "tc": 470000,
+    "thrust": 10214677.54,
+  },
+  "vacuum": {
+    "exitMach": 4.863613673,
+    "failure": null,
+    "heating": 0.7947275921,
+    "instability": 0.05203721272,
+    "isp": 6697.855498,
+    "ispSeaLevel": 5303.877027,
+    "ispVacuum": 6697.855498,
+    "massFlow": 196.3860068,
+    "pe": 14104.49394,
+    "state": "under",
+    "structural": 0.5006001847,
+    "tc": 470000,
+    "thrust": 12899325.11,
+  },
+}
+`;
+
+exports[`example engines > figures for raptor-2 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 3.967653674,
+    "failure": null,
+    "heating": 0.9004565787,
+    "instability": 0.2820984923,
+    "isp": 326.6673752,
+    "ispSeaLevel": 326.6673752,
+    "ispVacuum": 349.3104748,
+    "massFlow": 705.6495891,
+    "pe": 82754.52184,
+    "state": "over",
+    "structural": 0.8708510638,
+    "tc": 3744.98305,
+    "thrust": 2260557.361,
+  },
+  "vacuum": {
+    "exitMach": 3.967653674,
+    "failure": null,
+    "heating": 0.9004565787,
+    "instability": 0.2820984923,
+    "isp": 349.3104748,
+    "ispSeaLevel": 326.6673752,
+    "ispVacuum": 349.3104748,
+    "massFlow": 705.6495891,
+    "pe": 82754.52184,
+    "state": "under",
+    "structural": 0.8708510638,
+    "tc": 3744.98305,
+    "thrust": 2417248.936,
+  },
+}
+`;
+
+exports[`example engines > figures for rd-170 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 4.113228342,
+    "failure": null,
+    "heating": 0.7666787662,
+    "instability": 0.2347188945,
+    "isp": 303.3719323,
+    "ispSeaLevel": 303.3719323,
+    "ispVacuum": 330.6075873,
+    "massFlow": 2440.206343,
+    "pe": 59602.45395,
+    "state": "over",
+    "structural": 0.8019921875,
+    "tc": 3755.177973,
+    "thrust": 7259766.039,
+  },
+  "vacuum": {
+    "exitMach": 4.113228342,
+    "failure": null,
+    "heating": 0.7666787662,
+    "instability": 0.2347188945,
+    "isp": 330.6075873,
+    "ispSeaLevel": 303.3719323,
+    "ispVacuum": 330.6075873,
+    "massFlow": 2440.206343,
+    "pe": 59602.45395,
+    "state": "under",
+    "structural": 0.8019921875,
+    "tc": 3755.177973,
+    "thrust": 7911522.061,
+  },
+}
+`;
+
+exports[`example engines > figures for rd-180 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 4.099721358,
+    "failure": null,
+    "heating": 0.8033069708,
+    "instability": 0.2379378965,
+    "isp": 304.2333334,
+    "ispSeaLevel": 304.2333334,
+    "ispVacuum": 330.1529156,
+    "massFlow": 1283.667461,
+    "pe": 63070.05259,
+    "state": "over",
+    "structural": 0.7996262376,
+    "tc": 3786.910089,
+    "thrust": 3829834.475,
+  },
+  "vacuum": {
+    "exitMach": 4.099721358,
+    "failure": null,
+    "heating": 0.8033069708,
+    "instability": 0.2379378965,
+    "isp": 330.1529156,
+    "ispSeaLevel": 304.2333334,
+    "ispVacuum": 330.1529156,
+    "massFlow": 1283.667461,
+    "pe": 63070.05259,
+    "state": "under",
+    "structural": 0.7996262376,
+    "tc": 3786.910089,
+    "thrust": 4156122.553,
+  },
+}
+`;
+
+exports[`example engines > figures for rl10b-2 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 3.736650876,
+    "failure": null,
+    "heating": 0.1991419023,
+    "instability": 0.09759444732,
+    "isp": 293.4318945,
+    "ispSeaLevel": 293.4318945,
+    "ispVacuum": 463.3344018,
+    "massFlow": 24.20617492,
+    "pe": 19903.9941,
+    "state": "separated",
+    "structural": 0.3985507246,
+    "tc": 3393.599235,
+    "thrust": 69655.29895,
+  },
+  "vacuum": {
+    "exitMach": 5.296295879,
+    "failure": null,
+    "heating": 0.1991419023,
+    "instability": 0.09759444732,
+    "isp": 463.3344018,
+    "ispSeaLevel": 293.4318945,
+    "ispVacuum": 463.3344018,
+    "massFlow": 24.20617492,
+    "pe": 963.5757904,
+    "state": "under",
+    "structural": 0.3985507246,
+    "tc": 3393.599235,
+    "thrust": 109987.0085,
+  },
+}
+`;
+
+exports[`example engines > figures for rs-25 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 4.381960278,
+    "failure": null,
+    "heating": 0.6211697112,
+    "instability": 0.3044018707,
+    "isp": 369.1526135,
+    "ispSeaLevel": 369.1526135,
+    "ispVacuum": 447.903793,
+    "massFlow": 513.7682928,
+    "pe": 25208.74764,
+    "state": "over",
+    "structural": 0.7214681818,
+    "tc": 3588.230952,
+    "thrust": 1859918.53,
+  },
+  "vacuum": {
+    "exitMach": 4.381960278,
+    "failure": null,
+    "heating": 0.6211697112,
+    "instability": 0.3044018707,
+    "isp": 447.903793,
+    "ispSeaLevel": 369.1526135,
+    "ispVacuum": 447.903793,
+    "massFlow": 513.7682928,
+    "pe": 25208.74764,
+    "state": "under",
+    "structural": 0.7214681818,
+    "tc": 3588.230952,
+    "thrust": 2256694.207,
+  },
+}
+`;
+
+exports[`example engines > figures for solid-booster 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 3.221511999,
+    "failure": null,
+    "heating": 0.2010883336,
+    "instability": 0.1656885243,
+    "isp": 237.8514735,
+    "ispSeaLevel": 237.8514735,
+    "ispVacuum": 263.8648783,
+    "massFlow": 514.4627683,
+    "pe": 79473.44088,
+    "state": "over",
+    "structural": 0.4993032787,
+    "tc": 3384.312931,
+    "thrust": 1199997.862,
+  },
+  "vacuum": {
+    "exitMach": 3.221511999,
+    "failure": null,
+    "heating": 0.2010883336,
+    "instability": 0.1656885243,
+    "isp": 263.8648783,
+    "ispSeaLevel": 237.8514735,
+    "ispVacuum": 263.8648783,
+    "massFlow": 514.4627683,
+    "pe": 79473.44088,
+    "state": "under",
+    "structural": 0.4993032787,
+    "tc": 3384.312931,
+    "thrust": 1331239.555,
+  },
+}
+`;
+
+exports[`example engines > figures for xrs-2200 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 3.082481742,
+    "failure": null,
+    "heating": 0.2686215734,
+    "instability": 0.05314565077,
+    "isp": 338.2413578,
+    "ispSeaLevel": 338.2413578,
+    "ispVacuum": 434.1068775,
+    "massFlow": 276.1868932,
+    "pe": 101325,
+    "state": "compensating",
+    "structural": 0.4032195833,
+    "tc": 3332.693118,
+    "thrust": 916115.9604,
+  },
+  "vacuum": {
+    "exitMach": 4.339300265,
+    "failure": null,
+    "heating": 0.2686215734,
+    "instability": 0.05314565077,
+    "isp": 434.1068775,
+    "ispSeaLevel": 338.2413578,
+    "ispVacuum": 434.1068775,
+    "massFlow": 276.1868932,
+    "pe": 8530.642076,
+    "state": "under",
+    "structural": 0.4032195833,
+    "tc": 3332.693118,
+    "thrust": 1175764.672,
+  },
+}
+`;
