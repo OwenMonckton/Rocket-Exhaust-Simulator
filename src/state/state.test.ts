@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RANGES, simulate } from '../physics/engine';
+import { RANGES, sanitize, simulate } from '../physics/engine';
 import { PRESETS, getPreset } from '../physics/presets';
 import { decodeState, encodeState } from './share';
 import { starterEngine } from '../physics/reshape';
+import { pairRange } from '../physics/chem/pair';
 import { applyScale, createStore, defaultState, isModified } from './store';
 
 describe('share links', () => {
@@ -47,10 +48,35 @@ describe('share links', () => {
   });
   it('writes links that carry the three parts', () => {
     const text = encodeState({ config: getPreset('nerva')!.config, flight: { altitudeKm: 100, throttle: 1 } });
-    expect(text.startsWith('v2.')).toBe(true);
+    expect(text.startsWith('v3.')).toBe(true);
     const packed = JSON.parse(atob(text.slice(3).replace(/-/g, '+').replace(/_/g, '/')));
-    expect(packed).toHaveLength(18);
+    expect(packed).toHaveLength(20);
     expect(packed.slice(0, 4)).toEqual(['nerva', 'reactor', 'bell', 'ntr-hydrogen']);
+    expect(packed.slice(4, 6)).toEqual([getPreset('nerva')!.config.fuel, getPreset('nerva')!.config.oxidiser]);
+  });
+  it('round-trips a calculated engine with its fuel, oxidiser and mixture', () => {
+    const config = sanitize({ ...PRESETS[0].config, presetId: null, propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
+    expect(config).toMatchObject({ propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
+    const s = { config, flight: { altitudeKm: 0, throttle: 1 } };
+    expect(decodeState(encodeState(s))).toEqual(s);
+  });
+  it('reads v1 and v2 links as before, with the tabled pair filled in (review focus 5)', () => {
+    const nums = [0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 1, 0, 1];
+    const v2 = decodeState('v2.' + btoa(JSON.stringify([null, 'combustion', 'bell', 'kerolox', ...nums])))!.config;
+    expect(v2).toMatchObject({ energy: 'combustion', exhaust: 'bell', propellant: 'kerolox', fuel: 'rp1', oxidiser: 'lox', chamberDia: 0.45, mixtureRatio: 2.36 });
+    const v1 = decodeState('v1.' + btoa(JSON.stringify(['merlin-1d', 'hydrolox', 0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 6, 1, 0, 1])))!.config;
+    expect(v1).toMatchObject({ propellant: 'hydrolox', fuel: 'h2', oxidiser: 'lox', chambers: 1, mixtureRatio: 6 });
+  });
+  it('opens a v3 link with an unknown fuel or oxidiser, sanitised, and refuses a wrong length (review focus 5)', () => {
+    const good = encodeState({ config: getPreset('merlin-1d')!.config, flight: { altitudeKm: 0, throttle: 1 } });
+    const packed = JSON.parse(atob(good.slice(3).replace(/-/g, '+').replace(/_/g, '/'))) as unknown[];
+    const link = (a: unknown[]) => 'v3.' + btoa(JSON.stringify(a));
+    const edited = [...packed];
+    edited[4] = 'xyz';
+    edited[5] = 'abc';
+    expect(decodeState(link(edited))!.config).toMatchObject({ fuel: 'rp1', oxidiser: 'lox' });
+    expect(decodeState(link(packed.slice(0, 18)))).toBeNull();
+    expect(decodeState(link([...packed, 1]))).toBeNull();
   });
   it('opens a link whose propellant does not suit its energy source (review focus)', () => {
     const v2 = (a: unknown[]) => decodeState('v2.' + btoa(JSON.stringify(a)));
@@ -108,6 +134,22 @@ describe('store', () => {
     store.setScale(2);
     expect(isModified(store.get().config)).toBe(true);
     store.setScale(1);
+    expect(isModified(store.get().config)).toBe(false);
+  });
+  it('calculates from a chosen fuel or oxidiser and resets to stock', () => {
+    const store = createStore(defaultState());
+    store.loadPreset('merlin-1d');
+    store.setFuel('ch4');
+    expect(store.get().config).toMatchObject({ propellant: 'calculated', fuel: 'ch4', oxidiser: 'lox' });
+    expect(store.get().config.mixtureRatio).toBe(pairRange('ch4', 'lox').ofDefault);
+    expect(isModified(store.get().config)).toBe(true);
+    store.setFuel('rp1');
+    expect(store.get().config.propellant).toBe('calculated');
+    expect(isModified(store.get().config)).toBe(true);
+    store.setOxidiser('of2');
+    expect(store.get().config).toMatchObject({ oxidiser: 'of2', mixtureRatio: pairRange('rp1', 'of2').ofDefault });
+    store.loadPreset('merlin-1d');
+    expect(store.get().config.propellant).toBe('kerolox');
     expect(isModified(store.get().config)).toBe(false);
   });
   it('opens on a blank engine tied to no example', () => {
