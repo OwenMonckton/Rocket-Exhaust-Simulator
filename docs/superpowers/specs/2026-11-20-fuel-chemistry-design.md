@@ -58,9 +58,9 @@ How the solver's answer reaches the rest of the simulator, which treats the exha
 simple gas (one gamma, one molar mass) from chamber to exit:
 
 1. **Chamber only.** The solver gives flame temperature and gas properties; the existing nozzle
-   maths does the rest. Smallest change, but efficiency reads 1–5% low, because real exhaust
-   keeps reacting and releasing heat as it expands (published kerosene and oxygen: 301 s
-   shifting against 286 s frozen).
+   maths does the rest. Smallest change, but efficiency is off by several percent, because real
+   exhaust keeps reacting as it expands and one fixed gamma cannot follow it (measured before
+   planning: hydrogen and oxygen read 499 s where NASA's program gives 481 s).
 2. **Chamber and nozzle, fitted back (chosen by the user).** The solver also follows the gas to
    the throat and the exit, then hands the simulator a simple gas that reproduces that result.
    The flow view, shock diamonds, separation and aerospike keep working unchanged. This is what
@@ -130,8 +130,7 @@ What it must do:
 **Data.** NASA Glenn's `thermo.inp`, from `github.com/nasa/cea` (Apache-2.0; keep the NOTICE
 attribution). A script turns the part needed into a data file checked into the repository:
 products containing only C, H, O, N, F, Cl, B, Li, Al and Be, without ions, about 500 species
-and roughly 75 KB compressed. The same file carries the heat content of about 80 propellants at
-storage temperature, which is where the ingredient lists start.
+and roughly 75 KB compressed. The same file carries the heat content of about 67 propellants, which is where the ingredient lists start.
 
 **Handing the result back.** For the engine as it stands, the fit produces the simple gas the
 rest of the simulator uses (temperature, gamma, molar mass):
@@ -229,7 +228,10 @@ Exhaust
   chamber. Other sources keep one picker. Both lists are grouped (everyday, storable, exotic),
   each option with hover text.
 - Changing either puts the mixture ratio at the pair's most efficient setting. The slider's
-  range is wide enough to reach flame-out at both ends.
+  range reaches flame-out at the oxidiser-rich end, and at the fuel-rich end for fuels that
+  go cold there (hydrogen). Kerosene, hydrazines and boranes do not: at equilibrium they fall
+  apart and give off heat with almost no oxidiser, so that end runs cool but does not go out.
+  (Found while planning; recorded as a known limit.)
 - The exhaust readout lists the main things in the exhaust at the nozzle exit by share, with
   plain names.
 - Loading an example shows its fuel and oxidiser in the two pickers.
@@ -254,9 +256,10 @@ Exhaust
 - **Nuclear fluids:** ammonia, methane, water, carbon dioxide and helium come from the solver.
   The solver's answer wins. As a check, its ideal vacuum efficiency (before the simulator's
   losses) at 2,800 K is compared with Zubrin's published ideal figures (methane 606 s, water
-  370 s, carbon dioxide 283 s), at Zubrin's pressure and nozzle if the study can be found and
-  the NERVA example's otherwise: each should be nearer than part 1's estimate was, and any
-  still more than 5% out is explained in `docs/future-work.md`. Soot from methane lags the gas
+  370 s, carbon dioxide 283 s). Those are for an infinitely large nozzle; the study gives about
+  93% of them at an area ratio of 100, states no pressure, and does not cover ammonia. So the
+  check is at area ratio 100 against 93% of each figure: each should be nearer than part 1's
+  estimate was, and any still more than 5% out is explained in `docs/future-work.md`. Soot from methane lags the gas
   like any other droplet, so the droplet loss applies to reactor fluids too. Helium is added to
   the data file's elements.
 - Existing conventions hold: plain-English labels with hover text, tests beside the code,
@@ -267,7 +270,9 @@ Exhaust
 - How a fuel and oxidiser are held in the engine's settings, and how the four tabled pairs are
   recognised.
 - The species list within the ten elements, and whether to trim it for speed.
-- The flame temperature below which a mixture will not sustain, from a cited source.
+- The flame temperature below which a mixture will not sustain, from a cited source. (Found
+  before planning: 800 K. NASA SP-8081 lists working gas generators burning at 811 K, so the
+  1,500 K rule of thumb would wrongly put out the F-1's own.)
 - The mixture slider's range and step for a calculated pair.
 - The chamber length each fuel family needs to burn completely (`lStarRef`), from the existing
   four as anchors.
