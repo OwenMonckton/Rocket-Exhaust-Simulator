@@ -81,7 +81,17 @@ export function fitGas(tc: number, cStar: number, ispVac: number, eps: number, f
 // ---- The cache ----
 
 const results = new Map<string, SolvedGas>();   // oldest first
-const lastOk = new Map<string, RocketResult>(); // the last settled result per pair or fluid, to start from
+/** Where a settled result was solved: the mixture figure (O/F, or a fluid's temperature), pressure and area ratio. */
+interface At { x: number; p: number; e: number }
+const lastOk = new Map<string, { r: RocketResult; at: At }>(); // the last settled result per pair or fluid, to start from
+// A warm start is used only from near the point asked for: the mixture figure within 10% (or 0.05
+// absolute, for O/F near zero), pressure and area ratio within a factor of 1.5. From further away the
+// solve starts cold, so a result never depends on where the user came from.
+const NEAR_X = 0.1;
+const NEAR_X_ABS = 0.05;
+const NEAR_FACTOR = 1.5;
+const near = (a: At, b: At) => Math.abs(a.x - b.x) <= Math.max(NEAR_X * Math.abs(b.x), NEAR_X_ABS)
+  && Math.max(a.p / b.p, b.p / a.p) <= NEAR_FACTOR && Math.max(a.e / b.e, b.e / a.e) <= NEAR_FACTOR;
 const ranges = new Map<string, MixRange>();
 
 export function clearChemCache(): void {
@@ -118,15 +128,16 @@ function toGas(r: RocketResult, eps: number): SolvedGas {
 }
 
 /** A cached solve: `chain` names the pair or fluid whose last settled result is the warm start. */
-function cached(key: string, chain: string, mix: () => Mixture, chamber: (mix: Mixture) => Problem, eps: number): SolvedGas {
+function cached(key: string, chain: string, at: At, mix: () => Mixture, chamber: (mix: Mixture) => Problem, eps: number): SolvedGas {
   const hit = results.get(key);
   if (hit) return hit;
   const m = mix();
   const problem = chamber(m);
-  const from = lastOk.get(chain);
+  const last = lastOk.get(chain);
+  const from = last && near(last.at, at) ? last.r : undefined;
   let r = rocket(m, problem, eps, from);
   if (!r.ok && from) r = rocket(m, problem, eps); // a warm start far from the answer can fail where a cold one does not
-  if (r.ok) lastOk.set(chain, r);
+  if (r.ok) lastOk.set(chain, { r, at });
   const gas = toGas(r, eps);
   results.set(key, gas);
   while (results.size > CACHE_LIMIT) results.delete(results.keys().next().value!);
@@ -144,7 +155,7 @@ export function solvePair(fuel: string, oxidiser: string, of: number, pcBar: num
   const p = sig3(pcBar);
   const e = sig3(eps);
   const chain = `pair|${fuel}|${oxidiser}`;
-  return cached(`${chain}|${o}|${p}|${e}`, chain, () => mixtureOf(fuel, oxidiser, o),
+  return cached(`${chain}|${o}|${p}|${e}`, chain, { x: o, p, e }, () => mixtureOf(fuel, oxidiser, o),
     (m) => ({ kind: 'hp', h: m.h0, pBar: p }), e);
 }
 
@@ -158,7 +169,7 @@ export function solveFluid(reactant: string, tK: number, pcBar: number, eps: num
   const p = sig3(pcBar);
   const e = sig3(eps);
   const chain = `fluid|${reactant}`;
-  return cached(`${chain}|${t}|${p}|${e}`, chain, () => mixtureFrom([{ reactant: reactantOf(reactant), massFraction: 1 }]),
+  return cached(`${chain}|${t}|${p}|${e}`, chain, { x: t, p, e }, () => mixtureFrom([{ reactant: reactantOf(reactant), massFraction: 1 }]),
     () => ({ kind: 'tp', t, pBar: p }), e);
 }
 

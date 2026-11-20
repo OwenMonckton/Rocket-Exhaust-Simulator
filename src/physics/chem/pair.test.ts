@@ -157,6 +157,16 @@ describe('the cache', () => {
     expect(performance.now() - t0, 'cold pairRange, ms').toBeLessThan(600);
   });
 
+  it('gives the same answer after a jump in mixture as from a cold start', () => {
+    clearChemCache();
+    solvePair('al-slurry', 'lox', 100, 70, 40);
+    const jumped = solvePair('al-slurry', 'lox', 2.18, 70, 40);
+    clearChemCache();
+    const cold = solvePair('al-slurry', 'lox', 2.18, 70, 40);
+    expect(jumped.ok && cold.ok).toBe(true);
+    for (const k of ['tc', 'cStar', 'ispVac'] as const) expect(relErr(jumped[k], cold[k]), k).toBeLessThan(0.001);
+  });
+
   it('keeps at most 2,000 results', () => {
     clearChemCache();
     for (let i = 0; i < 2100; i++) solvePair('h2', 'lox', 2 + i * 0.01, 70, 40);

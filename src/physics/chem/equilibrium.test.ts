@@ -227,3 +227,52 @@ describe('equilibrium with liquid and solid products', () => {
     }
   });
 });
+
+describe('equilibrium does not depend on where it starts', () => {
+  /** Aluminised kerosene (30% AL(cr), 70% RP-1) with liquid oxygen. */
+  const slurry = (of: number) => mixtureFrom([
+    { reactant: REACTANTS['AL(cr)'], massFraction: 0.3 / (1 + of) },
+    { reactant: REACTANTS['RP-1'], massFraction: 0.7 / (1 + of) },
+    { reactant: REACTANTS['O2(L)'], massFraction: of / (1 + of) },
+  ]);
+  /** 80% hydrazine, 20% beryllium, with hydrogen peroxide. */
+  const beryllium = (of: number) => mixtureFrom([
+    { reactant: REACTANTS['N2H4(L)'], massFraction: 0.8 / (1 + of) },
+    { reactant: REACTANTS['Be(a)'], massFraction: 0.2 / (1 + of) },
+    { reactant: REACTANTS['H2O2(L)'], massFraction: of / (1 + of) },
+  ]);
+  const flame = (mix: ReturnType<typeof mixtureFrom>) => ({ kind: 'hp', h: mix.h0, pBar: 70 }) as const;
+  /** Active condensed species whose own fitted range does not hold T. */
+  const outOfRange = (st: EqState) => st.species.filter((s, j) => s.phase !== 0 && st.moles[j] > 0
+    && !(s.intervals[0].tMin <= st.t && st.t <= s.intervals[s.intervals.length - 1].tMax)).map((s) => s.name);
+
+  it('drops a solid carried in from a cold start far outside its range', () => {
+    const from = equilibrate(slurry(100), flame(slurry(100)));
+    expect(from.ok).toBe(true);
+    const mix = slurry(2.18);
+    const warm = equilibrate(mix, flame(mix), undefined, from);
+    const cold = equilibrate(mix, flame(mix));
+    expect(warm.ok).toBe(true);
+    expect(relErr(warm.t, cold.t)).toBeLessThan(0.001);
+    expect(cold.t).toBeGreaterThan(3900);
+    expect(outOfRange(warm)).toEqual([]);
+  });
+
+  for (const [name, mixOf] of [['aluminised kerosene and oxygen', slurry], ['hydrazine-beryllium and peroxide', beryllium]] as const) {
+    it(`gives the same answer along a chained sweep: ${name}`, () => {
+      let prev: EqState | undefined;
+      for (const of of [100, 0.5, 30, 2, 0.2, 8]) {
+        const mix = mixOf(of);
+        const warm = equilibrate(mix, flame(mix), undefined, prev);
+        const cold = equilibrate(mix, flame(mix));
+        expect(warm.ok, `ok at O/F ${of}`).toBe(cold.ok);
+        if (warm.ok) {
+          expect(relErr(warm.t, cold.t), `T at O/F ${of}`).toBeLessThan(0.001);
+          expect(Math.abs(warm.condensedMassFraction - cold.condensedMassFraction), `condensed at O/F ${of}`).toBeLessThan(0.002);
+          expect(outOfRange(warm), `out of range at O/F ${of}`).toEqual([]);
+          prev = warm;
+        }
+      }
+    });
+  }
+});

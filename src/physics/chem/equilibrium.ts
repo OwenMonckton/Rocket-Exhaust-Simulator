@@ -306,13 +306,14 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
       continue;
     }
     let swapped = false;
+    const outside: number[] = []; // lone species whose range T has left, with no phase to swap to
     for (let c = 0; c < active.length; c++) {
       const j = active[c];
       if (covers(j, t)) continue;
       const f = formula.get(j)!;
       if (active.some((x) => x !== j && formula.get(x) === f)) continue; // a pair on its melting point
       const k = cond.find((x) => x !== j && formula.get(x) === f && covers(x, t));
-      if (k === undefined) continue;
+      if (k === undefined) { outside.push(j); continue; }
       const prev = lastSwap.get(f);
       if (prev && prev[0] === k && prev[1] === j) {
         if (fixedT) continue; // T is assigned: keep the phase in hand
@@ -324,6 +325,9 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
       lastSwap.set(f, [j, k]);
       swapped = true;
     }
+    // Never kept outside its own range (it may join again later only if its range then holds T): a
+    // species carried in from a distant start would otherwise hold the solve on a false answer.
+    for (const j of outside) { moles[j] = 0; active.splice(active.indexOf(j), 1); swapped = true; }
     if (swapped) continue;
     const held = new Set(active.map((j) => formula.get(j)));
     let best = -1, bestTest = 0;
