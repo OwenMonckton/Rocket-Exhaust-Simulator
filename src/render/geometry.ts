@@ -426,6 +426,12 @@ export function grainBore(cfg: EngineConfig, x: number, burnt = 0): number {
 }
 
 /** How much of a solid motor's propellant is left, as a fraction of a fresh grain. */
+/** What to say under a solid motor about its grain. */
+export function grainLabel(cfg: EngineConfig, burnt: number): string {
+  const left = grainLeft(cfg, burnt);
+  return left > 0.005 ? `Propellant left: ${Math.round(left * 100)}%` : 'Burnt out. Fire loads a fresh motor.';
+}
+
 export function grainLeft(cfg: EngineConfig, burnt: number): number {
   const rc = cfg.chamberDia / 2;
   const end = cfg.chamberLen * GRAIN_END;

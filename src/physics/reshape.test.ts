@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from './engine';
 import { ENERGY_IDS, propellantsFor } from './parts';
-import { getPreset } from './presets';
+import { PRESETS, getPreset } from './presets';
 import { DEFAULT_CELLS, starterEngine, withEnergy, withExhaust } from './reshape';
 import type { EngineConfig } from './types';
 
@@ -117,5 +117,51 @@ describe('changing the exhaust type', () => {
       const r = simulate(spike, flight);
       for (const v of [r.thrust, r.isp, r.massFlow]) expect(Number.isFinite(v)).toBe(true);
     }
+  });
+});
+
+describe('part swaps on engines other than the blank one (final review)', () => {
+  it('splits a small engine into fewer cells rather than bursting it', () => {
+    for (const throat of [0.03, 0.05, 0.1]) {
+      const from = starterWithThroat(throat);
+      const spike = withExhaust(from, 'aerospike');
+      expect(simulate(spike, ground).failure, `throat ${throat}`).toBeNull();
+      expect(structural(spike)).toBeLessThanOrEqual(structural(from) * 1.01);
+      expect((spike.chambers * spike.throatDia ** 2) / (from.chambers * from.throatDia ** 2)).toBeCloseTo(1, 6);
+      const back = withExhaust(spike, 'bell');
+      expect(back.throatDia / from.throatDia).toBeCloseTo(1, 6);
+      expect(structural(back) / structural(from)).toBeCloseTo(1, 2);
+    }
+  });
+
+  it('never destroys an example engine by giving it an aerospike', () => {
+    for (const p of PRESETS.filter((q) => q.config.exhaust === 'bell')) {
+      const spike = withExhaust(p.config, 'aerospike');
+      expect(spike.chambers, p.id).toBeGreaterThanOrEqual(1);
+      expect(simulate(spike, ground).failure, p.id).toBeNull();
+      expect(simulate(spike, space).failure, p.id).toBeNull();
+    }
+  });
+
+  it('never bursts, melts or burns through an example engine by changing its energy source', () => {
+    for (const p of PRESETS) {
+      for (const e of ENERGY_IDS) {
+        // A very large engine turned into a combustion chamber is unstable, as the F-1 nearly was: that is the physics, not the swap.
+        expect([null, 'instability'], `${p.id} -> ${e}`).toContain(simulate(withEnergy(p.config, e), space).failure);
+      }
+    }
+  });
+
+  it('leaves the temperature alone when the swap is not what made the engine hot', () => {
+    const hot = sanitize({ ...getPreset('nerva')!.config, mixtureRatio: 2700 });
+    expect(simulate(hot, space).failure).toBeNull();
+    const spike = withExhaust(hot, 'aerospike');
+    expect(spike.mixtureRatio).toBe(2700);
+    expect(withExhaust(spike, 'bell').mixtureRatio).toBe(2700);
+  });
+
+  it('sets the new source to its usual setting', () => {
+    expect(withEnergy(starterEngine(), 'reactor').mixtureRatio).toBe(2360);
+    expect(withEnergy(starterEngine(), 'saltwater').propellant).toBe('saltwater');
   });
 });

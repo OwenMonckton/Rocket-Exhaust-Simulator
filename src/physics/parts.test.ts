@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize } from './engine';
-import { ENERGY_IDS, ENERGY_SOURCES, propellantsFor } from './parts';
+import { ENERGY_IDS, ENERGY_SOURCES, isEnergyId, isExhaustId, propellantsFor } from './parts';
 import { getPreset } from './presets';
-import { PROPELLANTS, PROPELLANT_IDS } from './propellants';
+import { PROPELLANTS, PROPELLANT_IDS, isPropellantId } from './propellants';
 
 const base = getPreset('merlin-1d')!.config;
 
@@ -37,5 +37,21 @@ describe('engine parts', () => {
 
   it('falls back to a bell for an exhaust type it does not know', () => {
     expect(sanitize({ ...base, exhaust: 'funnel' as never }).exhaust).toBe('bell');
+  });
+});
+
+describe('part names that are not parts (final review)', () => {
+  it('does not take a word every object answers to for a part', () => {
+    for (const word of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(isEnergyId(word), word).toBe(false);
+      expect(isExhaustId(word), word).toBe(false);
+      expect(isPropellantId(word), word).toBe(false);
+      const fixed = sanitize({ ...base, energy: word as never, exhaust: word as never, propellant: word as never });
+      expect(fixed).toMatchObject({ energy: 'combustion', exhaust: 'bell', propellant: 'kerolox' });
+    }
+  });
+
+  it('explains every propellant in a line', () => {
+    for (const id of PROPELLANT_IDS) expect(PROPELLANTS[id].tip.length, id).toBeGreaterThan(20);
   });
 });

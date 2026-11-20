@@ -97,7 +97,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           label: 'Propellant',
           tip: TIPS.propellant,
           // Only what this energy source can use.
-          options: (s) => propellantsFor(s.config.energy).map((id) => ({ value: id, label: PROPELLANTS[id].name })),
+          options: (s) => propellantsFor(s.config.energy).map((id) => ({ value: id, label: PROPELLANTS[id].name, tip: PROPELLANTS[id].tip })),
           get: (s) => s.config.propellant,
           set: (v) => store.set({ config: { propellant: v as PropellantId } }),
           note: (s) => {

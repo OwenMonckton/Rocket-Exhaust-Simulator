@@ -1,13 +1,16 @@
-import { sanitize } from './engine';
-import { SIGMA_ALLOW_BAR, computeLimits } from './limits';
+import { RANGES, sanitize, simulate } from './engine';
+import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
-import { PROPELLANTS, gasProps } from './propellants';
+import { PROPELLANTS } from './propellants';
 import type { EnergyId, EngineConfig, ExhaustId } from './types';
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
 
 /** How many thrust cells an engine gets when it is first given an aerospike. */
 export const DEFAULT_CELLS = 20;
+
+/** The most of its heat limit a burning engine's thrust cells may run at when it is first given an aerospike. */
+const CELL_HEAT = 0.97;
 
 /** Share of its heat limit an engine is brought down to when a new energy source would overheat it. */
 const SAFE_HEAT = 0.9;
@@ -49,39 +52,38 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId): EngineConfig {
   const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, prop.lStarRef);
   // Sanitise first: the wall has to follow the chamber the engine really ends up with.
   const shaped = sanitize({ ...cfg, energy, propellant, mixtureRatio: prop.ofDefault, ...shape });
-  return cooled(sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia }));
+  return cooled(sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia }), 0);
+}
+
+/** How close an engine is to its heat limit: 1 or more and it fails. */
+function heatLoad(cfg: EngineConfig): number {
+  return simulate(cfg, { altitudeKm: 0, throttle: 1 }).limits.heating;
 }
 
 /**
  * An engine whose temperature is a setting (a reactor, a salt-water reaction) may come out of a
  * part swap too hot for its throat: a salt-water reaction in a small nozzle, or in the small
  * throats of an aerospike's cells. Turn it down to as hot as the engine can take, so that
- * swapping a part never destroys the engine by itself. A flame's temperature is not a setting,
- * so a burning engine is left as it is.
+ * swapping a part never destroys the engine by itself. `heatBefore` is how hot the engine ran
+ * before the swap: an engine the swap has not made any hotter keeps the setting it was given.
+ * A flame's temperature is not a setting, so this leaves a burning engine alone.
  */
-function cooled(cfg: EngineConfig): EngineConfig {
+function cooled(cfg: EngineConfig, heatBefore: number): EngineConfig {
   if (ENERGY_SOURCES[cfg.energy].mixKind !== 'temperature') return cfg;
-  const heat = computeLimits(cfg, cfg.chamberPressureBar, gasProps(cfg.propellant, cfg.mixtureRatio).tc).heating;
-  if (heat <= SAFE_HEAT) return cfg;
+  const heat = heatLoad(cfg);
+  if (heat <= Math.max(SAFE_HEAT, heatBefore)) return cfg;
   // Rounded down to two figures, so the setting reads as a round number.
   const target = (cfg.mixtureRatio * SAFE_HEAT) / heat;
   const step = Math.pow(10, Math.floor(Math.log10(target)) - 1);
   return sanitize({ ...cfg, mixtureRatio: Math.floor(target / step) * step });
 }
 
-/**
- * The same engine with a different exhaust. An aerospike's dimensions describe one of its
- * thrust cells, so going to one divides the engine into `DEFAULT_CELLS` cells with the same
- * total throat and exit area, and coming back merges them into one chamber: thrust stays about
- * the same either way.
- */
-export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
-  if (cfg.exhaust === exhaust) return cfg;
-  const count = exhaust === 'aerospike' ? DEFAULT_CELLS : 1;
+/** The engine divided into, or merged down to, `count` chambers of the same total throat and exit area. */
+function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineConfig {
   const k = Math.sqrt(cfg.chambers / count);
   // A chamber a liquid burns in keeps its length, and with it the time the propellant has to burn.
   const burnsInChamber = PROPELLANTS[cfg.propellant].lStarRef > 0;
-  return cooled(sanitize({
+  const shaped = sanitize({
     ...cfg,
     exhaust,
     chambers: count,
@@ -89,11 +91,35 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
     chamberLen: burnsInChamber ? cfg.chamberLen : cfg.chamberLen * k,
     throatDia: cfg.throatDia * k,
     exitDia: cfg.exitDia * k,
-    wall: cfg.wall * k,
     // A spike has no bell to extend.
     extFixedDia: exhaust === 'aerospike' ? 0 : cfg.extFixedDia,
     extDeploy: exhaust === 'aerospike' ? 1 : cfg.extDeploy,
-  }));
+  });
+  // The wall follows the chamber the engine really ends up with, which keeps it as close to
+  // bursting as it was even where a very small chamber has been held at its smallest size.
+  return sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia });
+}
+
+/**
+ * The same engine with a different exhaust. An aerospike's dimensions describe one of its
+ * thrust cells, so going to one divides the engine into cells with the same total throat and
+ * exit area, and coming back merges them into one chamber: thrust stays about the same either
+ * way. It gets `DEFAULT_CELLS` cells unless that would destroy it: fewer where the throats
+ * would be smaller than a throat can be, and fewer where a flame would burn through throats
+ * that small (small throats are the hardest to keep cool).
+ */
+export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
+  if (cfg.exhaust === exhaust) return cfg;
+  const heatBefore = heatLoad(cfg);
+  if (exhaust !== 'aerospike') return cooled(divided(cfg, exhaust, 1), heatBefore);
+  const smallest = RANGES.throatDia.min;
+  let count = Math.max(1, Math.min(DEFAULT_CELLS, Math.floor(cfg.chambers * (cfg.throatDia / smallest) ** 2 + 1e-9)));
+  let next = divided(cfg, exhaust, count);
+  if (ENERGY_SOURCES[cfg.energy].mixKind !== 'temperature') {
+    const limit = Math.max(CELL_HEAT, heatBefore);
+    while (count > 1 && heatLoad(next) > limit) next = divided(cfg, exhaust, --count);
+  }
+  return cooled(next, heatBefore);
 }
 
 /** The blank engine the simulator opens on: a mid-sized kerolox engine, well inside every limit. */

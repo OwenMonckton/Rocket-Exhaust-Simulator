@@ -135,9 +135,15 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
   against published efficiencies rather than worked out. They come out 7 to 19 % under the ideal
   figures for water, methane and carbon dioxide. The chemistry solver of piece 2 should replace
   them.
-- **Swapping a part turns a reactor or a salt-water reaction down** if it would otherwise
-  overheat the new engine, but leaves a burning engine alone: a hot, high-pressure combustion
-  engine can burn through the small throats of an aerospike's cells the moment it is given one.
+- **Swapping a part is not allowed to destroy the engine by itself**, with one exception. A
+  reactor or salt-water reaction is turned down if the swap would overheat it, and an engine given
+  an aerospike gets fewer than twenty cells where twenty would have throats too small to make or
+  to keep cool (a Raptor gets two). The exception is honest physics: a very large engine rebuilt
+  round a combustion chamber is unstable, as the F-1 nearly was, and says so.
+- **A multi-chamber engine is always drawn with a shared turbopump and two feed lines**, even
+  where the chambers are solid motors or reactors (`drawTurbopump` in `src/render/engineView.ts`).
+- **Nothing tests the workshop screen itself**: the pickers, the count slider and the Examples
+  menu were checked in the browser, not by a test.
 - **Every source was fired with both exhausts** at sea level and in vacuum, lit from cold, with
   both gas simulations on. All eight run. The measuring tool (`src/dev/accuracy.ts`) only reads
   bell engines, so the new aerospikes were checked by eye and by their readouts, not measured.

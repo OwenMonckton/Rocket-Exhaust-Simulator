@@ -9,6 +9,7 @@ const CORE_TEMPS = [1500, 2000, 2360, 2800, 3200];
 function reactorFluid(
   id: PropellantId,
   name: string,
+  tip: string,
   fuel: string,
   gamma: number[],
   molarMass: number[],
@@ -18,6 +19,7 @@ function reactorFluid(
     id,
     energy: 'reactor',
     name,
+    tip,
     fuel,
     oxidiser: 'a reactor to heat it',
     ofMin: CORE_TEMPS[0],
@@ -36,6 +38,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'kerolox',
     energy: 'combustion',
     name: 'Kerolox',
+    tip: 'Kerosene and liquid oxygen. Dense, cheap and powerful, with a bright sooty flame.',
     fuel: 'RP-1 kerosene',
     oxidiser: 'liquid oxygen',
     ofMin: 1.8,
@@ -67,6 +70,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'hydrolox',
     energy: 'combustion',
     name: 'Hydrolox',
+    tip: 'Liquid hydrogen and liquid oxygen. The most efficient pair that burns, with a faint blue flame.',
     fuel: 'liquid hydrogen',
     oxidiser: 'liquid oxygen',
     ofMin: 3.5,
@@ -98,6 +102,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'methalox',
     energy: 'combustion',
     name: 'Methalox',
+    tip: 'Liquid methane and liquid oxygen. Cleaner than kerosene and nearly as dense.',
     fuel: 'liquid methane',
     oxidiser: 'liquid oxygen',
     ofMin: 2.6,
@@ -128,6 +133,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'hypergolic',
     energy: 'combustion',
     name: 'Hypergolic',
+    tip: 'Hydrazine fuel and nitrogen tetroxide. They ignite on contact, so the engine always lights.',
     fuel: 'UDMH hydrazine',
     oxidiser: 'nitrogen tetroxide',
     ofMin: 1.6,
@@ -158,6 +164,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'solid',
     energy: 'solid',
     name: 'Solid (APCP)',
+    tip: 'Aluminium powder and ammonium perchlorate set in rubber. Very bright, very smoky.',
     fuel: 'aluminium + rubber binder',
     oxidiser: 'ammonium perchlorate',
     ofMin: 1,
@@ -182,6 +189,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'ntr-hydrogen',
     energy: 'reactor',
     name: 'Hydrogen',
+    tip: 'The lightest gas there is, so it leaves fastest: about twice as efficient as any flame.',
     fuel: 'liquid hydrogen',
     oxidiser: 'a reactor to heat it',
     // For this propellant the "mixture" setting is the reactor core temperature in kelvin.
@@ -216,7 +224,10 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   // all. Checked against the vacuum efficiencies Zubrin gives for a reactor at 2800 K in his NIMF
   // study (1991): methane 606 s, water 370 s, carbon dioxide 283 s. Those are ideal figures; in
   // the NERVA example this model gives 510, 345 and 228 s, in the same order and 7 to 19 % lower.
-  'ntr-ammonia': reactorFluid('ntr-ammonia', 'Ammonia', 'liquid ammonia', [1.31, 1.3, 1.295, 1.29, 1.28], [8.52, 8.52, 8.52, 8.5, 8.45], {
+  'ntr-ammonia': 
+    reactorFluid('ntr-ammonia', 'Ammonia',
+    'Breaks into nitrogen and hydrogen as it is heated. About half as efficient as hydrogen, but far easier to store.',
+    'liquid ammonia', [1.31, 1.3, 1.295, 1.29, 1.28], [8.52, 8.52, 8.52, 8.5, 8.45], {
     // Mostly hydrogen and nitrogen: as faint as a hydrogen plume, a little warmer in colour.
     core: [0.98, 0.94, 0.9],
     mid: [0.9, 0.78, 0.7],
@@ -229,7 +240,10 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     afterburnStrength: 0.7,
     particles: 0,
   }),
-  'ntr-methane': reactorFluid('ntr-methane', 'Methane', 'liquid methane', [1.24, 1.23, 1.22, 1.21, 1.19], [8.0, 8.0, 7.9, 7.6, 7.0], {
+  'ntr-methane': 
+    reactorFluid('ntr-methane', 'Methane',
+    'Breaks into hydrogen and carbon as it is heated. A little better than ammonia, and it leaves carbon behind.',
+    'liquid methane', [1.24, 1.23, 1.22, 1.21, 1.19], [8.0, 8.0, 7.9, 7.6, 7.0], {
     // Hydrogen carrying the carbon the methane left behind, glowing orange.
     core: [1.0, 0.9, 0.7],
     mid: [1.0, 0.66, 0.28],
@@ -242,7 +256,10 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     afterburnStrength: 0.9,
     particles: 0.6,
   }),
-  'ntr-water': reactorFluid('ntr-water', 'Water', 'water', [1.2, 1.19, 1.185, 1.18, 1.17], [18.0, 18.0, 17.9, 17.6, 17.0], {
+  'ntr-water': 
+    reactorFluid('ntr-water', 'Water',
+    'Leaves as superheated steam. Under half as efficient as hydrogen, but it can be found almost anywhere.',
+    'water', [1.2, 1.19, 1.185, 1.18, 1.17], [18.0, 18.0, 17.9, 17.6, 17.0], {
     // Superheated steam: almost nothing to see, and nothing left to burn.
     core: [0.95, 0.96, 1.0],
     mid: [0.8, 0.85, 0.95],
@@ -255,7 +272,10 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     afterburnStrength: 0,
     particles: 0,
   }),
-  'ntr-co2': reactorFluid('ntr-co2', 'Carbon dioxide', 'liquid carbon dioxide', [1.18, 1.17, 1.17, 1.16, 1.15], [44.0, 43.8, 43.3, 42.0, 40.0], {
+  'ntr-co2': 
+    reactorFluid('ntr-co2', 'Carbon dioxide',
+    'The heaviest choice, and the least efficient: about a quarter of hydrogen. It is what the air on Mars is made of.',
+    'liquid carbon dioxide', [1.18, 1.17, 1.17, 1.16, 1.15], [44.0, 43.8, 43.3, 42.0, 40.0], {
     // Nearly invisible; the little carbon monoxide in it burns faintly blue.
     core: [0.92, 0.94, 1.0],
     mid: [0.75, 0.8, 0.95],
@@ -268,7 +288,10 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     afterburnStrength: 0.1,
     particles: 0,
   }),
-  'ntr-helium': reactorFluid('ntr-helium', 'Helium', 'liquid helium', [1.667, 1.667, 1.667, 1.667, 1.667], [4.003, 4.003, 4.003, 4.003, 4.003], {
+  'ntr-helium': 
+    reactorFluid('ntr-helium', 'Helium',
+    'An inert gas that cannot react with the core. Heavier than hydrogen, so a little over half as efficient.',
+    'liquid helium', [1.667, 1.667, 1.667, 1.667, 1.667], [4.003, 4.003, 4.003, 4.003, 4.003], {
     // A hot inert gas: the faintest glow, and it cannot burn.
     core: [1.0, 0.95, 0.9],
     mid: [0.95, 0.85, 0.8],
@@ -285,6 +308,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     id: 'saltwater',
     energy: 'saltwater',
     name: 'Nuclear salt water',
+    tip: 'Water carrying dissolved uranium salt: the propellant is also the fuel for its own fission.',
     fuel: 'uranium salt dissolved in water',
     oxidiser: 'its own fission to heat it',
     // For this propellant the "mixture" setting is the temperature of the fission reaction in
@@ -315,7 +339,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
 export const PROPELLANT_IDS = Object.keys(PROPELLANTS) as PropellantId[];
 
 export function isPropellantId(v: unknown): v is PropellantId {
-  return typeof v === 'string' && v in PROPELLANTS;
+  return typeof v === 'string' && Object.hasOwn(PROPELLANTS, v);
 }
 
 export function clampMixture(id: PropellantId, of: number): number {

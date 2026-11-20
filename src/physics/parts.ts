@@ -89,7 +89,7 @@ export const ENERGY_SOURCES: Record<EnergyId, EnergySource> = {
 export const ENERGY_IDS = Object.keys(ENERGY_SOURCES) as EnergyId[];
 
 export function isEnergyId(v: unknown): v is EnergyId {
-  return typeof v === 'string' && v in ENERGY_SOURCES;
+  return typeof v === 'string' && Object.hasOwn(ENERGY_SOURCES, v);
 }
 
 /** How the engine turns hot gas into a jet. */
@@ -109,7 +109,7 @@ export const EXHAUSTS: Record<ExhaustId, { id: ExhaustId; name: string; tip: str
 export const EXHAUST_IDS = Object.keys(EXHAUSTS) as ExhaustId[];
 
 export function isExhaustId(v: unknown): v is ExhaustId {
-  return typeof v === 'string' && v in EXHAUSTS;
+  return typeof v === 'string' && Object.hasOwn(EXHAUSTS, v);
 }
 
 /** The propellants an energy source can use, in menu order. */

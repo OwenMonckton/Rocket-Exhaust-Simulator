@@ -53,6 +53,8 @@ export interface Propellant {
   /** The energy source this propellant is for */
   energy: EnergyId;
   name: string;
+  /** One-line explanation, shown on hover */
+  tip: string;
   fuel: string;
   oxidiser: string;
   ofMin: number;

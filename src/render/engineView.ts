@@ -3,7 +3,7 @@ import { PROPELLANTS } from '../physics/propellants';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { drawAerospike } from './aerospikeView';
 import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3, rand } from './drawUtil';
-import { GRAIN_END, engineProfile, grainBore, grainLeft, radiusAt, type EngineProfile, type View } from './geometry';
+import { GRAIN_END, engineProfile, grainBore, grainLabel, radiusAt, type EngineProfile, type View } from './geometry';
 
 export type FlowOverlay = 'none' | 'mach' | 'temp';
 
@@ -307,14 +307,13 @@ export function drawEngine(
 
   // How much propellant is left, under the case.
   if (isSolid && !anim.failure) {
-    const left = grainLeft(cfg, anim.burnt ?? 0);
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = 'rgba(232,238,246,0.9)';
     const labelX = Math.max(70, (Math.max(X(0), 0) + X(cfg.chamberLen)) / 2);
     ctx.fillText(
-      left > 0.005 ? `Propellant left: ${Math.round(left * 100)}%` : 'Burnt out. Fire loads a fresh motor.',
+      grainLabel(cfg, anim.burnt ?? 0),
       labelX,
       cy + rc * ppm + wallPx + 6,
     );
@@ -621,6 +620,15 @@ export function drawEngine(
 
   if (profile.spike) {
     drawAerospike(ctx, cfg, result, view, anim, profile.spike, widthPx, heightPx);
+    // A solid motor burns out here too: say how much is left, under the spike's thrust cells.
+    if (cfg.energy === 'solid' && !anim.failure) {
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(232,238,246,0.9)';
+      const lipY = view.centreY + profile.spike.lip.r * view.ppm;
+      ctx.fillText(grainLabel(cfg, anim.burnt ?? 0), 14, Math.min(heightPx - 40, lipY + 26));
+    }
   } else {
     profile.offsets.forEach((offset, index) => {
       ctx.save();

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from '../physics/engine';
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { PRESETS } from '../physics/presets';
-import { starterEngine, withExhaust } from '../physics/reshape';
-import { engineProfile, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
+import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
+import { engineProfile, grainLabel, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
   for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
@@ -228,4 +228,16 @@ describe('thrust cell count (review focus)', () => {
       }
     });
   }
+});
+
+describe('solid motor grain label (final review)', () => {
+  const motor = withEnergy(starterEngine(), 'solid');
+  it('says how much propellant is left, on a bell or an aerospike', () => {
+    expect(grainLabel(motor, 0)).toBe('Propellant left: 100%');
+    expect(grainLabel(withExhaust(motor, 'aerospike'), 0)).toBe('Propellant left: 100%');
+    expect(grainLabel(motor, 0.5)).toMatch(/^Propellant left: \d+%$/);
+  });
+  it('says so when the motor has burnt out', () => {
+    expect(grainLabel(withExhaust(motor, 'aerospike'), 1)).toBe('Burnt out. Fire loads a fresh motor.');
+  });
 });
