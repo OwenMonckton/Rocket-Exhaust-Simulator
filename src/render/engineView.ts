@@ -1,5 +1,6 @@
 import { areaRatio, machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
 import { staticLook } from '../physics/gasSource';
+import { destroys } from '../physics/limits';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { drawAerospike } from './aerospikeView';
 import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3, rand } from './drawUtil';
@@ -604,7 +605,8 @@ export function drawEngine(
 
   // --- Failure -------------------------------------------------------------
   // One chamber failing is enough to end the run, so only the first one is shown torn open.
-  if (anim.failure && index === 0) {
+  // A flame that goes out, or never lights, leaves the engine whole. A detonation bursts the chamber.
+  if (anim.failure && destroys(anim.failure) && index === 0) {
     const fx = X(anim.failure === 'burnthrough' ? profile.throatX : cfg.chamberLen * 0.55);
     const fr = (anim.failure === 'burnthrough' ? rt : rc) * ppm;
     const size = Math.max(40, profile.maxRadius * ppm);

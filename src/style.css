@@ -170,6 +170,16 @@ aside {
   margin-top: 3px;
 }
 
+/* Group headings in a menu (Everyday, Storable, Exotic) sit back behind the choices under them. */
+optgroup {
+  color: var(--dim);
+  background: var(--panel-2);
+}
+
+optgroup option {
+  color: var(--text);
+}
+
 .note {
   margin: 4px 0 0;
   color: var(--dim);
@@ -313,6 +323,11 @@ main {
 
 .stat.wide {
   grid-column: span 2;
+}
+
+/* The exhaust's make-up runs the full width, under the other figures. */
+.stat.exhaust {
+  grid-column: 1 / -1;
 }
 
 .meters {

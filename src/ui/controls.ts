@@ -4,6 +4,8 @@ import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } fro
 import { PRESETS } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { EnergyId, ExhaustId, PropellantId } from '../physics/types';
+import { FUELS, FUEL_IDS, NO_OXIDISER, OXIDISERS, OXIDISER_IDS, type Ingredient } from '../physics/chem/ingredients';
+import { simulate } from '../physics/engine';
 import type { AppState, Store } from '../state/store';
 import { AEROSPIKE_DIMS, COUNT_COPY, TIPS } from './copy';
 
@@ -11,7 +13,8 @@ interface SliderSpec {
   id: string;
   label: string;
   tip: string;
-  log?: boolean;
+  /** Spread the slider's range evenly by ratio rather than by difference */
+  log?: boolean | ((s: AppState) => boolean);
   range(s: AppState): { min: number; max: number };
   get(s: AppState): number;
   set(v: number): void;
@@ -26,12 +29,23 @@ interface SelectSpec {
   id: string;
   label: string;
   tip: string;
-  options(s: AppState): { value: string; label: string; tip?: string }[];
+  /** Options with a `group` are listed under that heading */
+  options(s: AppState): { value: string; label: string; tip?: string; group?: string }[];
   get(s: AppState): string;
   set(v: string): void;
   /** A line of small print under the menu */
   note?(s: AppState): string;
+  /** Hide the menu, and its note, for engines it does not apply to */
+  hidden?(s: AppState): boolean;
 }
+
+/** A fuel or oxidiser as a menu option, under its group's heading. */
+const ingredientOption = (i: Ingredient) => ({ value: i.id, label: i.name, tip: i.tip, group: i.group });
+
+/** True when the gas comes from a fuel and an oxidiser picked by name (or an example's pair of them). */
+const burnsPair = (s: AppState) => s.config.energy === 'combustion';
+/** True when the solver works the gas out from the picked fuel and oxidiser. */
+const calculatedBurn = (s: AppState) => burnsPair(s) && s.config.propellant === 'calculated';
 
 /** Value of the Examples menu entry that starts a blank engine. */
 export const NEW_ENGINE = '__new';
@@ -102,9 +116,33 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.config.propellant,
           set: (v) => store.set({ config: { propellant: v as PropellantId } }),
           note: (s) => {
+            if (s.config.propellant === 'calculated') return '';
             const p = PROPELLANTS[s.config.propellant];
             return `${p.fuel} + ${p.oxidiser}`;
           },
+          // A combustion chamber picks its fuel and oxidiser separately instead.
+          hidden: burnsPair,
+        },
+        {
+          id: 'fuel',
+          label: 'Fuel',
+          tip: TIPS.fuel,
+          options: () => FUEL_IDS.map((id) => ingredientOption(FUELS[id])),
+          get: (s) => s.config.fuel,
+          set: (v) => store.setFuel(v),
+          note: (s) => (calculatedBurn(s) ? FUELS[s.config.fuel].tip : "Tuned to the real engine's published figures"),
+          hidden: (s) => !burnsPair(s),
+        },
+        {
+          id: 'oxidiser',
+          label: 'Oxidiser',
+          tip: TIPS.oxidiser,
+          options: () => OXIDISER_IDS.map((id) => ingredientOption(OXIDISERS[id])),
+          get: (s) => s.config.oxidiser,
+          set: (v) => store.setOxidiser(v),
+          // The physics' warnings about this pair. The result is cached, so this costs nothing new.
+          note: (s) => simulate(s.config, s.flight).notes.join(' · '),
+          hidden: (s) => !burnsPair(s),
         },
       ],
       sliders: [],
@@ -168,6 +206,8 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'mixtureRatio',
           label: 'Mixture ratio',
           tip: TIPS.mixtureRatio,
+          // A burning pair's ratio can span a hundredfold, so it is spread by ratio.
+          log: (s) => calculatedBurn(s) && mixRange(s.config).ofMin > 0,
           range: (s) => {
             const p = mixRange(s.config);
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
@@ -186,7 +226,8 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
             if (kind === 'ratio') return `${v.toFixed(2)} : 1`;
             return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
           },
-          disabled: (s) => ENERGY_SOURCES[s.config.energy].mixKind === 'none',
+          disabled: (s) =>
+            ENERGY_SOURCES[s.config.energy].mixKind === 'none' || (calculatedBurn(s) && s.config.oxidiser === NO_OXIDISER),
           describe: (s) =>
             ENERGY_SOURCES[s.config.energy].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
         },
@@ -238,21 +279,37 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       // The menu is only rebuilt when what it offers changes, so it stays open while in use.
       let offered = '';
       syncers.push((s) => {
+        const hide = spec.hidden?.(s) ?? false;
+        row.hidden = hide;
+        if (hide) return;
         const options = spec.options(s);
-        const key = options.map((o) => o.value).join('|');
+        const key = options.map((o) => `${o.group ?? ''}:${o.value}`).join('|');
         if (key !== offered) {
           offered = key;
-          select.replaceChildren(
-            ...options.map((o) => {
-              const opt = el('option', undefined, o.label);
-              opt.value = o.value;
-              if (o.tip) opt.title = o.tip;
-              return opt;
-            }),
-          );
+          // Options with a group go under its heading, the headings in the order they first appear.
+          const loose: HTMLOptionElement[] = [];
+          const headings = new Map<string, HTMLOptGroupElement>();
+          for (const o of options) {
+            const opt = el('option', undefined, o.label);
+            opt.value = o.value;
+            if (o.tip) opt.title = o.tip;
+            if (!o.group) {
+              loose.push(opt);
+              continue;
+            }
+            let heading = headings.get(o.group);
+            if (!heading) {
+              heading = el('optgroup');
+              heading.label = o.group;
+              headings.set(o.group, heading);
+            }
+            heading.append(opt);
+          }
+          select.replaceChildren(...loose, ...headings.values());
         }
-        select.value = spec.get(s);
-        note.textContent = spec.note?.(s) ?? '';
+        if (select.value !== spec.get(s)) select.value = spec.get(s);
+        const text = spec.note?.(s) ?? '';
+        if (note.textContent !== text) note.textContent = text;
       });
     }
     for (const spec of group.sliders) {
@@ -271,14 +328,15 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       row.append(head, input);
       box.append(row);
 
+      const isLog = (s: AppState) => (typeof spec.log === 'function' ? spec.log(s) : (spec.log ?? false));
       const toValue = (pos: number, s: AppState) => {
         const { min, max } = spec.range(s);
         const f = pos / STEPS;
-        return spec.log ? min * Math.pow(max / min, f) : min + (max - min) * f;
+        return isLog(s) ? min * Math.pow(max / min, f) : min + (max - min) * f;
       };
       const toPos = (v: number, s: AppState) => {
         const { min, max } = spec.range(s);
-        const f = spec.log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
+        const f = isLog(s) ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
         return Math.round(Math.min(1, Math.max(0, f)) * STEPS);
       };
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));

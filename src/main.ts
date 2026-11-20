@@ -1,3 +1,4 @@
+import { destroys } from './physics/limits';
 import { getPreset } from './physics/presets';
 import type { FlowOverlay } from './render/engineView';
 import { createRuntime, type PlumeMode } from './sim/runtime';
@@ -76,6 +77,7 @@ const updateReadouts = createReadouts($('readouts'));
 
 const fireBtn = $<HTMLButtonElement>('fire');
 const failureBox = $('failure');
+const rebuildBtn = $<HTMLButtonElement>('rebuild');
 
 // The two altitude sweeps. Each button shows a pause sign while its own sweep is running.
 const sweeps = ([
@@ -104,6 +106,8 @@ const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<H
     const copy = failureCopy(info.failure, store.get().config.energy);
     failureBox.querySelector('h2')!.textContent = copy.title;
     failureBox.querySelector('p')!.textContent = copy.text;
+    // A flame that went out leaves the engine whole: it only needs lighting again.
+    rebuildBtn.textContent = destroys(info.failure) ? 'Rebuild engine' : 'Relight engine';
   }
   failureBox.hidden = info.failure === null;
 });
@@ -111,7 +115,7 @@ $('nogl').hidden = runtime.hasPlume;
 
 fireBtn.addEventListener('click', () => runtime.toggleFire());
 for (const s of sweeps) s.button.addEventListener('click', () => runtime.toggleSweep(s.direction));
-$('rebuild').addEventListener('click', () => runtime.rebuild());
+rebuildBtn.addEventListener('click', () => runtime.rebuild());
 $<HTMLSelectElement>('overlay').title = TIPS.overlay;
 $<HTMLSelectElement>('overlay').addEventListener('change', (e) =>
   runtime.setOverlay((e.target as HTMLSelectElement).value as FlowOverlay),

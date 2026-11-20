@@ -1,6 +1,6 @@
 import type { Limits, SimResult } from '../physics/types';
 import type { SimulatedFigures } from '../render/simFigures';
-import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY } from './copy';
+import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, exhaustLine, showsFigures } from './copy';
 
 export interface ReadoutInfo {
   result: SimResult;
@@ -69,7 +69,17 @@ const html = `
     <span class="state" data-r="state"></span><span class="d" data-r="stateText"></span>
   </div>
   <div class="meters" data-r="meters"></div>
+  <div class="stat exhaust" data-r="exhaustRow" title="What the exhaust is made of where it leaves the nozzle, as a share of its molecules, largest first.">
+    <span class="k">Exhaust</span><span class="v small" data-r="exhaust"></span>
+  </div>
 `;
+
+/** What the line under the limit bars says about a failure, when it is not the usual one. */
+const FAILURE_NOTE: Partial<Record<NonNullable<SimResult['failure']>, string>> = {
+  flameout: 'This mixture will not keep burning.',
+  inert: 'Nothing here will burn.',
+  unsolved: 'No figures: the chemistry would not settle.',
+};
 
 export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   root.innerHTML = html;
@@ -86,6 +96,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   }
   const notes = document.createElement('p');
   notes.className = 'notes';
+  notes.dataset.r = 'notes';
   meters.append(notes);
 
   const set = (name: string, text: string) => {
@@ -93,7 +104,26 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     if (node.textContent !== text) node.textContent = text;
   };
 
+  const exhaustRow = get('exhaustRow');
+  const dash = '—';
+  const gasFigures = ['thrust', 'thrustSub', 'isp', 'ispSub', 'ispBoth', 'ispBothSub', 'flow', 'flowSub', 'temp', 'tempSub', 'press', 'state', 'stateText'];
+
   return ({ result: r, stock, stockName, simulated: sim, simulatedNote }) => {
+    const exhaust = exhaustLine(r.exhaust);
+    set('exhaust', exhaust);
+    exhaustRow.hidden = exhaust === '';
+
+    // With no settled chemistry every figure from the gas would be made up, so none is shown.
+    const figures = showsFigures(r);
+    for (const key of Object.keys(meterEls) as (keyof Limits)[]) meterEls[key].box.hidden = !figures;
+    if (!figures) {
+      for (const name of gasFigures) set(name, name.endsWith('Sub') || name === 'stateText' ? '' : dash);
+      delete get('state').dataset.state;
+      for (const name of ['thrustSim', 'ispSim', 'flowSim']) set(name, `Simulated: ${dash}`);
+      set('notes', FAILURE_NOTE.unsolved!);
+      return;
+    }
+
     set('thrust', fmtThrust(r.thrust));
     const tonnes = r.thrust / 9806.65;
     const lift = tonnes >= 10 ? `${tonnes.toFixed(0)} tonnes of push` : `${tonnes.toFixed(1)} tonnes of push`;
@@ -124,7 +154,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
       m.box.dataset.level = v >= 1 ? 'red' : v >= 0.85 ? 'amber' : 'ok';
     }
     const msgs: string[] = [];
-    if (r.failure) msgs.push('Past a limit: this engine will fail when fired.');
+    if (r.failure) msgs.push(FAILURE_NOTE[r.failure] ?? 'Past a limit: this engine will fail when fired.');
     if (r.shudder > 0 && !r.failure) msgs.push('The chamber is shuddering, close to combustion instability.');
     if (r.rough) msgs.push('Running rough: the mixture is at the edge of what will burn.');
     if (r.combustionEff < 0.95 && r.shudder === 0 && !r.rough) {

@@ -1,4 +1,4 @@
-import type { EnergyId, ExpansionState, Failure } from '../physics/types';
+import type { EnergyId, ExpansionState, Failure, SimResult } from '../physics/types';
 
 export const TIPS = {
   scale: 'Grows or shrinks the whole engine in proportion, walls included. Thrust grows with the square of size.',
@@ -11,6 +11,8 @@ export const TIPS = {
   energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
   exhaust: 'How the hot gas is turned into a jet. Changing it keeps the engine about as powerful.',
   propellant: 'What the engine pushes out of the nozzle. Each has its own efficiency, temperature and plume colour.',
+  fuel: 'What burns in the chamber. Changing it works the flame out afresh from the chemistry and sets the mixture ratio to suit.',
+  oxidiser: 'What the fuel burns with. Changing it works the flame out afresh from the chemistry and sets the mixture ratio to suit.',
   mixtureRatio: 'Kilograms of oxidiser burned per kilogram of fuel. Lower is fuel-rich, higher is oxidiser-rich.',
   deploy: 'Slide the nozzle extension into place, or stow it. The longer nozzle is far more efficient in vacuum.',
   altitudeKm: 'How high the engine is. The air thins out as you climb, and is effectively gone by 86 km.',
@@ -101,22 +103,148 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
     text: 'The chamber is so wide that pressure waves built up inside it and shook the engine apart. Narrow the chamber or lower the chamber pressure.',
   },
   flameout: {
-    title: 'Flame out',
-    text: 'The mixture is so far from the right balance of fuel and oxidiser that the flame is too cool to keep burning. Move the mixture ratio back toward the middle of its range.',
+    title: 'Flame-out',
+    text: 'The mixture is too cold to keep burning: there is so much more of one propellant than the other that the flame went out. The engine is unharmed. Move the mixture ratio back toward the middle of its range.',
   },
   inert: {
-    title: 'Nothing to burn',
-    text: 'This fuel cannot burn without an oxidiser, and it does not break down by itself. Pick an oxidiser.',
+    title: 'Nothing to burn it with',
+    text: 'This fuel cannot burn without an oxidiser, and it does not break down by itself, so the engine never lit. The engine is unharmed. Pick an oxidiser.',
   },
   detonation: {
     title: 'Detonation',
-    text: 'One of these propellants is so unstable that it explodes instead of burning steadily. Pick a different fuel or oxidiser.',
+    text: 'One of these propellants explodes when it is pumped or jolted, and it went off in the engine instead of burning steadily. Pick a different fuel or oxidiser.',
   },
   unsolved: {
-    title: 'No steady flame',
-    text: 'The chemistry of this fuel and oxidiser at this mixture did not settle on an answer, so there is no figure to show. Try a different mixture ratio or chamber pressure.',
+    title: 'No answer',
+    text: 'The chemistry would not settle for this mixture, so there is no way to say how the engine runs, and no figures are shown. Try a different mixture ratio or chamber pressure.',
   },
 };
+
+/** False when the figures cannot be trusted at all: the chemistry did not settle, so none are shown. */
+export function showsFigures(result: SimResult): boolean {
+  return result.failure !== 'unsolved';
+}
+
+/** Plain names for what the exhaust is made of, keyed by the thermo data's species names. */
+export const SPECIES_NAMES: Record<string, string> = {
+  // Hydrogen, oxygen, carbon, nitrogen
+  H2O: 'Steam',
+  'H2O(L)': 'Liquid water',
+  'H2O(cr)': 'Ice',
+  H2: 'Hydrogen',
+  H: 'Hydrogen atoms',
+  O2: 'Oxygen',
+  O: 'Oxygen atoms',
+  OH: 'Hydroxyl (OH)',
+  CO2: 'Carbon dioxide',
+  CO: 'Carbon monoxide',
+  'C(gr)': 'Soot',
+  C3: 'Carbon vapour (C3)',
+  CH4: 'Methane',
+  'C10H8,naphthale': 'Naphthalene',
+  N2: 'Nitrogen',
+  NO: 'Nitric oxide',
+  NH3: 'Ammonia',
+  // Fluorine and chlorine
+  HF: 'Hydrogen fluoride',
+  H2F2: 'Paired hydrogen fluoride (H2F2)',
+  H6F6: 'Hydrogen fluoride clusters (H6F6)',
+  F: 'Fluorine atoms',
+  F2: 'Fluorine',
+  HCL: 'Hydrogen chloride',
+  CL: 'Chlorine atoms',
+  CL2: 'Chlorine',
+  CLF: 'Chlorine monofluoride',
+  CLF3: 'Chlorine trifluoride',
+  CF: 'Carbon monofluoride (CF)',
+  CF2: 'Carbon difluoride (CF2)',
+  CF3: 'Trifluoromethyl (CF3)',
+  CF4: 'Carbon tetrafluoride',
+  C2F2: 'Difluoroacetylene (C2F2)',
+  COF2: 'Carbonyl fluoride',
+  NF3: 'Nitrogen trifluoride',
+  NOF: 'Nitrosyl fluoride',
+  NOF3: 'Trifluoramine oxide (NOF3)',
+  NO2F: 'Nitryl fluoride',
+  'NH4CL(II)': 'Solid ammonium chloride',
+  'NH4F(cr)': 'Solid ammonium fluoride',
+  // Boron
+  'B(b)': 'Solid boron',
+  BO: 'Boron monoxide (BO)',
+  B2O2: 'Diboron dioxide (B2O2)',
+  B2O3: 'Boron oxide vapour',
+  'B2O3(L)': 'Liquid boron oxide',
+  'B2O3(cr)': 'Solid boron oxide',
+  BOF: 'Boron oxyfluoride (BOF)',
+  BF: 'Boron monofluoride (BF)',
+  BF2: 'Boron difluoride (BF2)',
+  BF3: 'Boron trifluoride',
+  BF2CL: 'Boron chlorodifluoride (BF2Cl)',
+  'BN(cr)': 'Solid boron nitride',
+  HBO: 'Oxoborane (HBO)',
+  HBO2: 'Metaboric acid',
+  'HBO2(L)': 'Liquid metaboric acid',
+  'HBO2(cr)': 'Solid metaboric acid',
+  // Aluminium
+  'AL2O3(a)': 'Solid aluminium oxide',
+  'AL2O3(L)': 'Liquid aluminium oxide',
+  'AL(OH)3(a)': 'Solid aluminium hydroxide',
+  'AL4C3(cr)': 'Solid aluminium carbide',
+  ALF3: 'Aluminium fluoride',
+  'ALF3(II)': 'Solid aluminium fluoride',
+  ALF2CL: 'Aluminium chlorodifluoride (AlF2Cl)',
+  // Beryllium
+  Be: 'Beryllium vapour',
+  'Be(OH)2': 'Beryllium hydroxide',
+  Be2F4: 'Paired beryllium fluoride (Be2F4)',
+  Be2O: 'Diberyllium oxide (Be2O)',
+  Be2OF2: 'Beryllium oxyfluoride (Be2OF2)',
+  'Be3N2(L)': 'Liquid beryllium nitride',
+  Be3O3: 'Beryllium oxide rings (Be3O3)',
+  Be4O4: 'Beryllium oxide rings (Be4O4)',
+  BeCL2: 'Beryllium chloride',
+  BeF: 'Beryllium monofluoride (BeF)',
+  BeF2: 'Beryllium fluoride',
+  'BeF2(a)': 'Solid beryllium fluoride',
+  'BeO(L)': 'Liquid beryllium oxide',
+  'BeO(a)': 'Solid beryllium oxide',
+  'BeO(b)': 'Solid beryllium oxide',
+  // Lithium
+  Li: 'Lithium vapour',
+  Li2: 'Paired lithium (Li2)',
+  'Li2CO3(L)': 'Liquid lithium carbonate',
+  'Li2CO3(cr)': 'Solid lithium carbonate',
+  Li2F2: 'Paired lithium fluoride (Li2F2)',
+  Li3F3: 'Lithium fluoride clusters (Li3F3)',
+  Li2O: 'Lithium oxide',
+  'Li2O(L)': 'Liquid lithium oxide',
+  'Li2O(cr)': 'Solid lithium oxide',
+  Li2O2H2: 'Paired lithium hydroxide (Li2O2H2)',
+  LiCL: 'Lithium chloride',
+  LiF: 'Lithium fluoride',
+  'LiF(L)': 'Liquid lithium fluoride',
+  'LiF(cr)': 'Solid lithium fluoride',
+  LiNO3: 'Lithium nitrate',
+  'LiNO3(L)': 'Liquid lithium nitrate',
+  'LiNO3(cr)': 'Solid lithium nitrate',
+  LiO: 'Lithium monoxide (LiO)',
+  LiOH: 'Lithium hydroxide',
+  'LiOH(cr)': 'Solid lithium hydroxide',
+};
+
+/** A plain name for an exhaust species, or its formula where there is none. */
+export function speciesName(name: string): string {
+  return Object.hasOwn(SPECIES_NAMES, name) ? SPECIES_NAMES[name] : name;
+}
+
+/** The exhaust as "Steam 63% · Hydrogen 29% · …", the dots marking what is too small to list. Never changes `exhaust`. */
+export function exhaustLine(exhaust: readonly { name: string; share: number }[]): string {
+  if (exhaust.length === 0) return '';
+  const parts = exhaust.map(({ name, share }) => `${speciesName(name)} ${share < 0.005 ? '<1' : Math.round(share * 100)}%`);
+  const listed = exhaust.reduce((sum, e) => sum + e.share, 0);
+  if (listed < 0.99) parts.push('…');
+  return parts.join(' · ');
+}
 
 /** Failure text, with wording specific to an energy source where the general wording would mislead. */
 export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): { title: string; text: string } {

@@ -33,3 +33,8 @@ export function failureFor(cfg: EngineConfig, pcBar: number, tc: number): Failur
   if (l.instability >= 1) return 'instability';
   return null;
 }
+
+/** True when the failure tears the engine open; false when the flame simply goes out or never lights. */
+export function destroys(f: Failure): boolean {
+  return f !== null && f !== 'flameout' && f !== 'inert' && f !== 'unsolved';
+}
