@@ -189,7 +189,7 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
         if (problem.kind === 'hp') {
           g[iT * w + iN] = sumNH;
           g[iT * w + iT] = sumNC + sumNHH;
-          g[iT * w + m] = mix.h0 / (R * t) - sumNH + sumNHMu;
+          g[iT * w + m] = problem.h / (R * t) - sumNH + sumNHMu;
         } else {
           g[iT * w + iN] = sumNS;
           g[iT * w + iT] = sumNC + sumNHS;

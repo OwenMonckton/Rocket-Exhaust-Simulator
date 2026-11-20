@@ -76,6 +76,14 @@ describe('equilibrium of a gas mixture', () => {
     expect(relErr(sp.t, hp.t)).toBeLessThan(1e-4);
   });
 
+  it('solves fixed enthalpy at the enthalpy it is given, not the mixture\'s own', () => {
+    const tp = equilibrate(ex8Mix, { kind: 'tp', t: 3000, pBar: 53.3172 });
+    expect(tp.ok).toBe(true);
+    const hp = equilibrate(ex8Mix, { kind: 'hp', h: tp.h, pBar: 53.3172 });
+    expect(hp.ok).toBe(true);
+    expect(relErr(hp.t, 3000)).toBeLessThan(1e-4);
+  });
+
   it('settles quickly from a warm start', () => {
     const first = equilibrate(ex12Mix, { kind: 'hp', h: ex12Mix.h0, pBar: 68.948 });
     const again = equilibrate(ex12Mix, { kind: 'hp', h: ex12Mix.h0, pBar: 68.948 * 1.01 }, undefined, first);
