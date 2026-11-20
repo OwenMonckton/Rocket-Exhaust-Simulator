@@ -1,6 +1,33 @@
-import type { GasProps, Propellant, PropellantId } from './types';
+import type { GasProps, PlumeLook, Propellant, PropellantId } from './types';
 
 const R_UNIVERSAL = 8314.46;
+
+/** Core temperatures (K) a reactor fluid's table is given at; the "mixture" setting is this temperature. */
+const CORE_TEMPS = [1500, 2000, 2360, 2800, 3200];
+
+/** A fluid a nuclear reactor heats: its gas is simply as hot as the core. */
+function reactorFluid(
+  id: PropellantId,
+  name: string,
+  fuel: string,
+  gamma: number[],
+  molarMass: number[],
+  look: PlumeLook,
+): Propellant {
+  return {
+    id,
+    energy: 'reactor',
+    name,
+    fuel,
+    oxidiser: 'a reactor to heat it',
+    ofMin: CORE_TEMPS[0],
+    ofMax: CORE_TEMPS[CORE_TEMPS.length - 1],
+    ofDefault: 2360,
+    lStarRef: 0,
+    table: CORE_TEMPS.map((t, i) => ({ of: t, tc: t, gamma: gamma[i], molarMass: molarMass[i] })),
+    look,
+  };
+}
 
 // Chamber properties from published chemical-equilibrium (NASA CEA) results at
 // roughly 70 bar. Gamma is an effective value for the nozzle expansion.
@@ -182,6 +209,78 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       particles: 0,
     },
   },
+  // The other fluids a reactor can heat. Each breaks apart as it is heated, which is what sets its
+  // molar mass; gamma is an effective value for the nozzle expansion. Ammonia is taken as fully
+  // cracked to nitrogen and hydrogen (17.03 / 2 kg/kmol), methane as hydrogen carrying its carbon,
+  // water and carbon dioxide as partly dissociated at the hot end. Helium does not break apart at
+  // all. Checked against the vacuum efficiencies Zubrin gives for a reactor at 2800 K in his NIMF
+  // study (1991): methane 606 s, water 370 s, carbon dioxide 283 s. Those are ideal figures; in
+  // the NERVA example this model gives 510, 345 and 228 s, in the same order and 7 to 19 % lower.
+  'ntr-ammonia': reactorFluid('ntr-ammonia', 'Ammonia', 'liquid ammonia', [1.31, 1.3, 1.295, 1.29, 1.28], [8.52, 8.52, 8.52, 8.5, 8.45], {
+    // Mostly hydrogen and nitrogen: as faint as a hydrogen plume, a little warmer in colour.
+    core: [0.98, 0.94, 0.9],
+    mid: [0.9, 0.78, 0.7],
+    edge: [0.8, 0.6, 0.6],
+    richTint: [0.8, 0.6, 0.6],
+    opacity: 0.4,
+    soot: 0,
+    smoke: 0,
+    afterburn: [1.0, 0.7, 0.35],
+    afterburnStrength: 0.7,
+    particles: 0,
+  }),
+  'ntr-methane': reactorFluid('ntr-methane', 'Methane', 'liquid methane', [1.24, 1.23, 1.22, 1.21, 1.19], [8.0, 8.0, 7.9, 7.6, 7.0], {
+    // Hydrogen carrying the carbon the methane left behind, glowing orange.
+    core: [1.0, 0.9, 0.7],
+    mid: [1.0, 0.66, 0.28],
+    edge: [0.9, 0.4, 0.1],
+    richTint: [0.9, 0.4, 0.1],
+    opacity: 0.8,
+    soot: 0.5,
+    smoke: 0.1,
+    afterburn: [1.0, 0.55, 0.2],
+    afterburnStrength: 0.9,
+    particles: 0.6,
+  }),
+  'ntr-water': reactorFluid('ntr-water', 'Water', 'water', [1.2, 1.19, 1.185, 1.18, 1.17], [18.0, 18.0, 17.9, 17.6, 17.0], {
+    // Superheated steam: almost nothing to see, and nothing left to burn.
+    core: [0.95, 0.96, 1.0],
+    mid: [0.8, 0.85, 0.95],
+    edge: [0.7, 0.75, 0.85],
+    richTint: [0.7, 0.75, 0.85],
+    opacity: 0.3,
+    soot: 0,
+    smoke: 0,
+    afterburn: [0.8, 0.85, 1.0],
+    afterburnStrength: 0,
+    particles: 0,
+  }),
+  'ntr-co2': reactorFluid('ntr-co2', 'Carbon dioxide', 'liquid carbon dioxide', [1.18, 1.17, 1.17, 1.16, 1.15], [44.0, 43.8, 43.3, 42.0, 40.0], {
+    // Nearly invisible; the little carbon monoxide in it burns faintly blue.
+    core: [0.92, 0.94, 1.0],
+    mid: [0.75, 0.8, 0.95],
+    edge: [0.6, 0.66, 0.9],
+    richTint: [0.6, 0.66, 0.9],
+    opacity: 0.25,
+    soot: 0,
+    smoke: 0,
+    afterburn: [0.5, 0.65, 1.0],
+    afterburnStrength: 0.1,
+    particles: 0,
+  }),
+  'ntr-helium': reactorFluid('ntr-helium', 'Helium', 'liquid helium', [1.667, 1.667, 1.667, 1.667, 1.667], [4.003, 4.003, 4.003, 4.003, 4.003], {
+    // A hot inert gas: the faintest glow, and it cannot burn.
+    core: [1.0, 0.95, 0.9],
+    mid: [0.95, 0.85, 0.8],
+    edge: [0.85, 0.75, 0.75],
+    richTint: [0.85, 0.75, 0.75],
+    opacity: 0.2,
+    soot: 0,
+    smoke: 0,
+    afterburn: [1.0, 0.9, 0.8],
+    afterburnStrength: 0,
+    particles: 0,
+  }),
   saltwater: {
     id: 'saltwater',
     energy: 'saltwater',

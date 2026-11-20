@@ -1,4 +1,16 @@
-export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid' | 'ntr-hydrogen' | 'saltwater';
+export type PropellantId =
+  | 'kerolox'
+  | 'hydrolox'
+  | 'methalox'
+  | 'hypergolic'
+  | 'solid'
+  | 'ntr-hydrogen'
+  | 'ntr-ammonia'
+  | 'ntr-methane'
+  | 'ntr-water'
+  | 'ntr-co2'
+  | 'ntr-helium'
+  | 'saltwater';
 
 export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater';
 export type ExhaustId = 'bell' | 'aerospike';
