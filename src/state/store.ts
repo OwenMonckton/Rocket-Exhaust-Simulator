@@ -63,6 +63,8 @@ export function createStore(initial: AppState): Store {
   const emit = () => listeners.forEach((fn) => fn(state));
   /** Calculate the gas from a changed fuel or oxidiser, starting at the new pair's default mixture. */
   const calculate = (part: Partial<Pick<EngineConfig, 'fuel' | 'oxidiser'>>) => {
+    // Only a combustion chamber burns a fuel and oxidiser; any other engine keeps what it has.
+    if (state.config.energy !== 'combustion') return;
     const chosen = sanitize({ ...state.config, ...part, propellant: 'calculated' });
     state = { config: sanitize({ ...chosen, mixtureRatio: mixRange(chosen).ofDefault }), flight: state.flight };
     emit();
