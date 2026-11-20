@@ -11,6 +11,8 @@ interface SliderSpec {
   label: string;
   tip: string;
   log?: boolean;
+  /** Counts in whole numbers: the slider steps by one, so an arrow key moves it by one */
+  whole?: boolean;
   range(s: AppState): { min: number; max: number };
   get(s: AppState): number;
   set(v: number): void;
@@ -125,6 +127,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'chambers',
           label: COUNT_COPY.bell.label,
           tip: COUNT_COPY.bell.tip,
+          whole: true,
           range: (s) => (s.config.exhaust === 'aerospike' ? RANGES.cells : RANGES.chambers),
           get: (s) => s.config.chambers,
           set: (v) => store.set({ config: { chambers: Math.round(v) } }),
@@ -271,11 +274,13 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       box.append(row);
 
       const toValue = (pos: number, s: AppState) => {
+        if (spec.whole) return pos;
         const { min, max } = spec.range(s);
         const f = pos / STEPS;
         return spec.log ? min * Math.pow(max / min, f) : min + (max - min) * f;
       };
       const toPos = (v: number, s: AppState) => {
+        if (spec.whole) return Math.round(v);
         const { min, max } = spec.range(s);
         const f = spec.log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
         return Math.round(Math.min(1, Math.max(0, f)) * STEPS);
@@ -283,6 +288,12 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));
       syncers.push((s) => {
         const v = spec.get(s);
+        if (spec.whole) {
+          // The slider's own ends are the range's, which changes with the exhaust.
+          const { min, max } = spec.range(s);
+          if (input.min !== String(min)) input.min = String(min);
+          if (input.max !== String(max)) input.max = String(max);
+        }
         const pos = String(toPos(v, s));
         if (input.value !== pos) input.value = pos;
         value.textContent = spec.format(v, s);

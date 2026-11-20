@@ -16,13 +16,18 @@ const presetSelect = $<HTMLSelectElement>('preset');
 const resetBtn = $<HTMLButtonElement>('reset');
 const blurb = $('blurb');
 fillPresetSelect(presetSelect);
+// Choosing a whole engine clears away the wreck of the last one. The store tells the runtime
+// about the new engine, which becomes the one Rebuild goes back to.
 presetSelect.addEventListener('change', () => {
+  runtime.clearFailure();
   if (presetSelect.value === NEW_ENGINE) store.newEngine();
   else store.loadPreset(presetSelect.value);
 });
 resetBtn.addEventListener('click', () => {
   const id = store.get().config.presetId;
-  if (id) store.loadPreset(id);
+  if (!id) return;
+  runtime.clearFailure();
+  store.loadPreset(id);
 });
 
 // Deployable nozzle extension (RL10B-2): slides between its stowed and deployed sizes.

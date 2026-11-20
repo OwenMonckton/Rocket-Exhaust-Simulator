@@ -33,6 +33,8 @@ export interface Runtime {
   /** Start an altitude sweep in a direction (1 up, -1 down), or pause it if already running that way. */
   toggleSweep(direction: 1 | -1): void;
   rebuild(): void;
+  /** Clear away a failure, for an engine chosen whole (a new engine or an example) rather than rebuilt. */
+  clearFailure(): void;
   setOverlay(o: FlowOverlay): void;
   setMuted(m: boolean): void;
   /** Prototype: draw the plume from the gas simulation instead of the hand-shaped model. */
@@ -482,6 +484,17 @@ export function createRuntime(
       fire = 0;
       firing = false;
       store.replace(lastGood);
+    },
+    clearFailure() {
+      if (!failure) return;
+      burnt = 0;
+      failure = null;
+      failT = 0;
+      fire = 0;
+      firing = false;
+      // The engine on the bench is the one being replaced, so it is not one to rebuild.
+      const s = store.get();
+      if (!simulate(s.config, s.flight).failure) lastGood = s;
     },
     setZoom(z) {
       zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));

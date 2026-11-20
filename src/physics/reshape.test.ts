@@ -165,3 +165,67 @@ describe('part swaps on engines other than the blank one (final review)', () => 
     expect(withEnergy(starterEngine(), 'saltwater').propellant).toBe('saltwater');
   });
 });
+
+describe('part swaps at the edges of what can be built (Copilot review)', () => {
+  it('does not burn through a high-pressure reactor by switching it to a flame', () => {
+    const from = sanitize({
+      ...withEnergy(starterEngine(), 'reactor'),
+      throatDia: 0.02,
+      chamberDia: 0.12,
+      exitDia: 0.08,
+      wall: 0.016,
+      chamberPressureBar: 400,
+      mixtureRatio: 1500,
+    });
+    expect(simulate(from, ground).failure).toBeNull();
+    for (const e of ['solid', 'combustion'] as const) {
+      const next = withEnergy(from, e);
+      expect(simulate(next, ground).failure, e).toBeNull();
+      expect(simulate(next, ground).limits.heating, e).toBeLessThanOrEqual(0.9);
+      // Turned down, not thinned out: it is no closer to bursting than it was.
+      expect(next.chamberPressureBar, e).toBeLessThan(from.chamberPressureBar);
+      expect(structural(next) / structural(from), e).toBeCloseTo(1, 1);
+    }
+  });
+
+  it('leaves the pressure alone when the swap is not what made a flame hot', () => {
+    const s = starterEngine();
+    const hot = sanitize({ ...s, chamberPressureBar: 300, wall: s.wall * 3 });
+    expect(simulate(hot, ground).limits.heating).toBeGreaterThan(0.9);
+    expect(simulate(hot, ground).failure).toBeNull();
+    expect(withEnergy(hot, 'solid').chamberPressureBar).toBe(300);
+  });
+
+  it('merges a spike too big for one bell into as few bells as hold its throat area', () => {
+    const spike = sanitize({
+      ...withExhaust(starterEngine(), 'aerospike'),
+      chambers: 40,
+      throatDia: 1,
+      chamberDia: 1.5,
+      exitDia: 3,
+      wall: 0.2,
+    });
+    const bell = withExhaust(spike, 'bell');
+    expect(bell.exhaust).toBe('bell');
+    expect(bell.chambers).toBe(2);
+    expect(bell.chambers * bell.throatDia ** 2).toBeCloseTo(spike.chambers * spike.throatDia ** 2, 6);
+    expect(bell.chambers * bell.exitDia ** 2).toBeCloseTo(spike.chambers * spike.exitDia ** 2, 6);
+    const ratio = simulate(bell, space).thrust / simulate(spike, space).thrust;
+    expect(ratio).toBeGreaterThan(0.95);
+    expect(ratio).toBeLessThan(1.05);
+  });
+
+  it('merges a spike too big for any bell engine into the most bells there can be', () => {
+    const spike = sanitize({
+      ...withExhaust(starterEngine(), 'aerospike'),
+      chambers: 40,
+      throatDia: 4,
+      chamberDia: 6,
+      exitDia: 8,
+      wall: 0.5,
+    });
+    const bell = withExhaust(spike, 'bell');
+    expect(bell.chambers).toBe(4);
+    expect(sanitize(bell)).toEqual(bell);
+  });
+});
