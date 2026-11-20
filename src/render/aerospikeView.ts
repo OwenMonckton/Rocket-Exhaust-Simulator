@@ -1,5 +1,5 @@
 import { machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
-import { PROPELLANTS } from '../physics/propellants';
+import { staticLook } from '../physics/gasSource';
 import type { EngineConfig, RGB, SimResult } from '../physics/types';
 import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3 } from './drawUtil';
 import type { EngineAnim } from './engineView';
@@ -30,7 +30,7 @@ export function drawAerospike(
   const ppm = view.ppm;
   const cy = view.centreY;
   const cell = spike.cell;
-  const look = PROPELLANTS[cfg.propellant].look;
+  const look = staticLook(cfg);
   const g = result.gamma;
   const cellPts = cell.points;
   const chamberR = cellPts[0].r;

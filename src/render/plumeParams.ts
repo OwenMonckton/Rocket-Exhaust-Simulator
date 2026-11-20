@@ -1,7 +1,7 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
 import { ENERGY_SOURCES } from '../physics/parts';
-import { PROPELLANTS, gasProps, richness } from '../physics/propellants';
+import { resolveGas } from '../physics/gasSource';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
 import { SPIKE_SAMPLES, type SimInputs } from './fluidSim';
 import { engineProfile, spikeJetRadius, spikeSurfaceRadius, type SpikeGeometry } from './geometry';
@@ -119,7 +119,7 @@ export function simInputs(
   // The top of the range is a badly over-expanded nozzle at sea level: outside air at a hundred
   // times the pressure the exhaust would leave at.
   const pAmb = r.pa > 0 ? clamp(r.pa / pressure, VACUUM_FLOOR, 150) : VACUUM_FLOOR;
-  const gasR = gasProps(cfg.propellant, cfg.mixtureRatio).R;
+  const gasR = resolveGas(cfg, r.pc / 1e5, r.expansionRatio).gas.R;
   // Slope of the bell wall at the lip (see engineProfile).
   // An aerospike's jet leaves its base running straight back: the spike has already turned it.
   const lipSlope =
@@ -177,8 +177,8 @@ export function spikeSimInputs(cfg: EngineConfig, r: SimResult, fire: number, sp
 
 /** Turn the physics result into what the plume should look like. `fire` is the 0–1 ignition ramp. */
 export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState, fire: number): PlumeParams {
-  const prop = PROPELLANTS[cfg.propellant];
-  const look = prop.look;
+  const gasSource = resolveGas(cfg, r.pc / 1e5, r.expansionRatio);
+  const look = gasSource.look;
   const paFrac = r.pa / SEA_LEVEL_PRESSURE;
   const pressureRatio = r.pa > 0 ? clamp(r.pe / r.pa, 0.05, 400) : 400;
   const logPr = Math.log(pressureRatio);
@@ -191,7 +191,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
   const mismatch = Math.sqrt(clamp((Math.abs(logPr) - 0.1) / 0.6, 0, 1));
   const diamondStrength = r.pa > 0 ? Math.pow(paFrac, 0.35) * mismatch * (r.state === 'separated' ? 0.6 : 1) : 0;
 
-  const rich = richness(cfg.propellant, cfg.mixtureRatio);
+  const rich = gasSource.richness;
   let core = look.core;
   let mid = look.mid;
   let edge = look.edge;

@@ -1,6 +1,7 @@
 import { RANGES, sanitize, sanitizeFlight } from '../physics/engine';
 import { getPreset } from '../physics/presets';
-import { PROPELLANTS } from '../physics/propellants';
+import { isPropellantId } from '../physics/propellants';
+import { mixRange } from '../physics/gasSource';
 import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, FlightState } from '../physics/types';
 import type { AppState } from './share';
@@ -64,7 +65,8 @@ export function createStore(initial: AppState): Store {
         const merged = { ...config, ...patch.config };
         // A new propellant starts at its own sensible mixture ratio.
         if (patch.config.propellant && patch.config.propellant !== config.propellant) {
-          merged.mixtureRatio = PROPELLANTS[patch.config.propellant]?.ofDefault ?? merged.mixtureRatio;
+          const next = patch.config.propellant;
+          if (isPropellantId(next)) merged.mixtureRatio = mixRange({ ...sanitize(merged), propellant: next }).ofDefault;
         }
         config = sanitize(merged);
       }

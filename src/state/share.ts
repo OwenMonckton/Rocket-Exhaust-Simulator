@@ -1,3 +1,4 @@
+import { FUEL_IDS, OXIDISER_IDS } from '../physics/chem/ingredients';
 import { sanitize, sanitizeFlight } from '../physics/engine';
 import { isEnergyId, isExhaustId } from '../physics/parts';
 import { getPreset } from '../physics/presets';
@@ -93,6 +94,9 @@ export function decodeState(hash: string): AppState | null {
     const config = sanitize({
       presetId: typeof presetId === 'string' && getPreset(presetId) ? presetId : null,
       ...link.parts,
+      // Links carry no fuel or oxidiser: sanitize gives a tabled propellant its own.
+      fuel: FUEL_IDS[0],
+      oxidiser: OXIDISER_IDS[0],
       chamberDia: n[0],
       chamberLen: n[1],
       throatDia: n[2],

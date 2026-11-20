@@ -1,8 +1,9 @@
+import { pairRange } from './chem/pair';
 import { RANGES, sanitize, simulate } from './engine';
+import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
-import { PROPELLANTS } from './propellants';
-import type { EnergyId, EngineConfig, ExhaustId } from './types';
+import type { EnergyId, EngineConfig, ExhaustId, PropellantId } from './types';
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
 
@@ -33,6 +34,11 @@ export function chamberShape(
   return { chamberDia, chamberLen };
 }
 
+/** The chamber length a liquid needs to burn completely in this engine, at its own pressure and area ratio. */
+function lStarRefOf(cfg: EngineConfig): number {
+  return resolveGas(cfg, cfg.chamberPressureBar, (cfg.exitDia / cfg.throatDia) ** 2).lStarRef;
+}
+
 /** Chamber wall (m) that puts an engine at `fraction` of its structural limit. */
 export function wallFor(pcBar: number, chamberDia: number, fraction: number): number {
   return (pcBar * chamberDia) / (2 * SIGMA_ALLOW_BAR * fraction);
@@ -41,17 +47,21 @@ export function wallFor(pcBar: number, chamberDia: number, fraction: number): nu
 /**
  * The same engine built round a different energy source. The throat, the exit and the chamber
  * pressure stay; the chamber takes the proportions that source usually has, the propellant
- * becomes the source's first, and the wall is re-sized so the engine is as close to bursting
- * as it was before: no more, no less.
+ * becomes the source's first (for a combustion chamber, RP-1 and liquid oxygen, worked out by the
+ * solver), and the wall is re-sized so the engine is as close to bursting as it was before: no
+ * more, no less.
  */
 export function withEnergy(cfg: EngineConfig, energy: EnergyId): EngineConfig {
   if (cfg.energy === energy) return cfg;
   const source = ENERGY_SOURCES[energy];
-  const propellant = propellantsFor(energy)[0];
-  const prop = PROPELLANTS[propellant];
-  const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, prop.lStarRef);
+  const burns = energy === 'combustion';
+  const propellant: PropellantId = burns ? 'calculated' : propellantsFor(energy)[0];
+  const parts = { energy, propellant, fuel: burns ? 'rp1' : cfg.fuel, oxidiser: burns ? 'lox' : cfg.oxidiser };
+  const mixtureRatio = mixRange({ ...cfg, ...parts }).ofDefault;
+  const lStarRef = lStarRefOf({ ...cfg, ...parts, mixtureRatio });
+  const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, lStarRef);
   // Sanitise first: the wall has to follow the chamber the engine really ends up with.
-  const shaped = sanitize({ ...cfg, energy, propellant, mixtureRatio: prop.ofDefault, ...shape });
+  const shaped = sanitize({ ...cfg, ...parts, mixtureRatio, ...shape });
   return cooled(sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia }), 0);
 }
 
@@ -82,7 +92,7 @@ function cooled(cfg: EngineConfig, heatBefore: number): EngineConfig {
 function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineConfig {
   const k = Math.sqrt(cfg.chambers / count);
   // A chamber a liquid burns in keeps its length, and with it the time the propellant has to burn.
-  const burnsInChamber = PROPELLANTS[cfg.propellant].lStarRef > 0;
+  const burnsInChamber = lStarRefOf(cfg) > 0;
   const shaped = sanitize({
     ...cfg,
     exhaust,
@@ -122,27 +132,34 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
   return cooled(next, heatBefore);
 }
 
-/** The blank engine the simulator opens on: a mid-sized kerolox engine, well inside every limit. */
+/**
+ * The blank engine the simulator opens on: a mid-sized engine burning RP-1 with liquid oxygen,
+ * worked out by the solver, well inside every limit.
+ */
 export function starterEngine(): EngineConfig {
   const throatDia = 0.2;
   const pcBar = 100;
   const source = ENERGY_SOURCES.combustion;
-  const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, PROPELLANTS.kerolox.lStarRef);
-  return sanitize({
+  const unshaped: EngineConfig = {
     presetId: null,
     energy: 'combustion',
     exhaust: 'bell',
-    propellant: 'kerolox',
-    ...shape,
+    propellant: 'calculated',
+    fuel: 'rp1',
+    oxidiser: 'lox',
+    chamberDia: 0,
+    chamberLen: 0,
     throatDia,
     exitDia: round(throatDia * Math.sqrt(16)),
     nozzleLenPct: 80,
-    wall: round(wallFor(pcBar, shape.chamberDia, 0.5)),
+    wall: 0,
     chamberPressureBar: pcBar,
-    mixtureRatio: PROPELLANTS.kerolox.ofDefault,
+    mixtureRatio: pairRange('rp1', 'lox').ofDefault,
     scale: 1,
     chambers: 1,
     extFixedDia: 0,
     extDeploy: 1,
-  });
+  };
+  const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, lStarRefOf(unshaped));
+  return sanitize({ ...unshaped, ...shape, wall: round(wallFor(pcBar, shape.chamberDia, 0.5)) });
 }

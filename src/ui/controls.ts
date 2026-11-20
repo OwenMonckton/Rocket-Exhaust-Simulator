@@ -1,4 +1,5 @@
 import { RANGES } from '../physics/engine';
+import { mixRange } from '../physics/gasSource';
 import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
 import { PRESETS } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
@@ -168,12 +169,12 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           label: 'Mixture ratio',
           tip: TIPS.mixtureRatio,
           range: (s) => {
-            const p = PROPELLANTS[s.config.propellant];
+            const p = mixRange(s.config);
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
           },
           get: (s) => s.config.mixtureRatio,
           set: (v) => {
-            const p = PROPELLANTS[store.get().config.propellant];
+            const p = mixRange(store.get().config);
             // Temperatures step in round numbers suited to their range: 10 K for a reactor core,
             // 10,000 K for a fission plasma.
             const step = Math.pow(10, Math.floor(Math.log10(p.ofMax - p.ofMin)) - 2);

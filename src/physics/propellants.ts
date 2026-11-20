@@ -31,6 +31,19 @@ function reactorFluid(
   };
 }
 
+const KEROLOX_LOOK: PlumeLook = {
+  core: [1.0, 0.93, 0.72],
+  mid: [1.0, 0.62, 0.2],
+  edge: [0.95, 0.33, 0.06],
+  richTint: [0.85, 0.3, 0.04],
+  opacity: 1.0,
+  soot: 0.45,
+  smoke: 0.08,
+  afterburn: [1.0, 0.5, 0.14],
+  afterburnStrength: 0.8,
+  particles: 0.3,
+};
+
 // Chamber properties from published chemical-equilibrium (NASA CEA) results at
 // roughly 70 bar. Gamma is an effective value for the nozzle expansion.
 export const PROPELLANTS: Record<PropellantId, Propellant> = {
@@ -53,18 +66,8 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       { of: 3.0, tc: 3670, gamma: 1.18, molarMass: 24.8 },
       { of: 3.4, tc: 3620, gamma: 1.175, molarMass: 26.2 },
     ],
-    look: {
-      core: [1.0, 0.93, 0.72],
-      mid: [1.0, 0.62, 0.2],
-      edge: [0.95, 0.33, 0.06],
-      richTint: [0.85, 0.3, 0.04],
-      opacity: 1.0,
-      soot: 0.45,
-      smoke: 0.08,
-      afterburn: [1.0, 0.5, 0.14],
-      afterburnStrength: 0.8,
-      particles: 0.3,
-    },
+    look: KEROLOX_LOOK,
+    pair: { fuel: 'rp1', oxidiser: 'lox' },
   },
   hydrolox: {
     id: 'hydrolox',
@@ -97,6 +100,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       afterburnStrength: 1.0,
       particles: 0,
     },
+    pair: { fuel: 'h2', oxidiser: 'lox' },
   },
   methalox: {
     id: 'methalox',
@@ -128,6 +132,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       afterburnStrength: 0.6,
       particles: 0,
     },
+    pair: { fuel: 'ch4', oxidiser: 'lox' },
   },
   hypergolic: {
     id: 'hypergolic',
@@ -159,6 +164,23 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       afterburnStrength: 0.5,
       particles: 0.05,
     },
+    pair: { fuel: 'udmh', oxidiser: 'n2o4' },
+  },
+  // Any fuel and oxidiser, worked out by the chemistry solver (see gasSource.ts). None of the
+  // figures below is read: the solver answers for it.
+  calculated: {
+    id: 'calculated',
+    energy: 'combustion',
+    name: 'Calculated',
+    tip: 'Any fuel with any oxidiser, its flame worked out from the chemistry as it burns.',
+    fuel: 'the chosen fuel',
+    oxidiser: 'the chosen oxidiser',
+    ofMin: 0,
+    ofMax: 0,
+    ofDefault: 0,
+    lStarRef: 1.0,
+    table: [],
+    look: KEROLOX_LOOK,
   },
   solid: {
     id: 'solid',

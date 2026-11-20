@@ -3,7 +3,7 @@ import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
 import { ENERGY_SOURCES } from '../physics/parts';
-import { gasProps } from '../physics/propellants';
+import { resolveGas } from '../physics/gasSource';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
@@ -123,7 +123,7 @@ export function createRuntime(
     // A solid motor burns its grain away while it fires, and goes out when there is none left.
     // Choosing a different engine casts a fresh grain.
     const isSolid = state.config.energy === 'solid';
-    const motor = `${state.config.presetId}|${state.config.energy}|${state.config.exhaust}|${state.config.propellant}`;
+    const motor = `${state.config.presetId}|${state.config.energy}|${state.config.exhaust}|${state.config.propellant}|${state.config.fuel}|${state.config.oxidiser}`;
     if (motor !== burningMotor) burnt = 0;
     burningMotor = motor;
     if (isSolid && !failure && fire > 0.5) {
@@ -299,7 +299,7 @@ export function createRuntime(
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
       const exitPressure = Math.pow(exitTemp, g / (g - 1));
       // A different stretch of engine starts afresh, as a different engine does.
-      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.energy}|${cfg.exhaust}|${cfg.propellant}`;
+      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.energy}|${cfg.exhaust}|${cfg.propellant}|${cfg.fuel}|${cfg.oxidiser}`;
       if (engine !== simulatedEngine) {
         plume?.resetEngineSim();
         settledFrames = 0;
@@ -402,7 +402,7 @@ export function createRuntime(
           pc: result.pc,
           pa: result.pa,
           tc: result.tc,
-          gasR: gasProps(state.config.propellant, state.config.mixtureRatio).R,
+          gasR: resolveGas(state.config, result.pc / 1e5, result.expansionRatio).gas.R,
           combustionEff: result.combustionEff,
           chambers: state.config.chambers,
         });

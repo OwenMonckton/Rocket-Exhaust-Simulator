@@ -100,6 +100,22 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
     title: 'Combustion instability',
     text: 'The chamber is so wide that pressure waves built up inside it and shook the engine apart. Narrow the chamber or lower the chamber pressure.',
   },
+  flameout: {
+    title: 'Flame out',
+    text: 'The mixture is so far from the right balance of fuel and oxidiser that the flame is too cool to keep burning. Move the mixture ratio back toward the middle of its range.',
+  },
+  inert: {
+    title: 'Nothing to burn',
+    text: 'This fuel cannot burn without an oxidiser, and it does not break down by itself. Pick an oxidiser.',
+  },
+  detonation: {
+    title: 'Detonation',
+    text: 'One of these propellants is so unstable that it explodes instead of burning steadily. Pick a different fuel or oxidiser.',
+  },
+  unsolved: {
+    title: 'No steady flame',
+    text: 'The chemistry of this fuel and oxidiser at this mixture did not settle on an answer, so there is no figure to show. Try a different mixture ratio or chamber pressure.',
+  },
 };
 
 /** Failure text, with wording specific to an energy source where the general wording would mislead. */

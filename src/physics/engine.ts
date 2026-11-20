@@ -8,8 +8,10 @@ import {
   machFromPressureRatio,
   pressureRatio,
 } from './nozzle';
+import { FUEL_IDS, OXIDISER_IDS, isFuelId, isOxidiserId } from './chem/ingredients';
+import { mixRange, resolveGas, type GasSource } from './gasSource';
 import { ENERGY_SOURCES, isEnergyId, isExhaustId, propellantsFor } from './parts';
-import { PROPELLANTS, clampMixture, gasProps, isPropellantId } from './propellants';
+import { PROPELLANTS, isPropellantId } from './propellants';
 import type { EngineConfig, ExpansionState, FlightState, SimResult } from './types';
 
 const G0 = 9.80665;
@@ -62,6 +64,12 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const known = isPropellantId(cfg.propellant) ? cfg.propellant : null;
   const energy = isEnergyId(cfg.energy) ? cfg.energy : known ? PROPELLANTS[known].energy : 'combustion';
   const propellant = known && PROPELLANTS[known].energy === energy ? known : propellantsFor(energy)[0];
+  // A tabled propellant made of a fuel and oxidiser the solver knows names them; otherwise the
+  // picks stay as they are, or the first of each where they are not known.
+  const pair = PROPELLANTS[propellant].pair;
+  const fuel = pair ? pair.fuel : isFuelId(cfg.fuel) ? cfg.fuel : FUEL_IDS[0];
+  const oxidiser = pair ? pair.oxidiser : isOxidiserId(cfg.oxidiser) ? cfg.oxidiser : OXIDISER_IDS[0];
+  const mix = mixRange({ ...cfg, propellant, fuel, oxidiser });
   const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
   const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
@@ -76,6 +84,8 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     energy,
     exhaust,
     propellant,
+    fuel,
+    oxidiser,
     chamberDia,
     chamberLen: clampTo(cfg.chamberLen, RANGES.chamberLen),
     throatDia,
@@ -83,7 +93,9 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     nozzleLenPct: clampTo(cfg.nozzleLenPct, RANGES.nozzleLenPct),
     wall: clampTo(cfg.wall, RANGES.wall),
     chamberPressureBar: clampTo(cfg.chamberPressureBar, RANGES.chamberPressureBar),
-    mixtureRatio: clampMixture(propellant, cfg.mixtureRatio),
+    mixtureRatio: Number.isFinite(cfg.mixtureRatio)
+      ? Math.min(mix.ofMax, Math.max(mix.ofMin, cfg.mixtureRatio))
+      : mix.ofDefault,
     scale: clampTo(cfg.scale, RANGES.scale),
     chambers: Math.round(clampTo(cfg.chambers, aerospike ? RANGES.cells : RANGES.chambers)),
     extFixedDia,
@@ -106,6 +118,11 @@ export function flowExitDiameter(cfg: EngineConfig): number {
   return cfg.extFixedDia + (cfg.exitDia - cfg.extFixedDia) * seated;
 }
 
+/** The gas of an engine held only as a config: at full throttle, through the nozzle the gas is using. */
+export function gasFor(cfg: EngineConfig): GasSource {
+  return resolveGas(cfg, cfg.chamberPressureBar, (flowExitDiameter(cfg) / cfg.throatDia) ** 2);
+}
+
 function combustionEfficiency(lStar: number, lStarRef: number): number {
   if (lStarRef <= 0 || lStar >= lStarRef) return BASE_COMBUSTION_EFF;
   const third = lStarRef / 3;
@@ -123,11 +140,6 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const throttle = source.throttleable ? flight.throttle : 1;
   const pcBar = cfg.chamberPressureBar * throttle;
   const pc = pcBar * 1e5;
-  const table = gasProps(cfg.propellant, cfg.mixtureRatio);
-  // Higher pressure suppresses dissociation, so a flame runs a little hotter.
-  // A reactor-heated gas is simply as hot as the reactor core.
-  const gas = source.mixKind === 'temperature' ? table : { ...table, tc: table.tc * Math.pow(pcBar / 70, 0.03) };
-  const g = gas.gamma;
 
   const at = (Math.PI / 4) * cfg.throatDia ** 2;
   // A nozzle extension does nothing until it is nearly seated: before that the exhaust simply
@@ -135,6 +147,17 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const flowExitDia = flowExitDiameter(cfg);
   const ae = (Math.PI / 4) * flowExitDia ** 2;
   const eps = ae / at;
+
+  const gasSource = resolveGas(cfg, pcBar, eps);
+  const table = gasSource.gas;
+  // Higher pressure suppresses dissociation, so a flame runs a little hotter. A reactor-heated gas
+  // is simply as hot as the reactor core, and the solver already allows for the pressure.
+  const gas =
+    source.mixKind === 'temperature' || gasSource.calculated
+      ? table
+      : { ...table, tc: table.tc * Math.pow(pcBar / 70, 0.03) };
+  const g = gas.gamma;
+
   const lStar = ((Math.PI / 4) * cfg.chamberDia ** 2 * cfg.chamberLen) / at;
 
   const limits = computeLimits(cfg, pcBar, gas.tc);
@@ -142,10 +165,11 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const span = prop.ofMax - prop.ofMin;
   const rough =
     source.mixKind === 'ratio' &&
+    !gasSource.calculated &&
     span > 0 &&
     (cfg.mixtureRatio - prop.ofMin < 0.04 * span || prop.ofMax - cfg.mixtureRatio < 0.04 * span);
 
-  let combustionEff = combustionEfficiency(lStar, prop.lStarRef);
+  let combustionEff = combustionEfficiency(lStar, gasSource.lStarRef);
   if (rough) combustionEff *= 0.97;
   combustionEff *= 1 - 0.03 * shudder;
 
@@ -236,6 +260,9 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     rough,
     shudder,
     limits,
-    failure: failureFor(cfg, pcBar, gas.tc),
+    failure: gasSource.failure ?? failureFor(cfg, pcBar, gas.tc),
+    exhaust: gasSource.exhaust,
+    notes: gasSource.notes,
+    calculated: gasSource.calculated,
   };
 }
