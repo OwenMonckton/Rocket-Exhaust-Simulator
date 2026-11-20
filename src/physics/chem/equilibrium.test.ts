@@ -97,3 +97,72 @@ describe('equilibrium of a gas mixture', () => {
     expect(relErr(wide.t, ex8().t)).toBeLessThan(1e-4);
   });
 });
+
+/** Mole fraction over all species, gas and condensed. */
+function overallFraction(st: EqState, name: string): number {
+  const j = st.species.findIndex((s) => s.name === name);
+  expect(j, name).toBeGreaterThanOrEqual(0);
+  return st.moles[j] / st.moles.reduce((a, b) => a + b, 0);
+}
+
+function molesOf(st: EqState, name: string): number {
+  const j = st.species.findIndex((s) => s.name === name);
+  expect(j, name).toBeGreaterThanOrEqual(0);
+  return st.moles[j];
+}
+
+describe('equilibrium with liquid and solid products', () => {
+  it('condenses water (RP-1311 Example 14)', () => {
+    const mix = byMoles([['H2(L)', 100], ['O2(L)', 60]]);
+    const st = equilibrate(mix, { kind: 'tp', t: 300, pBar: 0.0506625 });
+    expect(st.ok).toBe(true);
+    expect(Math.abs(overallFraction(st, 'H2O(L)') - 0.69949)).toBeLessThan(0.002);
+  });
+
+  it('forms beryllium oxide droplets (RP-1311 Example 13 chamber)', () => {
+    const mix = mixtureFrom([
+      { reactant: REACTANTS['N2H4(L)'], massFraction: 0.67 * 0.8 },
+      { reactant: REACTANTS['Be(a)'], massFraction: 0.67 * 0.2 },
+      { reactant: REACTANTS['H2O2(L)'], massFraction: 0.33 },
+    ]);
+    const st = equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 206.84 });
+    expect(st.ok).toBe(true);
+    expect(relErr(st.t, 3002.54)).toBeLessThan(5e-3);
+    expect(Math.abs(overallFraction(st, 'BeO(L)') - 0.19218)).toBeLessThan(0.003);
+    expect(relErr(st.molarMass, 16.627)).toBeLessThan(5e-3);
+  });
+
+  it('forms soot in a very fuel-rich kerosene flame', () => {
+    const mix = byRatio('RP-1', 'O2(L)', 0.5);
+    const st = equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 70 });
+    expect(st.ok).toBe(true);
+    expect(molesOf(st, 'C(gr)')).toBeGreaterThan(0);
+    expect(Number.isFinite(st.t)).toBe(true);
+    expect(st.t).toBeGreaterThan(800);
+    expect(st.t).toBeLessThan(2500);
+  });
+
+  it('never returns NaN for almost pure oxidiser', () => {
+    const mix = byRatio('RP-1', 'O2(L)', 200);
+    const st = equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 70 });
+    if (st.ok) expect(Number.isFinite(st.t)).toBe(true);
+    else expect(st.ok).toBe(false);
+    expect(Number.isNaN(st.t)).toBe(false);
+    expect(Number.isNaN(st.n)).toBe(false);
+    expect(Number.isNaN(st.molarMass)).toBe(false);
+  });
+
+  it('forms alumina from aluminised kerosene', () => {
+    const fuel = 1 / 3;
+    const mix = mixtureFrom([
+      { reactant: REACTANTS['AL(cr)'], massFraction: fuel * 0.3 },
+      { reactant: REACTANTS['RP-1'], massFraction: fuel * 0.7 },
+      { reactant: REACTANTS['O2(L)'], massFraction: 1 - fuel },
+    ]);
+    const st = equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 70 });
+    expect(st.ok).toBe(true);
+    expect(st.condensedMassFraction).toBeGreaterThan(0.1);
+    const alumina = st.species.some((s, j) => s.phase !== 0 && s.name.startsWith('AL2O3') && st.moles[j] > 0);
+    expect(alumina).toBe(true);
+  });
+});

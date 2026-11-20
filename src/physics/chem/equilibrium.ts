@@ -39,6 +39,7 @@ const BALANCE_TOL = 1e-6;
 const LIMIT = 100;           // iterations per attempt
 const RESTARTS = 2;          // singular-matrix restarts
 const RESTART_MOLES = 1e-6;
+const CONDENSED_CHANGES = 50; // condensed species added, removed or swapped per point before giving up
 
 /**
  * Gaussian elimination with partial pivoting on the m x (m + nr) row-major matrix g; the solutions
@@ -76,8 +77,8 @@ function solve(g: Float64Array, m: number, nr: number): boolean {
 
 /**
  * Equilibrium make-up of `mix` under `problem`. `species` defaults to every product of the elements
- * present; species containing an absent element are dropped. Gas phase only: condensed species in the
- * list are carried with zero moles.
+ * present; species containing an absent element are dropped. Liquid and solid products join and leave
+ * the mixture as RP-1311 section 3.7 describes.
  */
 export function equilibrate(mix: Mixture, problem: Problem, species?: Species[], start?: EqState): EqState {
   // Elements present, and the species made only of them.
@@ -87,7 +88,8 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   const L = elements.length;
   const NS = list.length;
   const gas: number[] = [];
-  list.forEach((s, j) => { if (s.phase === 0) gas.push(j); });
+  const cond: number[] = [];
+  list.forEach((s, j) => { (s.phase === 0 ? gas : cond).push(j); });
 
   // Work arrays, once per call.
   const a = new Float64Array(L * NS); // a[i * NS + j]: atoms of element i in species j
@@ -101,21 +103,22 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   const dln = new Float64Array(NS); // Δln n_j
   const moles = new Float64Array(NS);
   const lnMoles = new Float64Array(NS);
+  const pi = new Float64Array(L);   // π_i from the latest solve
+  // Phases of one substance share a formula.
+  const formula = new Map<number, string>();
+  for (const j of cond) formula.set(j, elements.map((e) => list[j].elements[e] ?? 0).join(','));
 
-  // Unknowns: π_i (0..L-1), Δn_j of active condensed species (none in the gas-only solver),
-  // Δln n, then Δln T unless T is given.
-  const nc = 0;
-  const iN = L + nc;
-  const iT = iN + 1;
+  // Unknowns: π_i (0..L-1), Δn_j of each active condensed species (in `active` order), Δln n, then
+  // Δln T unless T is given. Rows are in the same order.
+  const active: number[] = [];
   const fixedT = problem.kind === 'tp';
-  const m = fixedT ? iN + 1 : iT + 1;
-  const g = new Float64Array((L + nc + 2) * (L + nc + 4)); // big enough for the iteration and derivative matrices
+  const g = new Float64Array((L + cond.length + 2) * (L + cond.length + 4)); // big enough for every matrix
 
   const lnP = Math.log(problem.pBar);
   let t = problem.kind === 'tp' ? problem.t : 3800;
   let n = 0.1;
 
-  // Start (3.6): cold, or from a previous point.
+  // Start (3.6): cold, or from a previous point (with the condensed species it held).
   const sameList = start !== undefined && start.species.length === NS && start.species.every((s, j) => s === list[j]);
   const fromStart = start === undefined ? undefined
     : sameList ? (j: number) => j
@@ -126,7 +129,7 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     for (let j = 0; j < NS; j++) {
       const k = fromStart(j);
       if (list[j].phase === 0) lnMoles[j] = k === undefined ? Math.log(RESTART_MOLES) : start.lnMoles[k];
-      else moles[j] = k === undefined ? 0 : start.moles[k];
+      else if (k !== undefined && start.moles[k] > 0) { moles[j] = start.moles[k]; active.push(j); }
     }
   } else {
     for (const j of gas) lnMoles[j] = Math.log(0.1 / gas.length);
@@ -140,104 +143,182 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
       C[j] = cpR(list[j], temp);
       S0[j] = sR(list[j], temp);
     }
+    for (const j of active) {
+      H[j] = hRT(list[j], temp);
+      C[j] = cpR(list[j], temp);
+      S0[j] = sR(list[j], temp);
+    }
   }
 
-  let ok = false;
   let iterations = 0;
   let restarts = 0;
-  attempts: for (;;) {
-    for (let it = 1; it <= LIMIT; it++) {
-      iterations++;
-      evaluate(t);
-      const lnn = Math.log(n);
-      const w = m + 1;
-      g.fill(0, 0, m * w);
-      let sumN = 0, sumNH = 0, sumNC = 0, sumNHH = 0, sumNS = 0, sumNHS = 0, sumNMu = 0, sumNHMu = 0, sumNSMu = 0;
-      for (const j of gas) {
-        const lx = lnMoles[j] - lnn + lnP;
-        mu[j] = H[j] - S0[j] + lx;
-        const nj = moles[j];
-        if (nj === 0) continue;
-        const hj = H[j], sj = S0[j] - lx, mj = mu[j];
-        for (let k = 0; k < L; k++) {
-          const akj = a[k * NS + j];
-          if (akj === 0) continue;
-          const row = k * w, t1 = akj * nj;
-          for (let i = 0; i < L; i++) g[row + i] += t1 * a[i * NS + j];       // 2.24
-          g[row + iN] += t1;
-          if (!fixedT) {
-            g[row + iT] += t1 * hj;
-            g[iT * w + k] += problem.kind === 'hp' ? t1 * hj : t1 * sj;    // 2.27 / 2.28
+
+  /** Newton iterations (2.24-2.28) with the current condensed species; true once settled. */
+  function converge(): boolean {
+    const nc = active.length;
+    const iN = L + nc;
+    const iT = iN + 1;
+    const m = fixedT ? iN + 1 : iT + 1;
+    const w = m + 1;
+    attempts: for (;;) {
+      for (let it = 1; it <= LIMIT; it++) {
+        iterations++;
+        evaluate(t);
+        const lnn = Math.log(n);
+        g.fill(0, 0, m * w);
+        let sumN = 0, sumNH = 0, sumNC = 0, sumNHH = 0, sumNS = 0, sumNHS = 0, sumNMu = 0, sumNHMu = 0, sumNSMu = 0;
+        for (const j of gas) {
+          const lx = lnMoles[j] - lnn + lnP;
+          mu[j] = H[j] - S0[j] + lx;
+          const nj = moles[j];
+          if (nj === 0) continue;
+          const hj = H[j], sj = S0[j] - lx, mj = mu[j];
+          for (let k = 0; k < L; k++) {
+            const akj = a[k * NS + j];
+            if (akj === 0) continue;
+            const row = k * w, t1 = akj * nj;
+            for (let i = 0; i < L; i++) g[row + i] += t1 * a[i * NS + j];       // 2.24
+            g[row + iN] += t1;
+            if (!fixedT) {
+              g[row + iT] += t1 * hj;
+              g[iT * w + k] += problem.kind === 'hp' ? t1 * hj : t1 * sj;    // 2.27 / 2.28
+            }
+            g[iN * w + k] += t1;                                              // 2.26
+            g[row + m] += t1 * mj;
           }
-          g[iN * w + k] += t1;                                              // 2.26
-          g[row + m] += t1 * mj;
+          sumN += nj; sumNH += nj * hj; sumNC += nj * C[j]; sumNHH += nj * hj * hj;
+          sumNS += nj * sj; sumNHS += nj * hj * sj;
+          sumNMu += nj * mj; sumNHMu += nj * hj * mj; sumNSMu += nj * sj * mj;
         }
-        sumN += nj; sumNH += nj * hj; sumNC += nj * C[j]; sumNHH += nj * hj * hj;
-        sumNS += nj * sj; sumNHS += nj * hj * sj;
-        sumNMu += nj * mj; sumNHMu += nj * hj * mj; sumNSMu += nj * sj * mj;
-      }
-      let balance = 0;
-      for (let k = 0; k < L; k++) {
-        const bk = g[k * w + iN];
-        g[k * w + m] += b0[k] - bk;
-        balance = Math.max(balance, Math.abs(b0[k] - bk));
-      }
-      g[iN * w + iN] = sumN - n;
-      g[iN * w + m] = n - sumN + sumNMu;
-      if (!fixedT) {
-        g[iN * w + iT] = sumNH;
-        if (problem.kind === 'hp') {
-          g[iT * w + iN] = sumNH;
-          g[iT * w + iT] = sumNC + sumNHH;
-          g[iT * w + m] = problem.h / (R * t) - sumNH + sumNHMu;
-        } else {
-          g[iT * w + iN] = sumNS;
-          g[iT * w + iT] = sumNC + sumNHS;
-          g[iT * w + m] = problem.s / R - sumNS + n - sumN + sumNSMu;
+        // Condensed species: their columns in the element and energy rows, and their own rows (2.25).
+        let sumCN = 0, sumCH = 0, sumCC = 0, sumCS = 0;
+        for (let c = 0; c < nc; c++) {
+          const j = active[c], col = L + c, row = col * w;
+          mu[j] = H[j] - S0[j];
+          for (let i = 0; i < L; i++) { const aij = a[i * NS + j]; g[i * w + col] = aij; g[row + i] = aij; }
+          if (!fixedT) {
+            g[row + iT] = H[j];
+            g[iT * w + col] = problem.kind === 'hp' ? H[j] : S0[j];
+          }
+          g[row + m] = mu[j];
+          const nj = moles[j];
+          sumCN += nj; sumCH += nj * H[j]; sumCC += nj * C[j]; sumCS += nj * S0[j];
         }
-      }
+        let balance = 0;
+        for (let k = 0; k < L; k++) {
+          let bk = g[k * w + iN];
+          for (const j of active) bk += a[k * NS + j] * moles[j];
+          g[k * w + m] += b0[k] - bk;
+          balance = Math.max(balance, Math.abs(b0[k] - bk));
+        }
+        g[iN * w + iN] = sumN - n;
+        g[iN * w + m] = n - sumN + sumNMu;
+        if (!fixedT) {
+          g[iN * w + iT] = sumNH;
+          if (problem.kind === 'hp') {
+            g[iT * w + iN] = sumNH;
+            g[iT * w + iT] = sumNC + sumCC + sumNHH;
+            g[iT * w + m] = problem.h / (R * t) - sumNH - sumCH + sumNHMu;
+          } else {
+            g[iT * w + iN] = sumNS;
+            g[iT * w + iT] = sumNC + sumCC + sumNHS;
+            g[iT * w + m] = problem.s / R - sumNS - sumCS + n - sumN + sumNSMu;
+          }
+        }
 
-      if (!solve(g, m, 1)) {
-        if (restarts >= RESTARTS) break attempts;
-        restarts++;
-        for (const j of gas) if (moles[j] === 0) { moles[j] = RESTART_MOLES; lnMoles[j] = Math.log(RESTART_MOLES); }
-        continue attempts;
-      }
+        if (!solve(g, m, 1)) {
+          if (restarts >= RESTARTS) return false;
+          restarts++;
+          for (const j of gas) if (moles[j] === 0) { moles[j] = RESTART_MOLES; lnMoles[j] = Math.log(RESTART_MOLES); }
+          continue attempts;
+        }
 
-      // Corrections (2.18) and damping (3.1-3.3).
-      const dlnn = g[iN * w + m];
-      const dlnT = fixedT ? 0 : g[iT * w + m];
-      let big = Math.max(5 * Math.abs(dlnT), 5 * Math.abs(dlnn));
-      let lambda2 = 1;
-      for (const j of gas) {
-        let d = dlnn + H[j] * dlnT - mu[j];
-        for (let i = 0; i < L; i++) { const aij = a[i * NS + j]; if (aij !== 0) d += aij * g[i * w + m]; }
-        dln[j] = d;
-        const lr = lnMoles[j] - lnn;
-        if (lr > -ZERO) big = Math.max(big, Math.abs(d));
-        else if (d >= 0) lambda2 = Math.min(lambda2, Math.abs((-lr - REENTRY) / (d - dlnn)));
-      }
-      const lambda = Math.min(1, big > 0 ? 2 / big : 1, lambda2);
+        // Corrections (2.18) and damping (3.1-3.3).
+        const dlnn = g[iN * w + m];
+        const dlnT = fixedT ? 0 : g[iT * w + m];
+        for (let i = 0; i < L; i++) pi[i] = g[i * w + m];
+        let big = Math.max(5 * Math.abs(dlnT), 5 * Math.abs(dlnn));
+        let lambda2 = 1;
+        for (const j of gas) {
+          let d = dlnn + H[j] * dlnT - mu[j];
+          for (let i = 0; i < L; i++) { const aij = a[i * NS + j]; if (aij !== 0) d += aij * pi[i]; }
+          dln[j] = d;
+          const lr = lnMoles[j] - lnn;
+          if (lr > -ZERO) big = Math.max(big, Math.abs(d));
+          else if (d >= 0) lambda2 = Math.min(lambda2, Math.abs((-lr - REENTRY) / (d - dlnn)));
+        }
+        const lambda = Math.min(1, big > 0 ? 2 / big : 1, lambda2);
 
-      // Convergence (3.5), judged on this iteration's corrections.
-      let settled = (n * Math.abs(dlnn)) / sumN <= TOL && Math.abs(dlnT) <= T_TOL && balance <= BALANCE_TOL * b0max;
-      if (settled) for (const j of gas) if ((moles[j] * Math.abs(dln[j])) / sumN > TOL) { settled = false; break; }
+        // Convergence (3.5), judged on this iteration's corrections, relative to all the moles.
+        const sumAll = sumN + sumCN;
+        let settled = sumAll > 0 && (n * Math.abs(dlnn)) / sumAll <= TOL && Math.abs(dlnT) <= T_TOL
+          && balance <= BALANCE_TOL * b0max;
+        if (settled) for (const j of gas) if ((moles[j] * Math.abs(dln[j])) / sumAll > TOL) { settled = false; break; }
+        if (settled) for (let c = 0; c < nc; c++) if (Math.abs(g[(L + c) * w + m]) / sumAll > TOL) { settled = false; break; }
 
-      n = Math.exp(lnn + lambda * dlnn);
-      if (!fixedT) t = Math.exp(Math.log(t) + lambda * dlnT);
-      const lnn2 = Math.log(n);
-      for (const j of gas) {
-        lnMoles[j] += lambda * dln[j];
-        moles[j] = lnMoles[j] - lnn2 > -ZERO ? Math.exp(lnMoles[j]) : 0;
+        n = Math.exp(lnn + lambda * dlnn);
+        if (!fixedT) t = Math.exp(Math.log(t) + lambda * dlnT);
+        const lnn2 = Math.log(n);
+        for (const j of gas) {
+          lnMoles[j] += lambda * dln[j];
+          moles[j] = lnMoles[j] - lnn2 > -ZERO ? Math.exp(lnMoles[j]) : 0;
+        }
+        for (let c = 0; c < nc; c++) moles[active[c]] += lambda * g[(L + c) * w + m];
+        if (settled && Number.isFinite(t) && Number.isFinite(n)) return true;
       }
-      if (settled && Number.isFinite(t) && Number.isFinite(n)) { ok = true; break attempts; }
+      return false;
     }
-    break;
+  }
+
+  /** Whether T lies in the species' own fitted range. */
+  const covers = (j: number, temp: number) => {
+    const iv = list[j].intervals;
+    return iv[0].tMin <= temp && temp <= iv[iv.length - 1].tMax;
+  };
+
+  // Condensed species (3.7): converge; then remove any with negative moles, or swap a phase whose
+  // range no longer holds T, or add the one that most lowers the Gibbs energy; re-converge after each.
+  const lastSwap = new Map<string, [number, number]>(); // formula -> [from, to]
+  let ok = false;
+  for (let change = 0; change <= CONDENSED_CHANGES; change++) {
+    if (!converge()) break;
+    const negative = active.filter((j) => moles[j] < 0);
+    if (negative.length > 0) {
+      for (const j of negative) { moles[j] = 0; active.splice(active.indexOf(j), 1); }
+      continue;
+    }
+    let swapped = false;
+    for (let c = 0; c < active.length; c++) {
+      const j = active[c];
+      if (covers(j, t)) continue;
+      const f = formula.get(j)!;
+      const k = cond.find((x) => x !== j && formula.get(x) === f && covers(x, t));
+      if (k === undefined) continue;
+      const prev = lastSwap.get(f);
+      if (prev && prev[0] === k && prev[1] === j) continue; // on a melting point: keep the phase in hand
+      active[c] = k; moles[k] = moles[j]; moles[j] = 0;
+      lastSwap.set(f, [j, k]);
+      swapped = true;
+    }
+    if (swapped) continue;
+    const held = new Set(active.map((j) => formula.get(j)));
+    let best = -1, bestTest = 0;
+    for (const j of cond) {
+      if (held.has(formula.get(j)) || !covers(j, t)) continue;
+      let test = hRT(list[j], t) - sR(list[j], t);
+      for (let i = 0; i < L; i++) test -= a[i * NS + j] * pi[i];
+      if (test < bestTest) { bestTest = test; best = j; }
+    }
+    if (best < 0) { ok = true; break; }
+    active.push(best);
+    moles[best] = 0;
   }
 
   // Properties and equilibrium derivatives at the final point (2.50-2.59, 2.70-2.75).
   evaluate(t);
   const lnn = Math.log(n);
+  const nc = active.length;
+  const iN = L + nc;
   let sumN = 0, sumNH = 0, sumNC = 0, sumNHH = 0, sumNS = 0;
   const md = L + nc + 1;
   const wd = md + 2;
@@ -259,27 +340,36 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     sumN += nj; sumNH += nj * hj; sumNC += nj * C[j]; sumNHH += nj * hj * hj;
     sumNS += nj * (S0[j] - (lnMoles[j] - lnn) - lnP);
   }
+  // Condensed rows and columns; their ∂/∂ln P right-hand side is zero.
+  let sumCH = 0, sumCC = 0, sumCS = 0;
+  for (let c = 0; c < nc; c++) {
+    const j = active[c], col = L + c, row = col * wd;
+    for (let i = 0; i < L; i++) { const aij = a[i * NS + j]; g[i * wd + col] = aij; g[row + i] = aij; }
+    g[row + md] = -H[j];
+    sumCH += moles[j] * H[j]; sumCC += moles[j] * C[j]; sumCS += moles[j] * S0[j];
+  }
   // Σ_g a_ij n_j H_j, kept before elimination overwrites the matrix.
   const anh = new Float64Array(L);
   for (let k = 0; k < L; k++) anh[k] = -g[k * wd + md];
   g[iN * wd + md] = -sumNH;
   g[iN * wd + md + 1] = sumN;
   const derivOk = solve(g, md, 2);
-  let cpOverR = sumNC + sumNHH + sumNH * g[iN * wd + md];
+  let cpOverR = sumNC + sumCC + sumNHH + sumNH * g[iN * wd + md];
   for (let i = 0; i < L; i++) cpOverR += anh[i] * g[i * wd + md];
+  for (let c = 0; c < nc; c++) cpOverR += H[active[c]] * g[(L + c) * wd + md];
   const dlnVdlnT = 1 + g[iN * wd + md];
   const dlnVdlnP = -1 + g[iN * wd + md + 1];
   const cvOverR = cpOverR + (n * dlnVdlnT * dlnVdlnT) / dlnVdlnP;
   const gammaS = -(cpOverR / cvOverR) / dlnVdlnP;
 
   let condensedMass = 0;
-  for (let j = 0; j < NS; j++) if (list[j].phase !== 0) condensedMass += moles[j] * list[j].molarMass;
+  for (const j of cond) condensedMass += moles[j] * list[j].molarMass;
 
   const state: EqState = {
     ok: false,
     t, pBar: problem.pBar, n,
     species: list, moles, lnMoles,
-    h: R * t * sumNH, s: R * sumNS,
+    h: R * t * (sumNH + sumCH), s: R * (sumNS + sumCS),
     molarMass: 1 / n,
     cp: R * cpOverR, gammaS, dlnVdlnT, dlnVdlnP,
     condensedMassFraction: condensedMass,
