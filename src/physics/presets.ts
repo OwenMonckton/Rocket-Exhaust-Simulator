@@ -1,7 +1,7 @@
 import { simulate } from './engine';
-import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES } from './parts';
 import { PROPELLANTS } from './propellants';
+import { chamberShape, wallFor } from './reshape';
 import type { EngineConfig, ExhaustId, PropellantId } from './types';
 
 export interface Preset {
@@ -143,12 +143,7 @@ const round = (v: number) => Math.round(v * 1e4) / 1e4;
 /** Size the engine so the model reproduces the published thrust. Thrust is proportional to throat area. */
 function build(s: Spec): Preset {
   const shape = (throatDia: number): EngineConfig => {
-    const chamberDia = round(throatDia * s.contraction);
-    const at = (Math.PI / 4) * throatDia ** 2;
-    const chamberLen =
-      PROPELLANTS[s.propellant].lStarRef === 0
-        ? round(chamberDia * s.lStar)
-        : round((s.lStar * at) / ((Math.PI / 4) * chamberDia ** 2));
+    const { chamberDia, chamberLen } = chamberShape(throatDia, s.contraction, s.lStar, PROPELLANTS[s.propellant].lStarRef);
     return {
       presetId: s.id,
       energy: PROPELLANTS[s.propellant].energy,
@@ -159,7 +154,7 @@ function build(s: Spec): Preset {
       throatDia: round(throatDia),
       exitDia: round(throatDia * Math.sqrt(s.eps)),
       nozzleLenPct: s.nozzleLenPct,
-      wall: round((s.pcBar * chamberDia) / (2 * SIGMA_ALLOW_BAR * s.structural)),
+      wall: round(wallFor(s.pcBar, chamberDia, s.structural)),
       chamberPressureBar: s.pcBar,
       mixtureRatio: ENERGY_SOURCES[PROPELLANTS[s.propellant].energy].throttleable ? s.of : PROPELLANTS[s.propellant].ofDefault,
       scale: 1,
@@ -176,7 +171,6 @@ function build(s: Spec): Preset {
 }
 
 export const PRESETS: Preset[] = SPECS.map(build);
-export const DEFAULT_PRESET_ID = 'merlin-1d';
 
 export function getPreset(id: string | null | undefined): Preset | undefined {
   return PRESETS.find((p) => p.id === id);

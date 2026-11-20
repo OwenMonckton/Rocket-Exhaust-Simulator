@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RANGES, simulate } from '../physics/engine';
 import { PRESETS, getPreset } from '../physics/presets';
 import { decodeState, encodeState } from './share';
+import { starterEngine } from '../physics/reshape';
 import { applyScale, createStore, defaultState, isModified } from './store';
 
 describe('share links', () => {
@@ -97,6 +98,7 @@ describe('store', () => {
   });
   it('tracks modification against the stock preset', () => {
     const store = createStore(defaultState());
+    store.loadPreset('merlin-1d');
     expect(isModified(store.get().config)).toBe(false);
     store.set({ config: { chamberPressureBar: 120 } });
     expect(isModified(store.get().config)).toBe(true);
@@ -107,6 +109,27 @@ describe('store', () => {
     expect(isModified(store.get().config)).toBe(true);
     store.setScale(1);
     expect(isModified(store.get().config)).toBe(false);
+  });
+  it('opens on a blank engine tied to no example', () => {
+    expect(defaultState().config).toEqual(starterEngine());
+    expect(defaultState().config.presetId).toBeNull();
+    expect(isModified(defaultState().config)).toBe(false);
+  });
+  it('swaps parts on an example and still knows which example it was', () => {
+    const store = createStore(defaultState());
+    let calls = 0;
+    store.subscribe(() => calls++);
+    store.loadPreset('merlin-1d');
+    store.setEnergy('reactor');
+    expect(store.get().config).toMatchObject({ presetId: 'merlin-1d', energy: 'reactor', propellant: 'ntr-hydrogen' });
+    expect(isModified(store.get().config)).toBe(true);
+    store.setExhaust('aerospike');
+    expect(store.get().config).toMatchObject({ exhaust: 'aerospike', chambers: 20 });
+    store.set({ flight: { altitudeKm: 40 } });
+    store.newEngine();
+    expect(store.get().config).toEqual(starterEngine());
+    expect(store.get().flight.altitudeKm).toBe(40);
+    expect(calls).toBe(5);
   });
   it('resets mixture ratio when the propellant changes and notifies subscribers', () => {
     const store = createStore(defaultState());

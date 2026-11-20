@@ -1,7 +1,8 @@
 import { RANGES, sanitize, sanitizeFlight } from '../physics/engine';
-import { DEFAULT_PRESET_ID, getPreset } from '../physics/presets';
+import { getPreset } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
-import type { EngineConfig, FlightState } from '../physics/types';
+import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
+import type { EnergyId, EngineConfig, ExhaustId, FlightState } from '../physics/types';
 import type { AppState } from './share';
 
 export type { AppState };
@@ -32,7 +33,7 @@ export function isModified(cfg: EngineConfig): boolean {
 }
 
 export function defaultState(): AppState {
-  return { config: { ...getPreset(DEFAULT_PRESET_ID)!.config }, flight: { altitudeKm: 0, throttle: 1 } };
+  return { config: starterEngine(), flight: { altitudeKm: 0, throttle: 1 } };
 }
 
 export interface Store {
@@ -40,6 +41,12 @@ export interface Store {
   set(patch: { config?: Partial<EngineConfig>; flight?: Partial<FlightState> }): void;
   replace(state: AppState): void;
   loadPreset(id: string): void;
+  /** Start again from the blank engine */
+  newEngine(): void;
+  /** Rebuild the engine round a different energy source */
+  setEnergy(id: EnergyId): void;
+  /** Swap the exhaust, keeping the engine about as powerful */
+  setExhaust(id: ExhaustId): void;
   setScale(scale: number): void;
   subscribe(fn: (s: AppState) => void): () => void;
 }
@@ -73,6 +80,18 @@ export function createStore(initial: AppState): Store {
       const preset = getPreset(id);
       if (!preset) return;
       state = { config: { ...preset.config }, flight: state.flight };
+      emit();
+    },
+    newEngine() {
+      state = { config: starterEngine(), flight: state.flight };
+      emit();
+    },
+    setEnergy(id) {
+      state = { config: sanitize(withEnergy(state.config, id)), flight: state.flight };
+      emit();
+    },
+    setExhaust(id) {
+      state = { config: sanitize(withExhaust(state.config, id)), flight: state.flight };
       emit();
     },
     setScale(scale) {

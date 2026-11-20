@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from './engine';
-import { DEFAULT_PRESET_ID, PRESETS, getPreset } from './presets';
+import { PRESETS, getPreset } from './presets';
 
 const within = (actual: number, target: number, tol = 0.1) =>
   expect(Math.abs(actual - target) / target, `${actual} vs ${target}`).toBeLessThan(tol);
@@ -161,8 +161,8 @@ describe('presets', () => {
     expect(at(xrs, 0).limits.instability).toBeLessThan(0.2);
   });
 
-  it('has a default preset', () => {
-    expect(getPreset(DEFAULT_PRESET_ID)).toBeDefined();
+  it('finds an example by its id', () => {
+    expect(getPreset('merlin-1d')).toBeDefined();
     expect(getPreset('nope')).toBeUndefined();
   });
 });
