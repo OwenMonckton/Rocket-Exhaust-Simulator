@@ -110,3 +110,34 @@ extension were not measured.
 A single grid for everything: fine enough for the throat, it needs thousands of cells along
 the plume; coarse enough for the plume, it puts one or two cells across the throat of an
 RL10B-2 or Merlin Vacuum.
+
+## The engine builder
+
+The simulator opens on a build-your-own engine made of three parts: an energy source, an
+exhaust type and a propellant (`src/physics/parts.ts`, `src/physics/reshape.ts`). The design is
+in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first of five pieces:
+
+1. **An engine made of parts, and the workshop screen (built).** Includes the fluids a nuclear
+   reactor can heat.
+2. **Fuel and oxidiser chemistry.** Any fuel with any oxidiser, worked out live by a small
+   chemical-equilibrium solver, replacing the hand-typed tables for burning engines.
+3. **More exhaust types:** plain cone, dual bell, expansion-deflection, no nozzle.
+4. **Plume colour from what is in the exhaust**, replacing hand-picked colours.
+5. **Electric thrusters** (ion, Hall effect), which need their own view.
+
+### What is left from the first piece
+
+- **An aerospike's thrust cells are drawn the same whatever feeds them.** A reactor or a solid
+  motor behind an aerospike is drawn with the small combustion chambers and feed lines of the
+  XRS-2200 (`src/render/aerospikeView.ts`). The gas and the figures are right for the source;
+  only the picture of the cell is not.
+- **The nuclear fluids' tables are hand-typed estimates** (`src/physics/propellants.ts`), checked
+  against published efficiencies rather than worked out. They come out 7 to 19 % under the ideal
+  figures for water, methane and carbon dioxide. The chemistry solver of piece 2 should replace
+  them.
+- **Swapping a part turns a reactor or a salt-water reaction down** if it would otherwise
+  overheat the new engine, but leaves a burning engine alone: a hot, high-pressure combustion
+  engine can burn through the small throats of an aerospike's cells the moment it is given one.
+- **Every source was fired with both exhausts** at sea level and in vacuum, lit from cold, with
+  both gas simulations on. All eight run. The measuring tool (`src/dev/accuracy.ts`) only reads
+  bell engines, so the new aerospikes were checked by eye and by their readouts, not measured.
