@@ -159,6 +159,17 @@ describe('equilibrium with liquid and solid products', () => {
     expect(Number.isNaN(st.molarMass)).toBe(false);
   });
 
+  it('does not accept a state colder than the thermodynamic data covers', () => {
+    // Fuel 85% of the mass, 37.75% of it beryllium: this once "settled" at 86 K, gas only.
+    const mix = mixtureFrom([
+      { reactant: REACTANTS['N2H4(L)'], massFraction: 0.85 * (1 - 0.3775) },
+      { reactant: REACTANTS['Be(a)'], massFraction: 0.85 * 0.3775 },
+      { reactant: REACTANTS['H2O2(L)'], massFraction: 0.15 },
+    ]);
+    expect(equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 206.84 }).ok).toBe(false);
+    expect(equilibrate(ex8Mix, { kind: 'tp', t: 150, pBar: 1 }).ok).toBe(false);
+  });
+
   it('forms alumina from aluminised kerosene', () => {
     const fuel = 1 / 3;
     const mix = mixtureFrom([

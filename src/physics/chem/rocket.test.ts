@@ -156,6 +156,11 @@ describe('rocket: chamber, throat and exit', () => {
     expect(Number.isFinite(r.ispVac)).toBe(true);
   });
 
+  it('is not ok when the chamber would settle colder than the data covers', () => {
+    const mix = beryllium(0.85, 0.3775); // once a false chamber at 86 K
+    expect(rocket(mix, flame(mix, 206.84), 30).ok).toBe(false);
+  });
+
   it('runs lithium and fluorine without ions (RP-1311 Example 11)', () => {
     const mix = byMoles([['Li(cr)', 1], ['F2(L)', 0.5556]]);
     const r = rocket(mix, flame(mix, 68.948), 100);

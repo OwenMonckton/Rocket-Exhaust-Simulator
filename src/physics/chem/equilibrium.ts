@@ -40,6 +40,10 @@ const LIMIT = 100;           // iterations per attempt
 const RESTARTS = 2;          // singular-matrix restarts
 const RESTART_MOLES = 1e-6;
 const CONDENSED_CHANGES = 50; // condensed species added, removed or swapped per point before giving up
+// The lowest temperature NASA's data covers (no gas's fit starts below 200 K). Below it no condensed
+// species' range holds T, so none can join, and a gas-only state "settles" on extrapolated fits
+// (a beryllium-rich flame once came out at 86 K). Such a state is not an answer: ok is false.
+const T_FLOOR = 200;
 
 /**
  * Gaussian elimination with partial pivoting on the m x (m + nr) row-major matrix g; the solutions
@@ -408,6 +412,6 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     condensedMassFraction: condensedMass,
     iterations,
   };
-  state.ok = ok && derivOk && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite);
+  state.ok = ok && derivOk && t >= T_FLOOR && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite);
   return state;
 }
