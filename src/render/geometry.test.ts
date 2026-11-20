@@ -5,7 +5,7 @@ import { PRESETS } from '../physics/presets';
 import { engineProfile, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
-  for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
+  for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
     it(`${p.name} has a sane contour`, () => {
       const cfg = p.config;
       const prof = engineProfile(cfg);
@@ -26,7 +26,7 @@ describe('engine profile', () => {
     });
   }
   it('turns the wall out of the throat along an arc, with no corner', () => {
-    for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
+    for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
       const cfg = p.config;
       const prof = engineProfile(cfg);
       const bell = prof.points.filter((q) => q.x >= prof.throatX - 1e-12);

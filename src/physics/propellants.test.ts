@@ -1,3 +1,4 @@
+import { ENERGY_SOURCES } from './parts';
 import { describe, expect, it } from 'vitest';
 import { PROPELLANTS, PROPELLANT_IDS, gasProps, richness } from './propellants';
 
@@ -26,7 +27,7 @@ describe('propellants', () => {
       for (const row of PROPELLANTS[id].table) {
         expect(row.gamma).toBeGreaterThan(1.1);
         // Pure hydrogen (nuclear thermal) has a higher ratio than combustion products.
-        expect(row.gamma).toBeLessThan(PROPELLANTS[id].mixKind === 'temperature' ? 1.4 : 1.3);
+        expect(row.gamma).toBeLessThan(ENERGY_SOURCES[PROPELLANTS[id].energy].mixKind === 'temperature' ? 1.4 : 1.3);
       }
       const p = PROPELLANTS[id];
       expect(p.ofDefault).toBeGreaterThanOrEqual(p.ofMin);

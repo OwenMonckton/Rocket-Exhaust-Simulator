@@ -1,6 +1,6 @@
 import { sanitize, sanitizeFlight } from '../physics/engine';
 import { getPreset } from '../physics/presets';
-import { isPropellantId } from '../physics/propellants';
+import { PROPELLANTS, isPropellantId } from '../physics/propellants';
 import type { EngineConfig, FlightState } from '../physics/types';
 
 export interface AppState {
@@ -39,7 +39,7 @@ export function encodeState(s: AppState): string {
     c.chambers,
     c.extFixedDia,
     c.extDeploy,
-    c.aerospike ? 1 : 0,
+    c.exhaust === 'aerospike' ? 1 : 0,
   ];
   return `${VERSION}.${toBase64Url(JSON.stringify(packed))}`;
 }
@@ -60,6 +60,8 @@ export function decodeState(hash: string): AppState | null {
     const n = nums as number[];
     const config = sanitize({
       presetId: typeof presetId === 'string' && getPreset(presetId) ? presetId : null,
+      energy: PROPELLANTS[propellant].energy,
+      exhaust: n.length > 14 && n[14] === 1 ? 'aerospike' : 'bell',
       propellant,
       chamberDia: n[0],
       chamberLen: n[1],
@@ -73,7 +75,6 @@ export function decodeState(hash: string): AppState | null {
       chambers: n.length > 11 ? n[11] : 1,
       extFixedDia: n.length > 13 ? n[12] : 0,
       extDeploy: n.length > 13 ? n[13] : 1,
-      aerospike: n.length > 14 && n[14] === 1,
     });
     return { config, flight: sanitizeFlight({ altitudeKm: n[9], throttle: n[10] }) };
   } catch {

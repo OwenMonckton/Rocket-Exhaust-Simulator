@@ -103,7 +103,7 @@ const DEG = Math.PI / 180;
 
 /** Inner wall contour: cylinder, smooth converging section, parabolic bell. */
 export function engineProfile(cfg: EngineConfig): EngineProfile {
-  if (cfg.aerospike) return aerospikeProfile(cfg);
+  if (cfg.exhaust === 'aerospike') return aerospikeProfile(cfg);
   const rc = cfg.chamberDia / 2;
   const rt = cfg.throatDia / 2;
   const re = cfg.exitDia / 2;

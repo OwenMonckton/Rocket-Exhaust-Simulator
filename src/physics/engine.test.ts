@@ -5,6 +5,7 @@ import type { EngineConfig, SimResult } from './types';
 
 const base: EngineConfig = {
   presetId: null,
+  energy: 'combustion',
   propellant: 'kerolox',
   chamberDia: 0.4,
   chamberLen: 0.5,
@@ -18,7 +19,7 @@ const base: EngineConfig = {
   chambers: 1,
   extFixedDia: 0,
   extDeploy: 1,
-  aerospike: false,
+  exhaust: 'bell' as const,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 
@@ -31,18 +32,18 @@ function allFinite(r: SimResult) {
 
 describe('aerospike', () => {
   it('only exists as a real choice, and never with a nozzle extension', () => {
-    expect(sanitize({ ...base, aerospike: 'yes' as never }).aerospike).toBe(false);
-    const spike = sanitize({ ...base, aerospike: true, extFixedDia: 0.5, extDeploy: 0.3, chambers: 20 });
-    expect(spike.aerospike).toBe(true);
+    expect(sanitize({ ...base, exhaust: 'yes' as never }).exhaust).toBe('bell');
+    const spike = sanitize({ ...base, exhaust: 'aerospike' as const, extFixedDia: 0.5, extDeploy: 0.3, chambers: 20 });
+    expect(spike.exhaust).toBe('aerospike');
     expect(spike.extFixedDia).toBe(0);
     expect(spike.extDeploy).toBe(1);
     // Up to 40 thrust cells; bells stay at four chambers or fewer.
     expect(spike.chambers).toBe(20);
-    expect(sanitize({ ...base, aerospike: true, chambers: 99 }).chambers).toBe(40);
+    expect(sanitize({ ...base, exhaust: 'aerospike' as const, chambers: 99 }).chambers).toBe(40);
     expect(sanitize({ ...base, chambers: 20 }).chambers).toBe(4);
   });
   it('matches a bell that is the right size for the altitude, less a little loss', () => {
-    const spike = { ...base, aerospike: true, exitDia: 1.3 };
+    const spike = { ...base, exhaust: 'aerospike' as const, exitDia: 1.3 };
     const r = simulate(spike, sl);
     expect(r.state).toBe('compensating');
     // A bell whose exit matches the air exactly does at least as well as the spike.
@@ -55,8 +56,8 @@ describe('aerospike', () => {
   });
   it('is never worse than the bell it replaces, on any engine at any altitude', () => {
     for (const p of PRESETS) {
-      const bell = { ...p.config, aerospike: false, extFixedDia: 0 };
-      const spike = { ...bell, aerospike: true };
+      const bell = { ...p.config, exhaust: 'bell' as const, extFixedDia: 0 };
+      const spike = { ...bell, exhaust: 'aerospike' as const };
       for (let h = 0; h <= 100; h += 0.5) {
         const f = { altitudeKm: h, throttle: 1 };
         const s = simulate(spike, f);
@@ -73,7 +74,7 @@ describe('aerospike', () => {
   });
   it('loses nothing at sea level by having a spike far too big for it', () => {
     // The air decides how far the gas expands, so past a point a bigger spike changes nothing.
-    const spike = { ...base, aerospike: true };
+    const spike = { ...base, exhaust: 'aerospike' as const };
     const big = simulate({ ...spike, exitDia: 3 }, sl);
     const huge = simulate({ ...spike, exitDia: 20 }, sl);
     expect(big.state).toBe('compensating');
@@ -188,7 +189,7 @@ describe('degenerate input (review focus)', () => {
     expect(r.isp).toBeCloseTo(r.ispVacuum, 6);
   });
   it('ignores throttle and mixture for solids', () => {
-    const solid = { ...base, propellant: 'solid' as const, mixtureRatio: 7 };
+    const solid = { ...base, energy: 'solid' as const, propellant: 'solid' as const, mixtureRatio: 7 };
     const a = simulate(solid, { altitudeKm: 0, throttle: 0.4 });
     const b = simulate({ ...solid, mixtureRatio: 1 }, sl);
     expect(a.thrust).toBe(b.thrust);

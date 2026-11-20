@@ -1,5 +1,6 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
+import { ENERGY_SOURCES } from '../physics/parts';
 import { PROPELLANTS, gasProps, richness } from '../physics/propellants';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
 import { SPIKE_SAMPLES, type SimInputs } from './fluidSim';
@@ -122,7 +123,7 @@ export function simInputs(
   // Slope of the bell wall at the lip (see engineProfile).
   // An aerospike's jet leaves its base running straight back: the spike has already turned it.
   const lipSlope =
-    start?.wallSlope ?? (cfg.aerospike ? 0 : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct);
+    start?.wallSlope ?? (cfg.exhaust === 'aerospike' ? 0 : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct);
   return {
     gamma: g,
     uExit: mach * Math.sqrt(g),
@@ -207,7 +208,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
   const air = Math.pow(paFrac, 0.4);
   const soot = look.soot * clamp(0.4 + 1.2 * rich, 0, 2) * air;
 
-  const throttle = prop.throttleable ? flight.throttle : 1;
+  const throttle = ENERGY_SOURCES[cfg.energy].throttleable ? flight.throttle : 1;
   const altM = flight.altitudeKm * 1000;
 
   return {
@@ -216,7 +217,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     bloom,
     mach: r.exitMach,
     // An aerospike's cells all feed one jet, wrapped around the spike's flat base.
-    exitRadiusM: cfg.aerospike
+    exitRadiusM: cfg.exhaust === 'aerospike'
       ? spikeJetRadius(cfg, r.effectiveExitDia, engineProfile(cfg).spike!.base.r)
       : r.effectiveExitDia / 2,
     intensity: clamp(fire, 0, 1) * (0.55 + 0.45 * throttle),

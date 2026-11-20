@@ -98,7 +98,7 @@ const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<H
     s.button.disabled = info.failure !== null;
   }
   if (info.failure) {
-    const copy = failureCopy(info.failure, store.get().config.propellant);
+    const copy = failureCopy(info.failure, store.get().config.energy);
     failureBox.querySelector('h2')!.textContent = copy.title;
     failureBox.querySelector('p')!.textContent = copy.text;
   }

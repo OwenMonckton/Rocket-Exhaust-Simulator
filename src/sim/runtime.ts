@@ -2,7 +2,8 @@ import { createRumble } from '../audio/rumble';
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
-import { PROPELLANTS, gasProps } from '../physics/propellants';
+import { ENERGY_SOURCES } from '../physics/parts';
+import { gasProps } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
@@ -121,8 +122,8 @@ export function createRuntime(
 
     // A solid motor burns its grain away while it fires, and goes out when there is none left.
     // Choosing a different engine casts a fresh grain.
-    const isSolid = state.config.propellant === 'solid';
-    const motor = `${state.config.presetId}|${state.config.propellant}`;
+    const isSolid = state.config.energy === 'solid';
+    const motor = `${state.config.presetId}|${state.config.energy}|${state.config.exhaust}|${state.config.propellant}`;
     if (motor !== burningMotor) burnt = 0;
     burningMotor = motor;
     if (isSolid && !failure && fire > 0.5) {
@@ -188,7 +189,7 @@ export function createRuntime(
     // a jet gives up its momentum within a few diameters in the engine's grid and dies inside
     // the bell. Those keep the simpler treatment: the engine's gas runs on its own, the view is
     // clipped to where the formula puts the jet, and the plume starts from the formula.
-    const lightExhaust = PROPELLANTS[state.config.propellant].mixKind === 'temperature';
+    const lightExhaust = ENERGY_SOURCES[state.config.energy].mixKind === 'temperature';
     // The engine's gas simulation follows the wall of a bell from the injector to the exit. An
     // aerospike has no such wall: its gas runs along the outside of a spike, with open air on the
     // other side. That is the plume grid's kind of flow, so with the plume simulated the spike
@@ -266,7 +267,7 @@ export function createRuntime(
       const cfg = state.config;
       // A solid motor's gas runs down the bore of its grain, and comes off the bore's surface
       // all the way along it, not in through the head of the motor.
-      const solid = cfg.propellant === 'solid';
+      const solid = cfg.energy === 'solid';
       for (let i = 0; i <= ENGINE_NX; i++) {
         const x = (i / ENGINE_NX) * engineExitX;
         radii[i] = solid ? Math.min(radiusAt(profile, x), grainBore(cfg, x, burnt)) : radiusAt(profile, x);
@@ -298,7 +299,7 @@ export function createRuntime(
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
       const exitPressure = Math.pow(exitTemp, g / (g - 1));
       // A different stretch of engine starts afresh, as a different engine does.
-      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.propellant}`;
+      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.energy}|${cfg.exhaust}|${cfg.propellant}`;
       if (engine !== simulatedEngine) {
         plume?.resetEngineSim();
         settledFrames = 0;
@@ -419,7 +420,7 @@ export function createRuntime(
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null, wholeNozzle, burnt }, w, h);
-    const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
+    const throttle = ENERGY_SOURCES[state.config.energy].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 
     // The readouts don't need to update every frame.

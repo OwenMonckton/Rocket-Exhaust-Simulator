@@ -1,4 +1,4 @@
-import type { ExpansionState, Failure, PropellantId } from '../physics/types';
+import type { EnergyId, ExpansionState, Failure } from '../physics/types';
 
 export const TIPS = {
   scale: 'Grows or shrinks the whole engine in proportion, walls included. Thrust grows with the square of size.',
@@ -80,7 +80,7 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
   meltdown: {
     title: 'Reactor core meltdown',
-    text: 'The reactor core ran hotter than its fuel elements can take and they broke up. Lower the core temperature. Hotter hydrogen is more efficient, which is why real nuclear engines run so close to this limit.',
+    text: 'The reactor core ran hotter than its fuel elements can take and they broke up. Lower the core temperature. Hotter propellant is more efficient, which is why real nuclear engines run so close to this limit.',
   },
   instability: {
     title: 'Combustion instability',
@@ -88,9 +88,9 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
 };
 
-/** Failure text, with wording specific to a propellant where the general wording would mislead. */
-export function failureCopy(failure: Exclude<Failure, null>, propellant: PropellantId): { title: string; text: string } {
-  if (propellant === 'saltwater' && failure === 'burnthrough') {
+/** Failure text, with wording specific to an energy source where the general wording would mislead. */
+export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): { title: string; text: string } {
+  if (energy === 'saltwater' && failure === 'burnthrough') {
     return {
       title: 'Nozzle vaporised',
       text: 'The fission reaction ran hotter than the layer of water protecting the nozzle could take. Turn down the reaction temperature, lower the chamber pressure or widen the throat.',

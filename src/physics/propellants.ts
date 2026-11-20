@@ -7,6 +7,7 @@ const R_UNIVERSAL = 8314.46;
 export const PROPELLANTS: Record<PropellantId, Propellant> = {
   kerolox: {
     id: 'kerolox',
+    energy: 'combustion',
     name: 'Kerolox',
     fuel: 'RP-1 kerosene',
     oxidiser: 'liquid oxygen',
@@ -14,9 +15,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 3.4,
     ofDefault: 2.36,
     lStarRef: 1.0,
-    instabilityRefDia: 1.15,
-    throttleable: true,
-    mixKind: 'ratio',
     table: [
       { of: 1.8, tc: 3050, gamma: 1.225, molarMass: 19.3 },
       { of: 2.1, tc: 3350, gamma: 1.21, molarMass: 20.9 },
@@ -40,6 +38,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   },
   hydrolox: {
     id: 'hydrolox',
+    energy: 'combustion',
     name: 'Hydrolox',
     fuel: 'liquid hydrogen',
     oxidiser: 'liquid oxygen',
@@ -47,9 +46,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 8.0,
     ofDefault: 6.0,
     lStarRef: 0.7,
-    instabilityRefDia: 1.15,
-    throttleable: true,
-    mixKind: 'ratio',
     table: [
       { of: 3.5, tc: 2650, gamma: 1.215, molarMass: 8.9 },
       { of: 4.5, tc: 3050, gamma: 1.195, molarMass: 10.8 },
@@ -73,6 +69,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   },
   methalox: {
     id: 'methalox',
+    energy: 'combustion',
     name: 'Methalox',
     fuel: 'liquid methane',
     oxidiser: 'liquid oxygen',
@@ -80,9 +77,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 4.2,
     ofDefault: 3.6,
     lStarRef: 0.9,
-    instabilityRefDia: 1.15,
-    throttleable: true,
-    mixKind: 'ratio',
     table: [
       { of: 2.6, tc: 3150, gamma: 1.185, molarMass: 18.3 },
       { of: 3.0, tc: 3400, gamma: 1.175, molarMass: 19.8 },
@@ -105,6 +99,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   },
   hypergolic: {
     id: 'hypergolic',
+    energy: 'combustion',
     name: 'Hypergolic',
     fuel: 'UDMH hydrazine',
     oxidiser: 'nitrogen tetroxide',
@@ -112,9 +107,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 3.2,
     ofDefault: 2.6,
     lStarRef: 0.8,
-    instabilityRefDia: 1.15,
-    throttleable: true,
-    mixKind: 'ratio',
     table: [
       { of: 1.6, tc: 2950, gamma: 1.225, molarMass: 20.0 },
       { of: 2.0, tc: 3200, gamma: 1.215, molarMass: 21.5 },
@@ -137,6 +129,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   },
   solid: {
     id: 'solid',
+    energy: 'solid',
     name: 'Solid (APCP)',
     fuel: 'aluminium + rubber binder',
     oxidiser: 'ammonium perchlorate',
@@ -144,9 +137,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 1,
     ofDefault: 1,
     lStarRef: 0,
-    instabilityRefDia: 4.0,
-    throttleable: false,
-    mixKind: 'none',
     table: [{ of: 1, tc: 3400, gamma: 1.18, molarMass: 28.5 }],
     look: {
       core: [1.0, 0.98, 0.9],
@@ -161,9 +151,10 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       particles: 1.0,
     },
   },
-  nuclear: {
-    id: 'nuclear',
-    name: 'Nuclear thermal',
+  'ntr-hydrogen': {
+    id: 'ntr-hydrogen',
+    energy: 'reactor',
+    name: 'Hydrogen',
     fuel: 'liquid hydrogen',
     oxidiser: 'a reactor to heat it',
     // For this propellant the "mixture" setting is the reactor core temperature in kelvin.
@@ -171,15 +162,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 3200,
     ofDefault: 2360,
     lStarRef: 0,
-    instabilityRefDia: 6.0,
-    throttleable: true,
-    mixKind: 'temperature',
-    mixLabel: {
-      label: 'Core temperature',
-      tip: 'How hot the reactor heats the hydrogen. Hotter is more efficient, until the core melts.',
-    },
-    // Temperature at which the reactor's fuel elements fail.
-    coreTempLimit: 2900,
     table: [
       { of: 1500, tc: 1500, gamma: 1.36, molarMass: 2.016 },
       { of: 2000, tc: 2000, gamma: 1.34, molarMass: 2.016 },
@@ -202,6 +184,7 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   },
   saltwater: {
     id: 'saltwater',
+    energy: 'saltwater',
     name: 'Nuclear salt water',
     fuel: 'uranium salt dissolved in water',
     oxidiser: 'its own fission to heat it',
@@ -211,16 +194,6 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
     ofMax: 1000000,
     ofDefault: 470000,
     lStarRef: 0,
-    instabilityRefDia: 8.0,
-    throttleable: true,
-    mixKind: 'temperature',
-    mixLabel: {
-      label: 'Reaction temperature',
-      tip: 'How fiercely the uranium fissions in the nozzle. Hotter is far more efficient, until the nozzle vaporises.',
-    },
-    // The reaction is held away from the walls by a layer of water, so they see only a
-    // small fraction of its temperature.
-    wallHeatFactor: 0.0225,
     table: [
       { of: 100000, tc: 100000, gamma: 1.3, molarMass: 6 },
       { of: 1000000, tc: 1000000, gamma: 1.3, molarMass: 6 },

@@ -162,10 +162,10 @@ export function drawEngine(
   ctx.clearRect(0, 0, widthPx, heightPx);
   const profile = engineProfile(cfg);
   const prop = PROPELLANTS[cfg.propellant];
-  const isSolid = cfg.propellant === 'solid';
-  const isNuclear = cfg.propellant === 'nuclear';
+  const isSolid = cfg.energy === 'solid';
+  const isNuclear = cfg.energy === 'reactor';
   // Engines fed a single propellant: hydrogen for nuclear thermal, uranium salt water otherwise.
-  const isSaltwater = cfg.propellant === 'saltwater';
+  const isSaltwater = cfg.energy === 'saltwater';
   const singleFeed = isNuclear || isSaltwater;
   const feedColour = isSaltwater ? '#9ad64f' : OX_COLOUR;
   const pts = profile.points;

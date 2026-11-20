@@ -1,4 +1,5 @@
 import { RANGES } from '../physics/engine';
+import { ENERGY_SOURCES } from '../physics/parts';
 import { PRESETS } from '../physics/presets';
 import { PROPELLANTS, PROPELLANT_IDS } from '../physics/propellants';
 import type { PropellantId } from '../physics/types';
@@ -46,12 +47,12 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     set: (v) => store.set({ config: { [key]: v } }),
     format: (v, s) => {
       // An aerospike's sliders size one thrust cell; its exit is the whole ring of cells.
-      const shown = key === 'exitDia' && s.config.aerospike ? v * Math.sqrt(s.config.chambers) : v;
+      const shown = key === 'exitDia' && s.config.exhaust === 'aerospike' ? v * Math.sqrt(s.config.chambers) : v;
       return key === 'exitDia'
         ? `${formatLength(shown)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`
         : formatLength(v);
     },
-    describe: (s) => (s.config.aerospike ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
+    describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
   });
 
   const groups: { title: string; sliders: SliderSpec[]; extra?: (box: HTMLElement) => void }[] = [
@@ -80,9 +81,9 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.config.nozzleLenPct,
           set: (v) => store.set({ config: { nozzleLenPct: Math.round(v) } }),
           format: (v, s) =>
-            s.config.aerospike ? `${Math.round(20 + (80 * (v - 60)) / 40)} % of a full spike` : `${Math.round(v)} %`,
+            s.config.exhaust === 'aerospike' ? `${Math.round(20 + (80 * (v - 60)) / 40)} % of a full spike` : `${Math.round(v)} %`,
           describe: (s) =>
-            s.config.aerospike
+            s.config.exhaust === 'aerospike'
               ? AEROSPIKE_DIMS.nozzleLenPct
               : { label: 'Nozzle length', tip: TIPS.nozzleLenPct },
         },
@@ -114,17 +115,17 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
             // Temperatures step in round numbers suited to their range: 10 K for a reactor core,
             // 10,000 K for a fission plasma.
             const step = Math.pow(10, Math.floor(Math.log10(p.ofMax - p.ofMin)) - 2);
-            const rounded = p.mixKind === 'temperature' ? Math.round(v / step) * step : Math.round(v * 100) / 100;
+            const rounded = ENERGY_SOURCES[store.get().config.energy].mixKind === 'temperature' ? Math.round(v / step) * step : Math.round(v * 100) / 100;
             store.set({ config: { mixtureRatio: rounded } });
           },
           format: (v, s) => {
-            const kind = PROPELLANTS[s.config.propellant].mixKind;
+            const kind = ENERGY_SOURCES[s.config.energy].mixKind;
             if (kind === 'ratio') return `${v.toFixed(2)} : 1`;
             return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
           },
-          disabled: (s) => PROPELLANTS[s.config.propellant].mixKind === 'none',
+          disabled: (s) => ENERGY_SOURCES[s.config.energy].mixKind === 'none',
           describe: (s) =>
-            PROPELLANTS[s.config.propellant].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
+            ENERGY_SOURCES[s.config.energy].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
         },
       ],
     },
@@ -148,8 +149,8 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.flight.throttle,
           set: (v) => store.set({ flight: { throttle: Math.round(v * 100) / 100 } }),
           format: (v, s) =>
-            PROPELLANTS[s.config.propellant].throttleable ? `${Math.round(v * 100)} %` : 'solids cannot throttle',
-          disabled: (s) => !PROPELLANTS[s.config.propellant].throttleable,
+            ENERGY_SOURCES[s.config.energy].throttleable ? `${Math.round(v * 100)} %` : 'solids cannot throttle',
+          disabled: (s) => !ENERGY_SOURCES[s.config.energy].throttleable,
         },
       ],
     },

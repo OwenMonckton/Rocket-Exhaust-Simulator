@@ -1,4 +1,7 @@
-export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid' | 'nuclear' | 'saltwater';
+export type PropellantId = 'kerolox' | 'hydrolox' | 'methalox' | 'hypergolic' | 'solid' | 'ntr-hydrogen' | 'saltwater';
+
+export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater';
+export type ExhaustId = 'bell' | 'aerospike';
 
 export type RGB = [number, number, number];
 
@@ -35,6 +38,8 @@ export interface PlumeLook {
 
 export interface Propellant {
   id: PropellantId;
+  /** The energy source this propellant is for */
+  energy: EnergyId;
   name: string;
   fuel: string;
   oxidiser: string;
@@ -43,30 +48,22 @@ export interface Propellant {
   ofDefault: number;
   /** Characteristic chamber length (m) needed for complete combustion; 0 = always complete */
   lStarRef: number;
-  /** Chamber diameter (m) at which combustion instability destroys the engine */
-  instabilityRefDia: number;
-  throttleable: boolean;
-  /**
-   * What the engine's `mixtureRatio` setting means for this propellant:
-   * 'ratio' is oxidiser-to-fuel mass ratio, 'temperature' is the temperature in K the propellant
-   * is heated to (nuclear engines: nothing burns), 'none' is fixed.
-   */
-  mixKind: 'ratio' | 'temperature' | 'none';
-  /** Name and one-line explanation of the temperature setting, for 'temperature' propellants */
-  mixLabel?: { label: string; tip: string };
-  /** Temperature (K) at which a solid reactor core fails; absent where there is no core to melt */
-  coreTempLimit?: number;
-  /**
-   * Fraction of the gas temperature the nozzle wall is exposed to (default 1). Far below 1 where
-   * the reaction is held away from the walls, as in a nuclear salt-water rocket.
-   */
-  wallHeatFactor?: number;
   table: { of: number; tc: number; gamma: number; molarMass: number }[];
   look: PlumeLook;
 }
 
 export interface EngineConfig {
   presetId: string | null;
+  /** Where the engine gets its energy: what heats the propellant */
+  energy: EnergyId;
+  /**
+   * How the gas leaves. With an 'aerospike' (XRS-2200), instead of a bell a ring of small thrust
+   * cells fires along a central spike, and the outside of the jet is bounded only by the
+   * surrounding air. `chambers` is then the number of thrust cells, and the dimensions below
+   * describe one cell, with `exitDia` the share of the spike's base that one cell's flow expands
+   * across. `nozzleLenPct` sets how much of a full-length spike is kept before it is cut off flat.
+   */
+  exhaust: ExhaustId;
   propellant: PropellantId;
   /** metres */
   chamberDia: number;
@@ -95,14 +92,6 @@ export interface EngineConfig {
    */
   extFixedDia: number;
   extDeploy: number;
-  /**
-   * Aerospike (XRS-2200): instead of a bell, a ring of small thrust cells fires along a central
-   * spike, and the outside of the jet is bounded only by the surrounding air. `chambers` is then
-   * the number of thrust cells, and the dimensions above describe one cell, with `exitDia` the
-   * share of the spike's base that one cell's flow expands across. `nozzleLenPct` sets how much
-   * of a full-length spike is kept before it is cut off flat.
-   */
-  aerospike: boolean;
 }
 
 export interface FlightState {

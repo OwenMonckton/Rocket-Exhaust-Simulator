@@ -1,7 +1,8 @@
 import { simulate } from './engine';
 import { SIGMA_ALLOW_BAR } from './limits';
+import { ENERGY_SOURCES } from './parts';
 import { PROPELLANTS } from './propellants';
-import type { EngineConfig, PropellantId } from './types';
+import type { EngineConfig, ExhaustId, PropellantId } from './types';
 
 export interface Preset {
   id: string;
@@ -31,8 +32,8 @@ interface Spec {
   structural: number;
   /** Number of identical chambers sharing one turbopump (default 1), or an aerospike's thrust cells */
   chambers?: number;
-  /** Thrust cells firing along a central spike instead of into a bell */
-  aerospike?: boolean;
+  /** How the gas leaves (default a bell) */
+  exhaust?: ExhaustId;
   published: Preset['published'];
 }
 
@@ -105,7 +106,7 @@ const SPECS: Spec[] = [
     id: 'nerva',
     name: 'NERVA',
     blurb: '1960s nuclear thermal engine. A reactor heats hydrogen instead of burning it, for roughly twice the efficiency of any chemical engine.',
-    propellant: 'nuclear', pcBar: 38.6, of: 2360, eps: 100, contraction: 6.0, lStar: 1.3,
+    propellant: 'ntr-hydrogen', pcBar: 38.6, of: 2360, eps: 100, contraction: 6.0, lStar: 1.3,
     nozzleLenPct: 80, structural: 0.4,
     published: { thrustKN: 246.7, atVacuum: true, ispVac: 841 },
   },
@@ -124,7 +125,7 @@ const SPECS: Spec[] = [
     blurb: 'Linear aerospike built for the X-33, test-fired but never flown. Twenty small thrust cells fire along a spike, and the outside air shapes the jet, so it suits every altitude.',
     // Dimensions are per thrust cell; the spike is cut off at about a third of its full length.
     propellant: 'hydrolox', pcBar: 58.9, of: 5.5, eps: 58, contraction: 2.0, lStar: 0.9,
-    nozzleLenPct: 65, structural: 0.4, chambers: 20, aerospike: true,
+    nozzleLenPct: 65, structural: 0.4, chambers: 20, exhaust: 'aerospike',
     published: { thrustKN: 917, atVacuum: false, ispSL: 338, ispVac: 428 },
   },
   {
@@ -150,6 +151,8 @@ function build(s: Spec): Preset {
         : round((s.lStar * at) / ((Math.PI / 4) * chamberDia ** 2));
     return {
       presetId: s.id,
+      energy: PROPELLANTS[s.propellant].energy,
+      exhaust: s.exhaust ?? 'bell',
       propellant: s.propellant,
       chamberDia,
       chamberLen,
@@ -158,13 +161,12 @@ function build(s: Spec): Preset {
       nozzleLenPct: s.nozzleLenPct,
       wall: round((s.pcBar * chamberDia) / (2 * SIGMA_ALLOW_BAR * s.structural)),
       chamberPressureBar: s.pcBar,
-      mixtureRatio: PROPELLANTS[s.propellant].throttleable ? s.of : PROPELLANTS[s.propellant].ofDefault,
+      mixtureRatio: ENERGY_SOURCES[PROPELLANTS[s.propellant].energy].throttleable ? s.of : PROPELLANTS[s.propellant].ofDefault,
       scale: 1,
       chambers: s.chambers ?? 1,
       // Deployable extension: stock engines have it seated.
       extFixedDia: s.epsStowed ? round(throatDia * Math.sqrt(s.epsStowed)) : 0,
       extDeploy: 1,
-      aerospike: s.aerospike ?? false,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };
