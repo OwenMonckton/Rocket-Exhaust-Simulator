@@ -8,7 +8,8 @@ export type ChemFailure = 'flameout' | 'inert' | 'detonation' | 'unsolved';
 export interface Verdict { failure: ChemFailure | null; notes: string[] }
 
 const DROPLET_NOTE_SHARE = 0.02;
-const lower = (name: string) => name.charAt(0).toLowerCase() + name.slice(1);
+// Lower-case the first letter for mid-sentence use, but leave acronyms (UDMH, RP-1) alone.
+const lower = (name: string) => (/[A-Z]/.test(name.charAt(1)) ? name : name.charAt(0).toLowerCase() + name.slice(1));
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
 export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verdict {
@@ -46,7 +47,8 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
     notes.push(`${Math.round(gas.condensedShare * 100)}% of the exhaust is liquid or solid droplets.`);
   }
   if (fuel === 'n2h4' && noOx) {
-    notes.push('On its own, the figure is the full breakdown; real thrusters stop the breakdown of ammonia part-way, so it is not what a real thruster gives.');
+    // Which way the figure errs is not established here, so the note only says it differs.
+    notes.push('Hydrazine alone breaks down into ammonia, hydrogen and nitrogen. Real thrusters stop that part-way, so this figure differs from what a real thruster gives.');
   }
   return { failure, notes };
 }
