@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { R_UNIVERSAL, REACTANTS } from './thermo';
 import { equilibrate, mixtureFrom, type Mixture } from './equilibrium';
 import { rocket } from './rocket';
+import { areaRatio, cStar, exitVelocity, pressureRatio } from '../nozzle';
 
 const G0 = 9.80665;
 
@@ -167,6 +168,58 @@ describe('rocket: chamber, throat and exit', () => {
     expect(r.ok).toBe(true);
     expect(relErr(r.cStar, 2274.40)).toBeLessThan(0.02);
     expect(relErr(r.ispVac, 4504.51)).toBeLessThan(0.02);
+  });
+
+  it('keeps an ordinary exit in equilibrium', () => {
+    expect(rocket(ex8Mix, flame(ex8Mix, 53.3172), 25).coldExit).toBe(false);
+  });
+
+  it('expands helium frozen below the data floor, as a perfect gas', () => {
+    const mix = mixtureFrom([{ reactant: REACTANTS['He'], massFraction: 1 }]);
+    const r = rocket(mix, { kind: 'tp', t: 2360, pBar: 30 }, 100);
+    expect(r.ok).toBe(true);
+    expect(r.coldExit).toBe(true);
+    expect(r.exit.t).toBeLessThan(200);
+    // Exact for a perfect gas: gamma 5/3, M 4.002602.
+    const g = 5 / 3;
+    const Rgas = R_UNIVERSAL / 4.002602;
+    let lo = 1, hi = 50;
+    for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (areaRatio(mid, g) < 100) lo = mid; else hi = mid; }
+    const mach = (lo + hi) / 2;
+    const isp = exitVelocity(mach, g, Rgas, 2360) + 100 * pressureRatio(mach, g) * cStar(g, Rgas, 2360);
+    expect(relErr(r.ispVac, isp)).toBeLessThan(0.003);
+  });
+
+  it('expands a hydrogen-rich exhaust frozen below the data floor', () => {
+    // At O/F 0.5 the exit would be near 110 K. (At O/F 1.0 it is 273 K: freezing water's heat
+    // keeps it warm, so that exit is in equilibrium.)
+    const mix = byRatio('H2(L)', 'O2(L)', 0.5);
+    const r = rocket(mix, flame(mix, 70), 40);
+    expect(r.ok).toBe(true);
+    expect(r.coldExit).toBe(true);
+    expect(r.exit.t).toBeLessThan(200);
+    expect(Number.isFinite(r.ispVac)).toBe(true);
+    const smaller = rocket(mix, flame(mix, 70), 20);
+    expect(smaller.ok).toBe(true);
+    expect(r.ispVac).toBeGreaterThan(smaller.ispVac);
+  });
+
+  it('joins the frozen and equilibrium exits without a step', () => {
+    // Step O/F up from 0.5 until the exit warms past the floor, then narrow that step to 0.001 in O/F,
+    // so the change across it is the switch itself and not the slope of Isp with mixture (about 2%
+    // per 0.05 here).
+    const at = (of: number) => { const mix = byRatio('H2(L)', 'O2(L)', of); return rocket(mix, flame(mix, 70), 40); };
+    let lo = 0.5;
+    expect(at(lo).coldExit).toBe(true);
+    let hi = lo;
+    while (at(hi).coldExit) { hi += 0.05; expect(hi).toBeLessThan(2); }
+    lo = hi - 0.05;
+    while (hi - lo > 1e-3) { const mid = (lo + hi) / 2; if (at(mid).coldExit) lo = mid; else hi = mid; }
+    const cold = at(lo);
+    const warm = at(hi);
+    expect(cold.ok && warm.ok).toBe(true);
+    expect(cold.coldExit && !warm.coldExit).toBe(true);
+    expect(relErr(warm.ispVac, cold.ispVac)).toBeLessThan(0.005);
   });
 
   it('expands a fluid heated to a fixed temperature', () => {

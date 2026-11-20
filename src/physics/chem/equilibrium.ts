@@ -9,6 +9,7 @@ export type Problem =
   | { kind: 'sp'; s: number; pBar: number }; // s in J/(kg K)
 export interface EqState {
   ok: boolean;              // false: did not settle; no other field may be shown
+  belowFloor: boolean;      // settled, but colder than the data covers (ok is then false): for rocket's cold exit only
   t: number; pBar: number;
   n: number;                // kmol of gas per kg
   species: Species[]; moles: Float64Array; // kmol per kg, same order
@@ -43,7 +44,7 @@ const CONDENSED_CHANGES = 50; // condensed species added, removed or swapped per
 // The lowest temperature NASA's data covers (no gas's fit starts below 200 K). Below it no condensed
 // species' range holds T, so none can join, and a gas-only state "settles" on extrapolated fits
 // (a beryllium-rich flame once came out at 86 K). Such a state is not an answer: ok is false.
-const T_FLOOR = 200;
+export const T_FLOOR = 200;
 
 /**
  * Gaussian elimination with partial pivoting on the m x (m + nr) row-major matrix g; the solutions
@@ -403,7 +404,7 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   for (const j of cond) condensedMass += moles[j] * list[j].molarMass;
 
   const state: EqState = {
-    ok: false,
+    ok: false, belowFloor: false,
     t, pBar: problem.pBar, n,
     species: list, moles, lnMoles,
     h: R * t * (sumNH + sumCH), s: R * (sumNS + sumCS),
@@ -412,6 +413,8 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     condensedMassFraction: condensedMass,
     iterations,
   };
-  state.ok = ok && derivOk && t >= T_FLOOR && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite);
+  const settled = ok && derivOk && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite);
+  state.ok = settled && t >= T_FLOOR;
+  state.belowFloor = settled && t < T_FLOOR;
   return state;
 }

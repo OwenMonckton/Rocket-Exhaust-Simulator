@@ -115,6 +115,19 @@ describe('pairRange', () => {
   });
 });
 
+describe('cold exits', () => {
+  it('gives an answer for a hydrogen-rich pair in a big nozzle', () => {
+    expect(solvePair('h2', 'lox', 1.0, 70, 40).ok).toBe(true);
+    expect(solvePair('h2', 'lox', 0.5, 70, 40).ok).toBe(true); // exit near 110 K, frozen below 200 K
+  });
+
+  it('fits helium heated in a reactor as the perfect gas it is', () => {
+    const gas = solveFluid('He', 2360, 30, 100);
+    expect(gas.ok).toBe(true);
+    expect(Math.abs(gas.gamma - 1.667)).toBeLessThan(0.01);
+  });
+});
+
 describe('solveFluid', () => {
   it('expands a fluid heated to a set temperature', () => {
     const gas = solveFluid('NH3(L)', 2800, 55, 100);
