@@ -2,7 +2,8 @@ import { createRumble } from '../audio/rumble';
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
-import { PROPELLANTS, gasProps } from '../physics/propellants';
+import { ENERGY_SOURCES } from '../physics/parts';
+import { gasProps } from '../physics/propellants';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
@@ -32,6 +33,8 @@ export interface Runtime {
   /** Start an altitude sweep in a direction (1 up, -1 down), or pause it if already running that way. */
   toggleSweep(direction: 1 | -1): void;
   rebuild(): void;
+  /** Clear away a failure and a part-burnt grain, for an engine chosen whole (a new engine or an example) rather than rebuilt. */
+  clearFailure(): void;
   setOverlay(o: FlowOverlay): void;
   setMuted(m: boolean): void;
   /** Prototype: draw the plume from the gas simulation instead of the hand-shaped model. */
@@ -61,6 +64,11 @@ const SETTLE_FRAMES = 60;
 const READ_EVERY_S = 1;
 /** How long a solid motor's grain lasts at full burn. Longer than an altitude sweep, so one motor can fly it. */
 const SOLID_BURN_S = 60;
+/**
+ * Exhaust lighter than this (kg/kmol) is too light for the engine's grid to carry a separated jet
+ * of: hot hydrogen (2), helium (4) and a salt-water engine's gas (6). No flame is this light.
+ */
+const LIGHT_EXHAUST_MOLAR_MASS = 7;
 export const ZOOM_MIN = 0.3;
 export const ZOOM_MAX = 1.4;
 
@@ -121,8 +129,8 @@ export function createRuntime(
 
     // A solid motor burns its grain away while it fires, and goes out when there is none left.
     // Choosing a different engine casts a fresh grain.
-    const isSolid = state.config.propellant === 'solid';
-    const motor = `${state.config.presetId}|${state.config.propellant}`;
+    const isSolid = state.config.energy === 'solid';
+    const motor = `${state.config.presetId}|${state.config.energy}|${state.config.exhaust}|${state.config.propellant}`;
     if (motor !== burningMotor) burnt = 0;
     burningMotor = motor;
     if (isSolid && !failure && fire > 0.5) {
@@ -183,12 +191,14 @@ export function createRuntime(
     // whether outside air gets in. Nothing is taken from the formula that says where the jet
     // tears off the wall, so everything is laid out as if the gas filled the whole nozzle.
     //
-    // One exception: a separated jet of very light exhaust (hot hydrogen from a nuclear engine,
-    // or a salt-water engine's far hotter gas). Beside outside air dozens of times denser, such
+    // One exception: a separated jet of very light exhaust (hot hydrogen or helium from a nuclear
+    // engine, or a salt-water engine's far hotter gas). Beside outside air dozens of times denser, such
     // a jet gives up its momentum within a few diameters in the engine's grid and dies inside
     // the bell. Those keep the simpler treatment: the engine's gas runs on its own, the view is
     // clipped to where the formula puts the jet, and the plume starts from the formula.
-    const lightExhaust = PROPELLANTS[state.config.propellant].mixKind === 'temperature';
+    // It is the gas that decides, not the engine: a reactor heating water or carbon dioxide has
+    // exhaust as heavy as a flame's.
+    const lightExhaust = gasProps(state.config.propellant, state.config.mixtureRatio).molarMass < LIGHT_EXHAUST_MOLAR_MASS;
     // The engine's gas simulation follows the wall of a bell from the injector to the exit. An
     // aerospike has no such wall: its gas runs along the outside of a spike, with open air on the
     // other side. That is the plume grid's kind of flow, so with the plume simulated the spike
@@ -266,7 +276,7 @@ export function createRuntime(
       const cfg = state.config;
       // A solid motor's gas runs down the bore of its grain, and comes off the bore's surface
       // all the way along it, not in through the head of the motor.
-      const solid = cfg.propellant === 'solid';
+      const solid = cfg.energy === 'solid';
       for (let i = 0; i <= ENGINE_NX; i++) {
         const x = (i / ENGINE_NX) * engineExitX;
         radii[i] = solid ? Math.min(radiusAt(profile, x), grainBore(cfg, x, burnt)) : radiusAt(profile, x);
@@ -298,7 +308,7 @@ export function createRuntime(
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
       const exitPressure = Math.pow(exitTemp, g / (g - 1));
       // A different stretch of engine starts afresh, as a different engine does.
-      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.propellant}`;
+      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.energy}|${cfg.exhaust}|${cfg.propellant}`;
       if (engine !== simulatedEngine) {
         plume?.resetEngineSim();
         settledFrames = 0;
@@ -419,7 +429,7 @@ export function createRuntime(
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null, wholeNozzle, burnt }, w, h);
-    const throttle = PROPELLANTS[state.config.propellant].throttleable ? state.flight.throttle : 1;
+    const throttle = ENERGY_SOURCES[state.config.energy].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 
     // The readouts don't need to update every frame.
@@ -481,6 +491,16 @@ export function createRuntime(
       fire = 0;
       firing = false;
       store.replace(lastGood);
+    },
+    clearFailure() {
+      // A whole engine comes with a fresh grain, even where the last one had not failed.
+      burnt = 0;
+      if (!failure) return;
+      failure = null;
+      failT = 0;
+      fire = 0;
+      firing = false;
+      // The engine chosen next becomes the one to rebuild when the store announces it.
     },
     setZoom(z) {
       zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));

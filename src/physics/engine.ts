@@ -8,6 +8,7 @@ import {
   machFromPressureRatio,
   pressureRatio,
 } from './nozzle';
+import { ENERGY_SOURCES, isEnergyId, isExhaustId, propellantsFor } from './parts';
 import { PROPELLANTS, clampMixture, gasProps, isPropellantId } from './propellants';
 import type { EngineConfig, ExpansionState, FlightState, SimResult } from './types';
 
@@ -56,17 +57,24 @@ function clampTo(v: unknown, r: Range): number {
 
 /** Force a config into a physically drawable, computable shape. Never throws. */
 export function sanitize(cfg: EngineConfig): EngineConfig {
-  const propellant = isPropellantId(cfg.propellant) ? cfg.propellant : 'kerolox';
+  // The three parts always agree: a source the engine doesn't know is worked out from the
+  // propellant, and a propellant the source can't use is swapped for its first one.
+  const known = isPropellantId(cfg.propellant) ? cfg.propellant : null;
+  const energy = isEnergyId(cfg.energy) ? cfg.energy : known ? PROPELLANTS[known].energy : 'combustion';
+  const propellant = known && PROPELLANTS[known].energy === energy ? known : propellantsFor(energy)[0];
   const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
   const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
   // An aerospike has no bell to extend.
-  const aerospike = cfg.aerospike === true;
+  const exhaust = isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
+  const aerospike = exhaust === 'aerospike';
   let extFixedDia = clampTo(cfg.extFixedDia, RANGES.extFixedDia);
   if (aerospike || extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
   return {
     presetId: typeof cfg.presetId === 'string' ? cfg.presetId : null,
+    energy,
+    exhaust,
     propellant,
     chamberDia,
     chamberLen: clampTo(cfg.chamberLen, RANGES.chamberLen),
@@ -80,7 +88,6 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     chambers: Math.round(clampTo(cfg.chambers, aerospike ? RANGES.cells : RANGES.chambers)),
     extFixedDia,
     extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
-    aerospike,
   };
 }
 
@@ -112,13 +119,14 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const cfg = sanitize(rawCfg);
   const flight = sanitizeFlight(rawFlight);
   const prop = PROPELLANTS[cfg.propellant];
-  const throttle = prop.throttleable ? flight.throttle : 1;
+  const source = ENERGY_SOURCES[cfg.energy];
+  const throttle = source.throttleable ? flight.throttle : 1;
   const pcBar = cfg.chamberPressureBar * throttle;
   const pc = pcBar * 1e5;
   const table = gasProps(cfg.propellant, cfg.mixtureRatio);
   // Higher pressure suppresses dissociation, so a flame runs a little hotter.
   // A reactor-heated gas is simply as hot as the reactor core.
-  const gas = prop.mixKind === 'temperature' ? table : { ...table, tc: table.tc * Math.pow(pcBar / 70, 0.03) };
+  const gas = source.mixKind === 'temperature' ? table : { ...table, tc: table.tc * Math.pow(pcBar / 70, 0.03) };
   const g = gas.gamma;
 
   const at = (Math.PI / 4) * cfg.throatDia ** 2;
@@ -133,7 +141,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const shudder = Math.min(1, Math.max(0, (limits.instability - 0.7) / 0.3));
   const span = prop.ofMax - prop.ofMin;
   const rough =
-    prop.mixKind === 'ratio' &&
+    source.mixKind === 'ratio' &&
     span > 0 &&
     (cfg.mixtureRatio - prop.ofMin < 0.04 * span || prop.ofMax - cfg.mixtureRatio < 0.04 * span);
 
@@ -181,7 +189,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     }
     let ve = exitVelocity(mach, g, gas.R, gas.tc);
     let thrust = nozzleEff * idealFlow * ve + (pExit - pa) * area;
-    if (cfg.aerospike && pa > 0 && pe < pa) {
+    if (cfg.exhaust === 'aerospike' && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
       // aerospike's jet, so below its design altitude the air squeezes the jet in until it leaves
       // at the outside pressure: it never over-expands and never separates.

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { simulate } from '../physics/engine';
+import { sanitize, simulate } from '../physics/engine';
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { PRESETS } from '../physics/presets';
-import { engineProfile, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
+import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
+import { engineProfile, grainLabel, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
 
 describe('engine profile', () => {
-  for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
+  for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
     it(`${p.name} has a sane contour`, () => {
       const cfg = p.config;
       const prof = engineProfile(cfg);
@@ -26,7 +27,7 @@ describe('engine profile', () => {
     });
   }
   it('turns the wall out of the throat along an arc, with no corner', () => {
-    for (const p of PRESETS.filter((q) => !q.config.aerospike)) {
+    for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
       const cfg = p.config;
       const prof = engineProfile(cfg);
       const bell = prof.points.filter((q) => q.x >= prof.throatX - 1e-12);
@@ -204,5 +205,39 @@ describe('engine profile', () => {
       expect(v.originX + prof.length * v.ppm).toBeLessThan(0.5 * 1200);
       expect(2 * prof.maxRadius * v.ppm).toBeLessThanOrEqual(0.55 * 600 + 1e-6);
     }
+  });
+});
+
+describe('thrust cell count (review focus)', () => {
+  const allFinite = (v: unknown, path = 'profile'): void => {
+    if (typeof v === 'number') expect(Number.isFinite(v), path).toBe(true);
+    else if (Array.isArray(v)) v.forEach((x, i) => allFinite(x, `${path}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) allFinite(x, `${path}.${k}`);
+  };
+  for (const cells of [1, 2, 40]) {
+    it(`draws and runs an aerospike with ${cells} thrust cells`, () => {
+      const cfg = sanitize({ ...withExhaust(starterEngine(), 'aerospike'), chambers: cells });
+      expect(cfg.chambers).toBe(cells);
+      const profile = engineProfile(cfg);
+      expect(profile.spike).toBeDefined();
+      allFinite(profile);
+      for (const altitudeKm of [0, 100]) {
+        const r = simulate(cfg, { altitudeKm, throttle: 1 });
+        expect(Number.isFinite(r.thrust)).toBe(true);
+        expect(r.thrust).toBeGreaterThan(0);
+      }
+    });
+  }
+});
+
+describe('solid motor grain label (final review)', () => {
+  const motor = withEnergy(starterEngine(), 'solid');
+  it('says how much propellant is left, on a bell or an aerospike', () => {
+    expect(grainLabel(motor, 0)).toBe('Propellant left: 100%');
+    expect(grainLabel(withExhaust(motor, 'aerospike'), 0)).toBe('Propellant left: 100%');
+    expect(grainLabel(motor, 0.5)).toMatch(/^Propellant left: \d+%$/);
+  });
+  it('says so when the motor has burnt out', () => {
+    expect(grainLabel(withExhaust(motor, 'aerospike'), 1)).toBe('Burnt out. Fire loads a fresh motor.');
   });
 });

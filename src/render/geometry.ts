@@ -103,7 +103,7 @@ const DEG = Math.PI / 180;
 
 /** Inner wall contour: cylinder, smooth converging section, parabolic bell. */
 export function engineProfile(cfg: EngineConfig): EngineProfile {
-  if (cfg.aerospike) return aerospikeProfile(cfg);
+  if (cfg.exhaust === 'aerospike') return aerospikeProfile(cfg);
   const rc = cfg.chamberDia / 2;
   const rt = cfg.throatDia / 2;
   const re = cfg.exitDia / 2;
@@ -423,6 +423,12 @@ export function grainBore(cfg: EngineConfig, x: number, burnt = 0): number {
   if (x <= coneEnd) return tip + (mouth - tip) * Math.max(0, x / coneEnd) + burnedBack;
   const t = (x - coneEnd) / chamfer;
   return mouth + (rc - mouth) * t * t * (3 - 2 * t) + burnedBack;
+}
+
+/** What to say under a solid motor about its grain. */
+export function grainLabel(cfg: EngineConfig, burnt: number): string {
+  const left = grainLeft(cfg, burnt);
+  return left > 0.005 ? `Propellant left: ${Math.round(left * 100)}%` : 'Burnt out. Fire loads a fresh motor.';
 }
 
 /** How much of a solid motor's propellant is left, as a fraction of a fresh grain. */

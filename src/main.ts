@@ -3,7 +3,7 @@ import type { FlowOverlay } from './render/engineView';
 import { createRuntime, type PlumeMode } from './sim/runtime';
 import { decodeState, encodeState } from './state/share';
 import { createStore, defaultState, isModified } from './state/store';
-import { createControls, fillPresetSelect } from './ui/controls';
+import { NEW_ENGINE, createControls, fillPresetSelect } from './ui/controls';
 import { TIPS, failureCopy } from './ui/copy';
 import { createReadouts } from './ui/readouts';
 
@@ -16,10 +16,18 @@ const presetSelect = $<HTMLSelectElement>('preset');
 const resetBtn = $<HTMLButtonElement>('reset');
 const blurb = $('blurb');
 fillPresetSelect(presetSelect);
-presetSelect.addEventListener('change', () => store.loadPreset(presetSelect.value));
+// Choosing a whole engine clears away the wreck of the last one. The store tells the runtime
+// about the new engine, which becomes the one Rebuild goes back to.
+presetSelect.addEventListener('change', () => {
+  runtime.clearFailure();
+  if (presetSelect.value === NEW_ENGINE) store.newEngine();
+  else store.loadPreset(presetSelect.value);
+});
 resetBtn.addEventListener('click', () => {
   const id = store.get().config.presetId;
-  if (id) store.loadPreset(id);
+  if (!id) return;
+  runtime.clearFailure();
+  store.loadPreset(id);
 });
 
 // Deployable nozzle extension (RL10B-2): slides between its stowed and deployed sizes.
@@ -62,7 +70,7 @@ const syncHeader = () => {
   deployBtn.textContent = heading === 1 ? 'Stow nozzle' : 'Deploy nozzle';
   presetSelect.value = preset ? preset.id : '';
   resetBtn.disabled = !modified;
-  blurb.textContent = preset ? (modified ? `Modified ${preset.name}. ` : '') + preset.blurb : 'Custom engine.';
+  blurb.textContent = preset ? (modified ? `Modified ${preset.name}. ` : '') + preset.blurb : 'Your own engine. Pick its parts on the left, or start from an example.';
 };
 store.subscribe(syncHeader);
 syncHeader();
@@ -98,7 +106,7 @@ const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<H
     s.button.disabled = info.failure !== null;
   }
   if (info.failure) {
-    const copy = failureCopy(info.failure, store.get().config.propellant);
+    const copy = failureCopy(info.failure, store.get().config.energy);
     failureBox.querySelector('h2')!.textContent = copy.title;
     failureBox.querySelector('p')!.textContent = copy.text;
   }
@@ -180,7 +188,11 @@ store.subscribe(() => {
 });
 window.addEventListener('hashchange', () => {
   const next = decodeState(location.hash);
-  if (next && encodeState(next) !== encodeState(store.get())) store.replace(next);
+  if (next && encodeState(next) !== encodeState(store.get())) {
+    // A link is a whole engine too.
+    runtime.clearFailure();
+    store.replace(next);
+  }
 });
 
 const toast = $('toast');

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from './engine';
-import { DEFAULT_PRESET_ID, PRESETS, getPreset } from './presets';
+import { PRESETS, getPreset } from './presets';
 
 const within = (actual: number, target: number, tol = 0.1) =>
   expect(Math.abs(actual - target) / target, `${actual} vs ${target}`).toBeLessThan(tol);
@@ -114,7 +114,7 @@ describe('presets', () => {
     expect(all.limits).toEqual(one.limits);
     // Four small chambers are far less prone to instability than one big one of the same thrust.
     expect(all.limits.instability).toBeLessThan(0.3);
-    expect(PRESETS.filter((p) => p.config.chambers > 1 && !p.config.aerospike).map((p) => p.id)).toEqual(['rd-180', 'rd-170']);
+    expect(PRESETS.filter((p) => p.config.chambers > 1 && p.config.exhaust !== 'aerospike').map((p) => p.id)).toEqual(['rd-180', 'rd-170']);
     // The RD-180 is half an RD-170: two chambers of nearly the same size.
     const rd180 = getPreset('rd-180')!.config;
     expect(rd180.chambers).toBe(2);
@@ -124,12 +124,12 @@ describe('presets', () => {
 
   it('gives the XRS-2200 aerospike a jet the air shapes at every altitude below its design', () => {
     const xrs = getPreset('xrs-2200')!.config;
-    expect(xrs.aerospike).toBe(true);
+    expect(xrs.exhaust).toBe('aerospike');
     expect(xrs.chambers).toBe(20);
-    expect(PRESETS.filter((p) => p.config.aerospike).map((p) => p.id)).toEqual(['xrs-2200']);
+    expect(PRESETS.filter((p) => p.config.exhaust === 'aerospike').map((p) => p.id)).toEqual(['xrs-2200']);
     // The same cells and expansion ratio with a bell instead. A bell engine has at most four
     // chambers, so compare Isp, not thrust.
-    const bell = { ...xrs, aerospike: false };
+    const bell = { ...xrs, exhaust: 'bell' as const };
     const at = (cfg: typeof xrs, altitudeKm: number) => simulate(cfg, { altitudeKm, throttle: 1 });
     // Below its design altitude it never over-expands or separates: the exhaust leaves at the
     // outside pressure, and it beats a bell of the same size.
@@ -161,8 +161,8 @@ describe('presets', () => {
     expect(at(xrs, 0).limits.instability).toBeLessThan(0.2);
   });
 
-  it('has a default preset', () => {
-    expect(getPreset(DEFAULT_PRESET_ID)).toBeDefined();
+  it('finds an example by its id', () => {
+    expect(getPreset('merlin-1d')).toBeDefined();
     expect(getPreset('nope')).toBeUndefined();
   });
 });

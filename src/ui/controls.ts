@@ -1,15 +1,21 @@
 import { RANGES } from '../physics/engine';
+import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
 import { PRESETS } from '../physics/presets';
-import { PROPELLANTS, PROPELLANT_IDS } from '../physics/propellants';
-import type { PropellantId } from '../physics/types';
+import { PROPELLANTS } from '../physics/propellants';
+import type { EnergyId, ExhaustId, PropellantId } from '../physics/types';
 import type { AppState, Store } from '../state/store';
-import { AEROSPIKE_DIMS, TIPS } from './copy';
+import { AEROSPIKE_DIMS, COUNT_COPY, TIPS } from './copy';
 
 interface SliderSpec {
   id: string;
   label: string;
   tip: string;
   log?: boolean;
+  /**
+   * The size of one step of the setting. The slider then runs over the range itself in steps of
+   * this size, so an arrow key always moves it; without one it runs over a thousand positions.
+   */
+  step?(s: AppState): number;
   range(s: AppState): { min: number; max: number };
   get(s: AppState): number;
   set(v: number): void;
@@ -18,6 +24,21 @@ interface SliderSpec {
   /** Label and tooltip that depend on the engine (overrides `label` and `tip`) */
   describe?(s: AppState): { label: string; tip: string };
 }
+
+/** A menu that picks one of the engine's parts. */
+interface SelectSpec {
+  id: string;
+  label: string;
+  tip: string;
+  options(s: AppState): { value: string; label: string; tip?: string }[];
+  get(s: AppState): string;
+  set(v: string): void;
+  /** A line of small print under the menu */
+  note?(s: AppState): string;
+}
+
+/** Value of the Examples menu entry that starts a blank engine. */
+export const NEW_ENGINE = '__new';
 
 const STEPS = 1000;
 
@@ -46,15 +67,64 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     set: (v) => store.set({ config: { [key]: v } }),
     format: (v, s) => {
       // An aerospike's sliders size one thrust cell; its exit is the whole ring of cells.
-      const shown = key === 'exitDia' && s.config.aerospike ? v * Math.sqrt(s.config.chambers) : v;
+      const shown = key === 'exitDia' && s.config.exhaust === 'aerospike' ? v * Math.sqrt(s.config.chambers) : v;
       return key === 'exitDia'
         ? `${formatLength(shown)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`
         : formatLength(v);
     },
-    describe: (s) => (s.config.aerospike ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
+    describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
   });
 
-  const groups: { title: string; sliders: SliderSpec[]; extra?: (box: HTMLElement) => void }[] = [
+  /**
+   * One step of the mixture setting: a hundredth for a mixture ratio; for a temperature a round
+   * number suited to its range, 10 K for a reactor core and 1,000 K for a fission reaction.
+   */
+  const mixStep = (s: AppState) => {
+    const p = PROPELLANTS[s.config.propellant];
+    const span = p.ofMax - p.ofMin;
+    return ENERGY_SOURCES[s.config.energy].mixKind === 'temperature' && span > 0
+      ? Math.pow(10, Math.floor(Math.log10(span)) - 2)
+      : 0.01;
+  };
+
+  const groups: { title: string; selects?: SelectSpec[]; sliders: SliderSpec[] }[] = [
+    {
+      title: 'Parts',
+      selects: [
+        {
+          id: 'energy',
+          label: 'Energy source',
+          tip: TIPS.energy,
+          options: () => ENERGY_IDS.map((id) => ({ value: id, label: ENERGY_SOURCES[id].name, tip: ENERGY_SOURCES[id].tip })),
+          get: (s) => s.config.energy,
+          set: (v) => store.setEnergy(v as EnergyId),
+          note: (s) => ENERGY_SOURCES[s.config.energy].tip,
+        },
+        {
+          id: 'exhaust',
+          label: 'Exhaust',
+          tip: TIPS.exhaust,
+          options: () => EXHAUST_IDS.map((id) => ({ value: id, label: EXHAUSTS[id].name, tip: EXHAUSTS[id].tip })),
+          get: (s) => s.config.exhaust,
+          set: (v) => store.setExhaust(v as ExhaustId),
+          note: (s) => EXHAUSTS[s.config.exhaust].tip,
+        },
+        {
+          id: 'propellant',
+          label: 'Propellant',
+          tip: TIPS.propellant,
+          // Only what this energy source can use.
+          options: (s) => propellantsFor(s.config.energy).map((id) => ({ value: id, label: PROPELLANTS[id].name, tip: PROPELLANTS[id].tip })),
+          get: (s) => s.config.propellant,
+          set: (v) => store.set({ config: { propellant: v as PropellantId } }),
+          note: (s) => {
+            const p = PROPELLANTS[s.config.propellant];
+            return `${p.fuel} + ${p.oxidiser}`;
+          },
+        },
+      ],
+      sliders: [],
+    },
     {
       title: 'Engine',
       sliders: [
@@ -68,6 +138,17 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           set: (v) => store.setScale(v),
           format: (v) => `× ${v.toFixed(2)}`,
         },
+        {
+          id: 'chambers',
+          label: COUNT_COPY.bell.label,
+          tip: COUNT_COPY.bell.tip,
+          step: () => 1,
+          range: (s) => (s.config.exhaust === 'aerospike' ? RANGES.cells : RANGES.chambers),
+          get: (s) => s.config.chambers,
+          set: (v) => store.set({ config: { chambers: Math.round(v) } }),
+          format: (v) => String(Math.round(v)),
+          describe: (s) => COUNT_COPY[s.config.exhaust],
+        },
         dim('chamberDia', 'Chamber diameter'),
         dim('chamberLen', 'Chamber length'),
         dim('throatDia', 'Throat diameter'),
@@ -76,13 +157,14 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'nozzleLenPct',
           label: 'Nozzle length',
           tip: TIPS.nozzleLenPct,
+          step: () => 1,
           range: () => RANGES.nozzleLenPct,
           get: (s) => s.config.nozzleLenPct,
           set: (v) => store.set({ config: { nozzleLenPct: Math.round(v) } }),
           format: (v, s) =>
-            s.config.aerospike ? `${Math.round(20 + (80 * (v - 60)) / 40)} % of a full spike` : `${Math.round(v)} %`,
+            s.config.exhaust === 'aerospike' ? `${Math.round(20 + (80 * (v - 60)) / 40)} % of a full spike` : `${Math.round(v)} %`,
           describe: (s) =>
-            s.config.aerospike
+            s.config.exhaust === 'aerospike'
               ? AEROSPIKE_DIMS.nozzleLenPct
               : { label: 'Nozzle length', tip: TIPS.nozzleLenPct },
         },
@@ -90,6 +172,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'chamberPressureBar',
           label: 'Chamber pressure',
           tip: TIPS.chamberPressureBar,
+          step: () => 1,
           range: () => RANGES.chamberPressureBar,
           get: (s) => s.config.chamberPressureBar,
           set: (v) => store.set({ config: { chamberPressureBar: Math.round(v) } }),
@@ -104,27 +187,24 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'mixtureRatio',
           label: 'Mixture ratio',
           tip: TIPS.mixtureRatio,
+          step: (s) => mixStep(s),
           range: (s) => {
             const p = PROPELLANTS[s.config.propellant];
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
           },
           get: (s) => s.config.mixtureRatio,
           set: (v) => {
-            const p = PROPELLANTS[store.get().config.propellant];
-            // Temperatures step in round numbers suited to their range: 10 K for a reactor core,
-            // 10,000 K for a fission plasma.
-            const step = Math.pow(10, Math.floor(Math.log10(p.ofMax - p.ofMin)) - 2);
-            const rounded = p.mixKind === 'temperature' ? Math.round(v / step) * step : Math.round(v * 100) / 100;
-            store.set({ config: { mixtureRatio: rounded } });
+            const step = mixStep(store.get());
+            store.set({ config: { mixtureRatio: Math.round(v / step) * step } });
           },
           format: (v, s) => {
-            const kind = PROPELLANTS[s.config.propellant].mixKind;
+            const kind = ENERGY_SOURCES[s.config.energy].mixKind;
             if (kind === 'ratio') return `${v.toFixed(2)} : 1`;
             return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
           },
-          disabled: (s) => PROPELLANTS[s.config.propellant].mixKind === 'none',
+          disabled: (s) => ENERGY_SOURCES[s.config.energy].mixKind === 'none',
           describe: (s) =>
-            PROPELLANTS[s.config.propellant].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
+            ENERGY_SOURCES[s.config.energy].mixLabel ?? { label: 'Mixture ratio', tip: TIPS.mixtureRatio },
         },
       ],
     },
@@ -144,12 +224,13 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'throttle',
           label: 'Throttle',
           tip: TIPS.throttle,
+          step: () => 0.01,
           range: () => RANGES.throttle,
           get: (s) => s.flight.throttle,
           set: (v) => store.set({ flight: { throttle: Math.round(v * 100) / 100 } }),
           format: (v, s) =>
-            PROPELLANTS[s.config.propellant].throttleable ? `${Math.round(v * 100)} %` : 'solids cannot throttle',
-          disabled: (s) => !PROPELLANTS[s.config.propellant].throttleable,
+            ENERGY_SOURCES[s.config.energy].throttleable ? `${Math.round(v * 100)} %` : 'solids cannot throttle',
+          disabled: (s) => !ENERGY_SOURCES[s.config.energy].throttleable,
         },
       ],
     },
@@ -157,33 +238,39 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
 
   const syncers: ((s: AppState) => void)[] = [];
 
-  const propellantSelect = el('select');
-  propellantSelect.id = 'propellant';
-  for (const id of PROPELLANT_IDS) {
-    const opt = el('option', undefined, PROPELLANTS[id].name);
-    opt.value = id;
-    propellantSelect.append(opt);
-  }
-  const propellantNote = el('p', 'note');
-  propellantSelect.addEventListener('change', () =>
-    store.set({ config: { propellant: propellantSelect.value as PropellantId } }),
-  );
-  syncers.push((s) => {
-    propellantSelect.value = s.config.propellant;
-    const p = PROPELLANTS[s.config.propellant];
-    propellantNote.textContent = `${p.fuel} + ${p.oxidiser}`;
-  });
-
   for (const group of groups) {
     const box = el('section', 'group');
     box.append(el('h2', undefined, group.title));
-    if (group.title === 'Propellant') {
+    for (const spec of group.selects ?? []) {
       const row = el('label', 'row');
-      row.title = TIPS.propellant;
+      row.title = spec.tip;
       const head = el('span', 'row-head');
-      head.append(el('span', 'name', 'Type'));
-      row.append(head, propellantSelect, propellantNote);
+      head.append(el('span', 'name', spec.label));
+      const select = el('select');
+      select.id = spec.id;
+      const note = el('p', 'note');
+      row.append(head, select, note);
       box.append(row);
+      select.addEventListener('change', () => spec.set(select.value));
+      // The menu is only rebuilt when what it offers changes, so it stays open while in use.
+      let offered = '';
+      syncers.push((s) => {
+        const options = spec.options(s);
+        const key = options.map((o) => o.value).join('|');
+        if (key !== offered) {
+          offered = key;
+          select.replaceChildren(
+            ...options.map((o) => {
+              const opt = el('option', undefined, o.label);
+              opt.value = o.value;
+              if (o.tip) opt.title = o.tip;
+              return opt;
+            }),
+          );
+        }
+        select.value = spec.get(s);
+        note.textContent = spec.note?.(s) ?? '';
+      });
     }
     for (const spec of group.sliders) {
       const row = el('label', 'row');
@@ -202,11 +289,13 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       box.append(row);
 
       const toValue = (pos: number, s: AppState) => {
+        if (spec.step) return pos;
         const { min, max } = spec.range(s);
         const f = pos / STEPS;
         return spec.log ? min * Math.pow(max / min, f) : min + (max - min) * f;
       };
       const toPos = (v: number, s: AppState) => {
+        if (spec.step) return v;
         const { min, max } = spec.range(s);
         const f = spec.log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
         return Math.round(Math.min(1, Math.max(0, f)) * STEPS);
@@ -214,8 +303,16 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));
       syncers.push((s) => {
         const v = spec.get(s);
+        if (spec.step) {
+          // The slider's own ends and step are the setting's, which change with the engine's parts.
+          const { min, max } = spec.range(s);
+          const step = String(spec.step(s));
+          if (input.min !== String(min)) input.min = String(min);
+          if (input.max !== String(max)) input.max = String(max);
+          if (input.step !== step) input.step = step;
+        }
         const pos = String(toPos(v, s));
-        if (input.value !== pos) input.value = pos;
+        if (Number(input.value) !== Number(pos)) input.value = pos;
         value.textContent = spec.format(v, s);
         const text = spec.describe?.(s);
         if (text) {
@@ -237,12 +334,16 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
 }
 
 export function fillPresetSelect(select: HTMLSelectElement): void {
+  const fresh = el('option', undefined, 'New engine');
+  fresh.value = NEW_ENGINE;
+  fresh.title = 'Start again from a blank engine.';
+  select.append(fresh);
   for (const p of PRESETS) {
     const opt = el('option', undefined, p.name);
     opt.value = p.id;
     select.append(opt);
   }
-  const custom = el('option', undefined, 'Custom engine');
+  const custom = el('option', undefined, 'Your engine');
   custom.value = '';
   custom.hidden = true;
   select.append(custom);

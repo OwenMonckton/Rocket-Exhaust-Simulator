@@ -1,7 +1,8 @@
 import { RANGES, sanitize, sanitizeFlight } from '../physics/engine';
-import { DEFAULT_PRESET_ID, getPreset } from '../physics/presets';
-import { PROPELLANTS } from '../physics/propellants';
-import type { EngineConfig, FlightState } from '../physics/types';
+import { ENERGY_SOURCES, isEnergyId } from '../physics/parts';
+import { getPreset } from '../physics/presets';
+import { starterEngine, withEnergy, withExhaust, withPropellant } from '../physics/reshape';
+import type { EnergyId, EngineConfig, ExhaustId, FlightState } from '../physics/types';
 import type { AppState } from './share';
 
 export type { AppState };
@@ -23,7 +24,7 @@ const close = (a: number, b: number) => Math.abs(a - b) <= 1e-6 * Math.max(1, Ma
 export function isModified(cfg: EngineConfig): boolean {
   const stock = getPreset(cfg.presetId)?.config;
   if (!stock) return false;
-  if (cfg.propellant !== stock.propellant || cfg.aerospike !== stock.aerospike) return true;
+  if (cfg.energy !== stock.energy || cfg.exhaust !== stock.exhaust || cfg.propellant !== stock.propellant) return true;
   const keys: (keyof EngineConfig)[] = [
     'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'nozzleLenPct',
     'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers', 'extFixedDia', 'extDeploy',
@@ -32,7 +33,7 @@ export function isModified(cfg: EngineConfig): boolean {
 }
 
 export function defaultState(): AppState {
-  return { config: { ...getPreset(DEFAULT_PRESET_ID)!.config }, flight: { altitudeKm: 0, throttle: 1 } };
+  return { config: starterEngine(), flight: { altitudeKm: 0, throttle: 1 } };
 }
 
 export interface Store {
@@ -40,6 +41,12 @@ export interface Store {
   set(patch: { config?: Partial<EngineConfig>; flight?: Partial<FlightState> }): void;
   replace(state: AppState): void;
   loadPreset(id: string): void;
+  /** Start again from the blank engine */
+  newEngine(): void;
+  /** Rebuild the engine round a different energy source */
+  setEnergy(id: EnergyId): void;
+  /** Swap the exhaust, keeping the engine about as powerful */
+  setExhaust(id: ExhaustId): void;
   setScale(scale: number): void;
   subscribe(fn: (s: AppState) => void): () => void;
 }
@@ -54,12 +61,10 @@ export function createStore(initial: AppState): Store {
     set(patch) {
       let config = state.config;
       if (patch.config) {
-        const merged = { ...config, ...patch.config };
-        // A new propellant starts at its own sensible mixture ratio.
-        if (patch.config.propellant && patch.config.propellant !== config.propellant) {
-          merged.mixtureRatio = PROPELLANTS[patch.config.propellant]?.ofDefault ?? merged.mixtureRatio;
-        }
-        config = sanitize(merged);
+        // A new propellant starts at its own sensible mixture ratio, turned down if that would overheat the engine.
+        const { propellant, ...rest } = patch.config;
+        if (propellant && propellant !== config.propellant) config = withPropellant(config, propellant);
+        config = sanitize({ ...config, ...rest });
       }
       const flight = patch.flight ? sanitizeFlight({ ...state.flight, ...patch.flight }) : state.flight;
       state = { config, flight };
@@ -73,6 +78,24 @@ export function createStore(initial: AppState): Store {
       const preset = getPreset(id);
       if (!preset) return;
       state = { config: { ...preset.config }, flight: state.flight };
+      emit();
+    },
+    newEngine() {
+      state = { config: starterEngine(), flight: state.flight };
+      emit();
+    },
+    setEnergy(id) {
+      if (!isEnergyId(id)) return;
+      const config = sanitize(withEnergy(state.config, id, state.flight.throttle));
+      // A source that cannot throttle takes the pressure the engine was throttled down to as its
+      // own, so the throttle goes back to full: left where it was, it would be applied a second
+      // time on the way back.
+      const baked = ENERGY_SOURCES[state.config.energy].throttleable && !ENERGY_SOURCES[id].throttleable;
+      state = { config, flight: baked ? { ...state.flight, throttle: 1 } : state.flight };
+      emit();
+    },
+    setExhaust(id) {
+      state = { config: sanitize(withExhaust(state.config, id)), flight: state.flight };
       emit();
     },
     setScale(scale) {

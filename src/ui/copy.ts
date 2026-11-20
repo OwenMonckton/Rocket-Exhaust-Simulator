@@ -1,4 +1,4 @@
-import type { ExpansionState, Failure, PropellantId } from '../physics/types';
+import type { EnergyId, ExpansionState, Failure } from '../physics/types';
 
 export const TIPS = {
   scale: 'Grows or shrinks the whole engine in proportion, walls included. Thrust grows with the square of size.',
@@ -8,7 +8,9 @@ export const TIPS = {
   exitDia: 'Width of the nozzle exit. Bigger suits thin air and vacuum; smaller suits sea level.',
   nozzleLenPct: 'How long the bell is. Longer bells point the exhaust straighter for slightly better efficiency.',
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
-  propellant: 'What the engine burns. Each has its own efficiency, flame temperature and plume colour.',
+  energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
+  exhaust: 'How the hot gas is turned into a jet. Changing it keeps the engine about as powerful.',
+  propellant: 'What the engine pushes out of the nozzle. Each has its own efficiency, temperature and plume colour.',
   mixtureRatio: 'Kilograms of oxidiser burned per kilogram of fuel. Lower is fuel-rich, higher is oxidiser-rich.',
   deploy: 'Slide the nozzle extension into place, or stow it. The longer nozzle is far more efficient in vacuum.',
   altitudeKm: 'How high the engine is. The air thins out as you climb, and is effectively gone by 86 km.',
@@ -39,6 +41,18 @@ export const AEROSPIKE_DIMS = {
   nozzleLenPct: {
     label: 'Spike length',
     tip: 'How much of a full-length spike is kept before it is cut off flat. The cut-off end costs only a little efficiency and saves a lot of weight.',
+  },
+};
+
+/** Name and tip of the slider that sets how many chambers, or thrust cells, the engine has. */
+export const COUNT_COPY = {
+  bell: {
+    label: 'Chambers',
+    tip: 'How many identical chambers share the engine. Thrust and propellant flow rise with each one.',
+  },
+  aerospike: {
+    label: 'Thrust cells',
+    tip: 'How many small chambers fire along the spike. Thrust and propellant flow rise with each one.',
   },
 };
 
@@ -80,7 +94,7 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
   meltdown: {
     title: 'Reactor core meltdown',
-    text: 'The reactor core ran hotter than its fuel elements can take and they broke up. Lower the core temperature. Hotter hydrogen is more efficient, which is why real nuclear engines run so close to this limit.',
+    text: 'The reactor core ran hotter than its fuel elements can take and they broke up. Lower the core temperature. Hotter propellant is more efficient, which is why real nuclear engines run so close to this limit.',
   },
   instability: {
     title: 'Combustion instability',
@@ -88,9 +102,9 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
 };
 
-/** Failure text, with wording specific to a propellant where the general wording would mislead. */
-export function failureCopy(failure: Exclude<Failure, null>, propellant: PropellantId): { title: string; text: string } {
-  if (propellant === 'saltwater' && failure === 'burnthrough') {
+/** Failure text, with wording specific to an energy source where the general wording would mislead. */
+export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): { title: string; text: string } {
+  if (energy === 'saltwater' && failure === 'burnthrough') {
     return {
       title: 'Nozzle vaporised',
       text: 'The fission reaction ran hotter than the layer of water protecting the nozzle could take. Turn down the reaction temperature, lower the chamber pressure or widen the throat.',
