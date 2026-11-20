@@ -87,7 +87,7 @@ export function createStore(initial: AppState): Store {
       emit();
     },
     setEnergy(id) {
-      state = { config: sanitize(withEnergy(state.config, id)), flight: state.flight };
+      state = { config: sanitize(withEnergy(state.config, id, state.flight.throttle)), flight: state.flight };
       emit();
     },
     setExhaust(id) {

@@ -33,7 +33,7 @@ export interface Runtime {
   /** Start an altitude sweep in a direction (1 up, -1 down), or pause it if already running that way. */
   toggleSweep(direction: 1 | -1): void;
   rebuild(): void;
-  /** Clear away a failure, for an engine chosen whole (a new engine or an example) rather than rebuilt. */
+  /** Clear away a failure and a part-burnt grain, for an engine chosen whole (a new engine or an example) rather than rebuilt. */
   clearFailure(): void;
   setOverlay(o: FlowOverlay): void;
   setMuted(m: boolean): void;
@@ -486,8 +486,9 @@ export function createRuntime(
       store.replace(lastGood);
     },
     clearFailure() {
-      if (!failure) return;
+      // A whole engine comes with a fresh grain, even where the last one had not failed.
       burnt = 0;
+      if (!failure) return;
       failure = null;
       failT = 0;
       fire = 0;

@@ -188,6 +188,19 @@ describe('part swaps at the edges of what can be built (Copilot review)', () => 
     }
   });
 
+  it('does not burst a throttled-down engine by switching it to a source that cannot throttle', () => {
+    const throttled = { altitudeKm: 0, throttle: 0.4 };
+    const from = sanitize({ ...starterEngine(), chamberDia: 0.8 });
+    const before = simulate(from, throttled);
+    expect(before.failure).toBeNull();
+    const next = withEnergy(from, 'solid', throttled.throttle);
+    const after = simulate(next, throttled);
+    expect(after.failure).toBeNull();
+    expect(after.limits.structural).toBeLessThanOrEqual(before.limits.structural * 1.01);
+    // At full throttle the swap changes nothing.
+    expect(withEnergy(starterEngine(), 'solid', 1)).toEqual(withEnergy(starterEngine(), 'solid'));
+  });
+
   it('leaves the pressure alone when the swap is not what made a flame hot', () => {
     const s = starterEngine();
     const hot = sanitize({ ...s, chamberPressureBar: 300, wall: s.wall * 3 });

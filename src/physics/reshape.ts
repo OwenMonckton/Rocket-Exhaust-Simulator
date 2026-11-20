@@ -44,10 +44,19 @@ export function wallFor(pcBar: number, chamberDia: number, fraction: number): nu
  * becomes the source's first, and the wall is re-sized so the engine is as close to bursting
  * as it was before: no more, no less. Where that would overheat the engine it is turned down:
  * the temperature where that is a setting, the chamber pressure where a flame sets it.
+ *
+ * `throttle` is where the throttle stands. A source that cannot throttle runs flat out, so an
+ * engine throttled down and given one takes the pressure it was really running at as its own:
+ * otherwise the swap alone would raise the pressure, and could burst it.
  */
-export function withEnergy(cfg: EngineConfig, energy: EnergyId): EngineConfig {
+export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): EngineConfig {
   if (cfg.energy === energy) return cfg;
   const source = ENERGY_SOURCES[energy];
+  if (ENERGY_SOURCES[cfg.energy].throttleable && !source.throttleable && throttle < 1) {
+    // Whole bars, as the slider sets them, and never more than it was running at.
+    const running = Math.max(RANGES.chamberPressureBar.min, Math.floor(cfg.chamberPressureBar * throttle + 1e-9));
+    cfg = { ...cfg, chamberPressureBar: Math.min(cfg.chamberPressureBar, running) };
+  }
   const propellant = propellantsFor(energy)[0];
   const prop = PROPELLANTS[propellant];
   const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, prop.lStarRef);
