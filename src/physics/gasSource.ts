@@ -1,8 +1,9 @@
 // The one place an engine's gas comes from: a hand-tuned table for the tabled propellants, the
-// chemistry solver for a fuel and oxidiser picked freely ('calculated').
+// chemistry solver for a fuel and oxidiser picked freely ('calculated') and for a reactor fluid
+// that names its thermo reactant (`fluid`).
 import { FUELS, NO_OXIDISER, type Family } from './chem/ingredients';
-import { pairRange, solvePair, type SolvedGas } from './chem/pair';
-import { verdictFor, type ChemFailure } from './chem/verdict';
+import { pairRange, solveFluid, solvePair, type SolvedGas } from './chem/pair';
+import { dropletNote, verdictFor, type ChemFailure } from './chem/verdict';
 import { PROPELLANTS, gasProps, richness } from './propellants';
 import type { EngineConfig, GasProps, PlumeLook, PropellantId } from './types';
 
@@ -27,6 +28,13 @@ const NO_GAS: GasProps = { tc: 300, gamma: 1.4, molarMass: 28, R: R_UNIVERSAL / 
 const NOT_SOLVED: SolvedGas = {
   ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, condensedShare: 0, exhaust: [],
 };
+
+/** The simulator's gas from a solve, or cold air if it did not settle. */
+function gasOf(solved: SolvedGas): GasProps {
+  return solved.ok
+    ? { tc: solved.tc, gamma: solved.gamma, molarMass: solved.molarMass, R: R_UNIVERSAL / solved.molarMass }
+    : { ...NO_GAS };
+}
 
 /** The tabled propellant whose chamber length and plume a calculated fuel borrows, by its family. */
 function borrowedFrom(fuel: string): PropellantId {
@@ -65,6 +73,22 @@ export function staticLook(cfg: EngineConfig): PlumeLook {
 export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSource {
   if (cfg.propellant !== 'calculated') {
     const p = PROPELLANTS[cfg.propellant];
+    if (p.fluid) {
+      // A reactor heats the fluid to the core temperature, the engine's "mixture" setting.
+      const solved = solveFluid(p.fluid, cfg.mixtureRatio, pcBar, eps);
+      const drops = dropletNote(solved);
+      return {
+        calculated: true,
+        gas: gasOf(solved),
+        lStarRef: 0,
+        look: p.look,
+        // As hydrogen's table gives it: the hottest core, at the top of the range, is the "peak".
+        richness: Math.min(1, Math.max(0, (p.ofMax - cfg.mixtureRatio) / (p.ofMax - p.ofMin))),
+        failure: solved.ok ? null : 'unsolved',
+        exhaust: solved.ok ? solved.exhaust : [],
+        notes: drops ? [drops] : [],
+      };
+    }
     return {
       calculated: false,
       gas: gasProps(cfg.propellant, cfg.mixtureRatio),
@@ -90,9 +114,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
   }
   return {
     calculated: true,
-    gas: solved.ok
-      ? { tc: solved.tc, gamma: solved.gamma, molarMass: solved.molarMass, R: R_UNIVERSAL / solved.molarMass }
-      : { ...NO_GAS },
+    gas: gasOf(solved),
     lStarRef: borrowed.lStarRef,
     look: borrowed.look,
     richness: rich,

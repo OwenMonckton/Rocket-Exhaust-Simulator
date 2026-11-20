@@ -147,3 +147,55 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
 - **Every source was fired with both exhausts** at sea level and in vacuum, lit from cold, with
   both gas simulations on. All eight run. The measuring tool (`src/dev/accuracy.ts`) only reads
   bell engines, so the new aerospikes were checked by eye and by their readouts, not measured.
+
+## Chemistry piece: nuclear fluids against published figures
+
+Ammonia, methane, water, carbon dioxide and helium are now worked out by the chemistry solver
+(`solveFluid` in `src/physics/chem/pair.ts`, reached through `resolveGas`); hydrogen keeps its table,
+because the NERVA example is pinned to it.
+
+The published figures are Zubrin's (NIMF study, NTRS 19910012833, Table 1): a reactor at 2,800 K,
+infinite expansion, carbon dioxide 283 s, water 370 s, methane 606 s, "about 93%" of those at area
+ratio 100. The study states no chamber pressure and has no ammonia.
+
+The solver directly (`rocket`, a 2,800 K chamber at 55 bar, area ratio 100, no droplet loss), in
+vacuum seconds:
+
+| Fluid | Solver | Zubrin, infinite | Share | Zubrin × 0.93 | Solver against that |
+|---|---|---|---|---|---|
+| Water | 363.9 | 370 | 98% | 344 | +5.8% |
+| Carbon dioxide | 247.2 | 283 | 87% | 263 | −6.0% |
+| Methane | 531.9 | 606 | 88% | 564 | −5.7% |
+
+All three are more than 5% from Zubrin's area-ratio-100 figure, in different directions, so a single
+93% does not hold fluid by fluid. Why, as far as the solver shows:
+
+- **The share kept at area ratio 100 depends on the gas.** Carbon dioxide's gamma is low (about 1.13
+  at the throat), so more of its heat is still in the gas at area ratio 100. Taking the area ratio
+  from 100 to 10,000 at 55 bar adds 12% for carbon dioxide (247 → 276 s), 9% for methane (532 → 582
+  s) and 9% for water (364 → 395 s, a solve that does not quite settle at the exit).
+- **No pressure is stated.** At 10 bar instead of 55 every fluid dissociates a little more and gains
+  1 to 3% at area ratio 100 (water 374, carbon dioxide 256, methane 538 s). Neither pressure brings
+  all three to 93%.
+- **Water comes out above Zubrin.** At very large area ratios the solver's water passes 370 s
+  (395 s at area ratio 10,000, 55 bar). Zubrin's "infinite" figure is lower than the solver's
+  shifting-equilibrium expansion for water; how his figure was reached is not stated.
+- **Methane leaves solid carbon.** About 70% of the exhaust's mass is graphite at the exit (the
+  solver at 2,800 K, 55 bar, area ratio 100). In the simulator that costs a further 7% as droplet
+  loss and shows the droplet note. Whether Zubrin's 606 s allows for the carbon is not stated.
+
+On the NERVA example (38.6 bar, area ratio 100, the simulator's nozzle and combustion losses,
+droplet loss applied), vacuum Isp in seconds:
+
+| Fluid | 2,360 K (default) | 2,800 K |
+|---|---|---|
+| Hydrogen (table) | 819.2 | 904.1 |
+| Helium | 480.5 | 523.3 |
+| Methane | 424.8 | 472.5 |
+| Ammonia | 398.1 | 441.1 |
+| Water | 308.6 | 350.4 |
+| Carbon dioxide | 208.6 | 238.5 |
+
+The order is the one expected: hydrogen, helium, methane, ammonia, water, carbon dioxide. Helium
+leaves the nozzle far below 200 K (62 K at 2,800 K and 55 bar), so its last stretch is expanded
+frozen, as `rocket` does for any cold exit.

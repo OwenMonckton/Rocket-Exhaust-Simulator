@@ -12,6 +12,13 @@ const DROPLET_NOTE_SHARE = 0.02;
 const lower = (name: string) => (/[A-Z]/.test(name.charAt(1)) ? name : name.charAt(0).toLowerCase() + name.slice(1));
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
+/** The note for an exhaust that is 2% or more liquid or solid droplets by mass, or null. */
+export function dropletNote(gas: SolvedGas): string | null {
+  return gas.condensedShare >= DROPLET_NOTE_SHARE
+    ? `${Math.round(gas.condensedShare * 100)}% of the exhaust is liquid or solid droplets.`
+    : null;
+}
+
 export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verdict {
   const f: Ingredient | undefined = FUELS[fuel];
   const noOx = oxidiser === NO_OXIDISER;
@@ -43,9 +50,8 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
   }
   for (const p of parts) if (p.toxicExhaust) notes.push(sentence(p.toxicExhaust.text));
   for (const p of parts) if (p.warning) notes.push(sentence(p.warning.text));
-  if (gas.condensedShare >= DROPLET_NOTE_SHARE) {
-    notes.push(`${Math.round(gas.condensedShare * 100)}% of the exhaust is liquid or solid droplets.`);
-  }
+  const drops = dropletNote(gas);
+  if (drops) notes.push(drops);
   if (fuel === 'n2h4' && noOx) {
     // Which way the figure errs is not established here, so the note only says it differs.
     notes.push('Hydrazine alone breaks down into ammonia, hydrogen and nitrogen. Real thrusters stop that part-way, so this figure differs from what a real thruster gives.');
