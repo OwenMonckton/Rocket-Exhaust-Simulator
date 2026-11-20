@@ -36,6 +36,32 @@ describe('share links', () => {
     expect(spike.config.chambers).toBe(20);
     expect(decodeState(old)!.config.extDeploy).toBe(1);
   });
+  it('reads old links by working the three parts out from the old propellant', () => {
+    const v1 = (propellant: string, spike: number) =>
+      decodeState('v1.' + btoa(JSON.stringify(['x', propellant, 0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2400, 1, 0, 1, 1, 0, 1, spike])))!.config;
+    expect(v1('nuclear', 0)).toMatchObject({ energy: 'reactor', propellant: 'ntr-hydrogen', exhaust: 'bell' });
+    expect(v1('saltwater', 0)).toMatchObject({ energy: 'saltwater', propellant: 'saltwater' });
+    expect(v1('solid', 0)).toMatchObject({ energy: 'solid', propellant: 'solid' });
+    expect(v1('hydrolox', 1)).toMatchObject({ energy: 'combustion', propellant: 'hydrolox', exhaust: 'aerospike' });
+  });
+  it('writes links that carry the three parts', () => {
+    const text = encodeState({ config: getPreset('nerva')!.config, flight: { altitudeKm: 100, throttle: 1 } });
+    expect(text.startsWith('v2.')).toBe(true);
+    const packed = JSON.parse(atob(text.slice(3).replace(/-/g, '+').replace(/_/g, '/')));
+    expect(packed).toHaveLength(18);
+    expect(packed.slice(0, 4)).toEqual(['nerva', 'reactor', 'bell', 'ntr-hydrogen']);
+  });
+  it('opens a link whose propellant does not suit its energy source (review focus)', () => {
+    const v2 = (a: unknown[]) => decodeState('v2.' + btoa(JSON.stringify(a)));
+    const nums = [0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 1, 0, 1];
+    const odd = v2([null, 'reactor', 'bell', 'kerolox', ...nums])!;
+    expect(odd.config.energy).toBe('reactor');
+    expect(odd.config.propellant).toBe('ntr-hydrogen');
+    expect(v2([null, 'steam', 'bell', 'kerolox', ...nums])).toBeNull();
+    expect(v2([null, 'combustion', 'funnel', 'kerolox', ...nums])).toBeNull();
+    expect(v2([null, 'combustion', 'bell', 'jam', ...nums])).toBeNull();
+    expect(v2([null, 'combustion', 'bell', 'kerolox', ...nums, 7])).toBeNull();
+  });
   it('rejects garbage without throwing (review focus)', () => {
     const good = encodeState(defaultState());
     const bad = ['', '#', 'v1.', 'v1.!!!', 'v9.abc', 'hello', good.slice(0, 20), good.slice(0, -7), 'v1.' + btoa('{"a":1}'), 'v1.' + btoa('[1,2,3]')];
