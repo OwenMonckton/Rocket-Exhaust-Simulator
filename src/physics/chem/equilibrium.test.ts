@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REACTANTS, speciesFor } from './thermo';
+import { REACTANTS, SPECIES, speciesFor } from './thermo';
 import { equilibrate, mixtureFrom, type EqState } from './equilibrium';
 
 /** Mass fractions from amounts in moles. */
@@ -111,6 +111,18 @@ function molesOf(st: EqState, name: string): number {
   return st.moles[j];
 }
 
+const ex13Mix = mixtureFrom([
+  { reactant: REACTANTS['N2H4(L)'], massFraction: 0.67 * 0.8 },
+  { reactant: REACTANTS['Be(a)'], massFraction: 0.67 * 0.2 },
+  { reactant: REACTANTS['H2O2(L)'], massFraction: 0.33 },
+]);
+const ex13Chamber = () => equilibrate(ex13Mix, { kind: 'hp', h: ex13Mix.h0, pBar: 206.84 });
+/** BeO's melting point: where the BeO(b) range ends and BeO(L) begins. */
+const beoMelt = () => {
+  const solid = SPECIES.find((s) => s.name === 'BeO(b)')!;
+  return solid.intervals[solid.intervals.length - 1].tMax;
+};
+
 describe('equilibrium with liquid and solid products', () => {
   it('condenses water (RP-1311 Example 14)', () => {
     const mix = byMoles([['H2(L)', 100], ['O2(L)', 60]]);
@@ -120,12 +132,7 @@ describe('equilibrium with liquid and solid products', () => {
   });
 
   it('forms beryllium oxide droplets (RP-1311 Example 13 chamber)', () => {
-    const mix = mixtureFrom([
-      { reactant: REACTANTS['N2H4(L)'], massFraction: 0.67 * 0.8 },
-      { reactant: REACTANTS['Be(a)'], massFraction: 0.67 * 0.2 },
-      { reactant: REACTANTS['H2O2(L)'], massFraction: 0.33 },
-    ]);
-    const st = equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 206.84 });
+    const st = ex13Chamber();
     expect(st.ok).toBe(true);
     expect(relErr(st.t, 3002.54)).toBeLessThan(5e-3);
     expect(Math.abs(overallFraction(st, 'BeO(L)') - 0.19218)).toBeLessThan(0.003);
@@ -164,5 +171,48 @@ describe('equilibrium with liquid and solid products', () => {
     expect(st.condensedMassFraction).toBeGreaterThan(0.1);
     const alumina = st.species.some((s, j) => s.phase !== 0 && s.name.startsWith('AL2O3') && st.moles[j] > 0);
     expect(alumina).toBe(true);
+  });
+
+  it('holds the temperature at the melting point while solid and liquid coexist (Example 13 near the throat)', () => {
+    const chamber = ex13Chamber();
+    const problem = { kind: 'sp', s: chamber.s, pBar: 118 } as const;
+    const cold = equilibrate(ex13Mix, problem);
+    const warm = equilibrate(ex13Mix, problem, undefined, chamber);
+    for (const st of [cold, warm]) {
+      expect(st.ok).toBe(true);
+      expect(Math.abs(st.t - beoMelt())).toBeLessThan(0.5);
+      expect(molesOf(st, 'BeO(b)')).toBeGreaterThan(0);
+      expect(molesOf(st, 'BeO(L)')).toBeGreaterThan(0);
+      expect(Number.isFinite(st.cp)).toBe(true);
+      expect(st.gammaS).toBeCloseTo(-1 / st.dlnVdlnP, 12);
+    }
+    expect(relErr(warm.t, cold.t)).toBeLessThan(1e-4);
+    expect(relErr(molesOf(warm, 'BeO(b)'), molesOf(cold, 'BeO(b)'))).toBeLessThan(1e-4);
+    expect(relErr(molesOf(warm, 'BeO(L)'), molesOf(cold, 'BeO(L)'))).toBeLessThan(1e-4);
+  });
+
+  it('keeps a single phase of beryllium oxide well below the melting point', () => {
+    const chamber = ex13Chamber();
+    const problem = { kind: 'sp', s: chamber.s, pBar: 20 } as const;
+    const cold = equilibrate(ex13Mix, problem);
+    const warm = equilibrate(ex13Mix, problem, undefined, chamber);
+    for (const st of [cold, warm]) {
+      expect(st.ok).toBe(true);
+      expect(st.t).toBeLessThan(beoMelt());
+      const phases = st.species.filter((s, j) => s.phase !== 0 && s.name.startsWith('BeO(') && st.moles[j] > 0);
+      expect(phases.length).toBe(1);
+    }
+    expect(relErr(warm.t, cold.t)).toBeLessThan(1e-4);
+  });
+
+  it('keeps one phase at an assigned temperature equal to the melting point', () => {
+    const twoPhase = equilibrate(ex13Mix, { kind: 'sp', s: ex13Chamber().s, pBar: 118 });
+    const problem = { kind: 'tp', t: beoMelt(), pBar: 118 } as const;
+    for (const st of [equilibrate(ex13Mix, problem), equilibrate(ex13Mix, problem, undefined, twoPhase)]) {
+      expect(st.ok).toBe(true);
+      const phases = st.species.filter((s, j) => s.phase !== 0 && s.name.startsWith('BeO(') && st.moles[j] > 0);
+      expect(phases.length).toBe(1);
+      for (const v of [st.t, st.n, st.molarMass, st.cp, st.gammaS, st.h, st.s]) expect(Number.isNaN(v)).toBe(false);
+    }
   });
 });

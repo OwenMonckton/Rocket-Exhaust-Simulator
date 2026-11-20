@@ -107,6 +107,11 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   // Phases of one substance share a formula.
   const formula = new Map<number, string>();
   for (const j of cond) formula.set(j, elements.map((e) => list[j].elements[e] ?? 0).join(','));
+  /** Whether T lies in the species' own fitted range. */
+  const covers = (j: number, temp: number) => {
+    const iv = list[j].intervals;
+    return iv[0].tMin <= temp && temp <= iv[iv.length - 1].tMax;
+  };
 
   // Unknowns: π_i (0..L-1), Δn_j of each active condensed species (in `active` order), Δln n, then
   // Δln T unless T is given. Rows are in the same order.
@@ -130,6 +135,16 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
       const k = fromStart(j);
       if (list[j].phase === 0) lnMoles[j] = k === undefined ? Math.log(RESTART_MOLES) : start.lnMoles[k];
       else if (k !== undefined && start.moles[k] > 0) { moles[j] = start.moles[k]; active.push(j); }
+    }
+    // At an assigned temperature two phases of one substance would make the matrix singular: a pair
+    // carried over from a melting point becomes the one phase whose range holds T.
+    if (fixedT) {
+      for (const j of [...active]) {
+        const pair = active.filter((x) => formula.get(x) === formula.get(j));
+        if (pair.length < 2) continue;
+        const keep = pair.find((x) => covers(x, t)) ?? pair[0];
+        for (const x of pair) if (x !== keep) { moles[keep] += moles[x]; moles[x] = 0; active.splice(active.indexOf(x), 1); }
+      }
     }
   } else {
     for (const j of gas) lnMoles[j] = Math.log(0.1 / gas.length);
@@ -270,14 +285,12 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     }
   }
 
-  /** Whether T lies in the species' own fitted range. */
-  const covers = (j: number, temp: number) => {
-    const iv = list[j].intervals;
-    return iv[0].tMin <= temp && temp <= iv[iv.length - 1].tMax;
-  };
-
   // Condensed species (3.7): converge; then remove any with negative moles, or swap a phase whose
   // range no longer holds T, or add the one that most lowers the Gibbs energy; re-converge after each.
+  // When a swap would undo the previous swap of that substance, the point sits on its melting point:
+  // in HP and SP both phases are kept, and their two condensed rows (2.25) hold T where their Gibbs
+  // energies meet, the boundary of their ranges, while the energy row sets the split. A phase that
+  // then goes negative is removed as usual, leaving the other.
   const lastSwap = new Map<string, [number, number]>(); // formula -> [from, to]
   let ok = false;
   for (let change = 0; change <= CONDENSED_CHANGES; change++) {
@@ -292,10 +305,16 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
       const j = active[c];
       if (covers(j, t)) continue;
       const f = formula.get(j)!;
+      if (active.some((x) => x !== j && formula.get(x) === f)) continue; // a pair on its melting point
       const k = cond.find((x) => x !== j && formula.get(x) === f && covers(x, t));
       if (k === undefined) continue;
       const prev = lastSwap.get(f);
-      if (prev && prev[0] === k && prev[1] === j) continue; // on a melting point: keep the phase in hand
+      if (prev && prev[0] === k && prev[1] === j) {
+        if (fixedT) continue; // T is assigned: keep the phase in hand
+        active.push(k); moles[k] = 0;
+        swapped = true;
+        continue;
+      }
       active[c] = k; moles[k] = moles[j]; moles[j] = 0;
       lastSwap.set(f, [j, k]);
       swapped = true;
@@ -315,9 +334,23 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   }
 
   // Properties and equilibrium derivatives at the final point (2.50-2.59, 2.70-2.75).
+  // Two phases of one substance on its melting point (both kept by the loop above) enter the
+  // derivatives as one condensed unknown with the split between them frozen, its H the mole-weighted
+  // H of the pair: with both rows the matrix is singular, since T cannot move at fixed P. So cp and
+  // dlnVdlnT there are frozen-split values, and gammaS comes from RP-1311 eq. 3.9 instead.
   evaluate(t);
   const lnn = Math.log(n);
-  const nc = active.length;
+  const dAct: number[] = [];             // condensed unknowns in the derivative matrix
+  const dH: number[] = [];               // their H°/RT
+  for (const j of active) {
+    const f = formula.get(j);
+    const c = dAct.findIndex((x) => formula.get(x) === f);
+    if (c < 0) { dAct.push(j); dH.push(H[j]); continue; }
+    const first = dAct[c], total = moles[first] + moles[j];
+    dH[c] = total !== 0 ? (moles[first] * H[first] + moles[j] * H[j]) / total : H[first];
+  }
+  const twoPhase = dAct.length < active.length;
+  const nc = dAct.length;
   const iN = L + nc;
   let sumN = 0, sumNH = 0, sumNC = 0, sumNHH = 0, sumNS = 0;
   const md = L + nc + 1;
@@ -341,13 +374,13 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     sumNS += nj * (S0[j] - (lnMoles[j] - lnn) - lnP);
   }
   // Condensed rows and columns; their ∂/∂ln P right-hand side is zero.
-  let sumCH = 0, sumCC = 0, sumCS = 0;
   for (let c = 0; c < nc; c++) {
-    const j = active[c], col = L + c, row = col * wd;
+    const j = dAct[c], col = L + c, row = col * wd;
     for (let i = 0; i < L; i++) { const aij = a[i * NS + j]; g[i * wd + col] = aij; g[row + i] = aij; }
-    g[row + md] = -H[j];
-    sumCH += moles[j] * H[j]; sumCC += moles[j] * C[j]; sumCS += moles[j] * S0[j];
+    g[row + md] = -dH[c];
   }
+  let sumCH = 0, sumCC = 0, sumCS = 0;
+  for (const j of active) { sumCH += moles[j] * H[j]; sumCC += moles[j] * C[j]; sumCS += moles[j] * S0[j]; }
   // Σ_g a_ij n_j H_j, kept before elimination overwrites the matrix.
   const anh = new Float64Array(L);
   for (let k = 0; k < L; k++) anh[k] = -g[k * wd + md];
@@ -356,11 +389,11 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   const derivOk = solve(g, md, 2);
   let cpOverR = sumNC + sumCC + sumNHH + sumNH * g[iN * wd + md];
   for (let i = 0; i < L; i++) cpOverR += anh[i] * g[i * wd + md];
-  for (let c = 0; c < nc; c++) cpOverR += H[active[c]] * g[(L + c) * wd + md];
+  for (let c = 0; c < nc; c++) cpOverR += dH[c] * g[(L + c) * wd + md];
   const dlnVdlnT = 1 + g[iN * wd + md];
   const dlnVdlnP = -1 + g[iN * wd + md + 1];
   const cvOverR = cpOverR + (n * dlnVdlnT * dlnVdlnT) / dlnVdlnP;
-  const gammaS = -(cpOverR / cvOverR) / dlnVdlnP;
+  const gammaS = twoPhase ? -1 / dlnVdlnP : -(cpOverR / cvOverR) / dlnVdlnP; // 3.9 on a melting point
 
   let condensedMass = 0;
   for (const j of cond) condensedMass += moles[j] * list[j].molarMass;
