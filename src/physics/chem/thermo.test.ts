@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { REACTANTS, SPECIES, cpR, hRT, speciesFor } from './thermo';
+import notice from './THERMO-NOTICE.txt?raw';
+import licence from './LICENSE-APACHE-2.0.txt?raw';
+import readme from '../../../README.md?raw';
 
 const byName = (n: string) => SPECIES.find((s) => s.name === n)!;
 
@@ -43,5 +46,17 @@ describe('thermo data', () => {
     expect(list.filter((s) => s.phase === 0).length).toBe(9);
     expect(list.some((s) => s.name === 'H2O(L)')).toBe(true);
     expect(list.some((s) => 'C' in s.elements)).toBe(false);
+  });
+});
+
+describe('the licence of the data', () => {
+  it('sits beside the notice, in full', () => {
+    expect(notice).toContain('Apache License');
+    expect(licence).toMatch(/Apache License\s+Version 2\.0, January 2004/);
+    expect(licence).toContain('END OF TERMS AND CONDITIONS');
+  });
+  it('is named in the README', () => {
+    expect(readme).toContain('thermo.inp');
+    expect(readme).toContain('Apache');
   });
 });
