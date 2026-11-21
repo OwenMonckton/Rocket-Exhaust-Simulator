@@ -63,6 +63,12 @@ describe('verdictFor', () => {
     expect(h2[0]).toContain('°C');
   });
 
+  it('warns about aniline and about blends of toxic propellants', () => {
+    const gas = at('h2', 'lox', 6);
+    expect(verdictFor('aniline', 'wfna', gas).notes).toContain('Toxic: aniline.');
+    expect(verdictFor('aerozine50', 'n2o4', gas).notes).toContain('Extremely toxic: aerozine 50.');
+  });
+
   it('warns about toxic propellant, droplets and materials', () => {
     expect(has(dflt('b5h9', 'of2').notes, 'Extremely toxic')).toBe(true);
     expect(dflt('b5h9', 'of2').failure).toBeNull();

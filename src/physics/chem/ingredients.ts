@@ -164,6 +164,7 @@ const fuels: Ingredient[] = [
     id: 'aerozine50', name: 'Aerozine 50', group: 'Storable', family: 'amine',
     parts: [{ reactant: 'N2H4(L)', share: 0.5 }, { reactant: 'C2H8N2(L),UDMH', share: 0.5 }],
     tip: 'Half hydrazine and half UDMH, the fuel of the Titan II and the Apollo lunar module.',
+    ...nfpa(4, `${hsdb('hydrazine')} (component)`),
   },
   {
     id: 'nh3', name: 'Liquid ammonia', group: 'Storable', family: 'amine', parts: one('NH3(L)'),
@@ -173,7 +174,7 @@ const fuels: Ingredient[] = [
   {
     id: 'aniline', name: 'Aniline', group: 'Storable', family: 'amine', parts: one('C6H5NH2(L)'),
     tip: 'An oily chemical once burned with nitric acid because the two ignite on contact.',
-    ...pts(-6.0, 184.1, hsdb('aniline')), ...nfpa(2, hsdb('aniline')),
+    ...pts(-6.0, 184.1, hsdb('aniline')), ...nfpa(3, 'CAMEO Chemicals 2485 (aniline)'),
   },
   {
     id: 'furfuryl', name: 'Furfuryl alcohol', group: 'Storable', family: 'alcohol', parts: one('C5H6O2(L),furfuryl'),
@@ -290,11 +291,13 @@ const oxidisers: Ingredient[] = [
     id: 'mon25', name: 'MON-25 (mixed oxides of nitrogen)', group: 'Storable', family: 'nitrogen-oxide',
     parts: [{ reactant: 'N2O4(L)', share: 0.75 }, { reactant: 'NO', share: 0.25 }],
     tip: 'Nitrogen tetroxide with a quarter nitric oxide, which stays liquid in colder conditions.',
+    ...nfpa(3, `${hsdb('dinitrogen tetroxide')} (component)`),
   },
   {
     id: 'irfna', name: 'Inhibited red fuming nitric acid', group: 'Storable', family: 'nitrogen-oxide', parts: one('IRFNA'),
     tip: 'Nitric acid with dissolved nitrogen dioxide and a corrosion inhibitor, used in many missiles.',
     attacksMaterials: NITRIC_ATTACKS, toxicExhaust: HF_EXHAUST,
+    ...nfpa(4, 'OSHA via PubChem CID 944 (nitric acid, component)'),
   },
   {
     id: 'wfna', name: 'White fuming nitric acid', group: 'Storable', family: 'nitrogen-oxide', parts: one('HNO3(L)'),
@@ -323,6 +326,7 @@ const oxidisers: Ingredient[] = [
     id: 'flox70', name: 'FLOX-70', group: 'Exotic', family: 'halogen',
     parts: [{ reactant: 'F2(L)', share: 0.7 }, { reactant: 'O2(L)', share: 0.3 }],
     tip: 'Liquid fluorine mixed with liquid oxygen, more energetic than oxygen alone.',
+    ...nfpa(4, 'PubChem CID 24524 (fluorine, component)'),
     attacksMaterials: { text: 'The fluorine in it reacts with almost every material.', source: `${clark('ch. 8')}; ${hsdb('fluorine')}` },
     toxicExhaust: HF_EXHAUST,
   },

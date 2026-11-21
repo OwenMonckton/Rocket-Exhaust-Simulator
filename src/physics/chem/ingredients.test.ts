@@ -57,6 +57,21 @@ describe('ingredients: the records', () => {
     }
   });
 
+  it('gives a blend the toxicity of its most toxic listed component', () => {
+    expect(FUELS.aerozine50.toxicity).toBe(FUELS.n2h4.toxicity);
+    expect(OXIDISERS.flox70.toxicity).toBe(OXIDISERS.lf2.toxicity);
+    expect(OXIDISERS.mon25.toxicity).toBe(OXIDISERS.n2o4.toxicity);
+    expect(OXIDISERS.irfna.toxicity).toBe(OXIDISERS.wfna.toxicity);
+    for (const ing of [FUELS.aerozine50, OXIDISERS.flox70, OXIDISERS.mon25, OXIDISERS.irfna]) {
+      expect(ing.toxicitySource, ing.id).toMatch(/component/);
+    }
+  });
+
+  it('rates aniline as CAMEO Chemicals does (NFPA 704 health 3)', () => {
+    expect(FUELS.aniline.toxicity).toBe(2);
+    expect(FUELS.aniline.toxicitySource).toContain('CAMEO Chemicals 2485');
+  });
+
   it('resolves custom records only through the ingredient that cites them', () => {
     for (const [id, ing] of all()) {
       for (const c of ing.custom ?? []) {
