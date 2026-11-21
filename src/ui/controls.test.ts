@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { formatMixture, roundMixture } from './controls';
+import { formatMixture, propellantNote, roundMixture } from './controls';
+import { getPreset } from '../physics/presets';
+import { sanitize } from '../physics/engine';
 
 describe('the mixture slider', () => {
   const range = { ofMin: 0.02, ofMax: 40 };
@@ -23,5 +25,17 @@ describe('the mixture slider', () => {
   });
   it('says there is nothing to mix with when there is no oxidiser', () => {
     expect(formatMixture(0, 'ratio', true)).toBe('nothing to mix with');
+  });
+});
+
+describe('the propellant note', () => {
+  const nerva = getPreset('nerva')!.config;
+  const reactor = (propellant: 'ntr-methane' | 'ntr-hydrogen') => ({
+    config: sanitize({ ...nerva, presetId: null, propellant, mixtureRatio: 2360 }),
+    flight: { altitudeKm: 0, throttle: 1 },
+  });
+  it('carries the warnings about a reactor fluid, which have no oxidiser picker to sit under', () => {
+    expect(propellantNote(reactor('ntr-methane'))).toMatch(/droplets/);
+    expect(propellantNote(reactor('ntr-hydrogen'))).not.toMatch(/droplets/);
   });
 });

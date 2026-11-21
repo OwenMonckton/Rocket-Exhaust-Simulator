@@ -51,6 +51,16 @@ const noOxidiser = (s: AppState) => calculatedBurn(s) && s.config.oxidiser === N
 /** The mixture slider is spread by ratio for a calculated pair whose range starts above zero. */
 const mixLog = (s: AppState) => calculatedBurn(s) && mixRange(s.config).ofMin > 0;
 
+/**
+ * The small print under the Propellant picker: what a tabled propellant is made of and, for an engine
+ * with no oxidiser picker (a reactor), the physics' warnings about its fluid. Cached, so cheap.
+ */
+export function propellantNote(s: AppState): string {
+  const made = s.config.propellant === 'calculated' ? '' : `${PROPELLANTS[s.config.propellant].fuel} + ${PROPELLANTS[s.config.propellant].oxidiser}`;
+  const warnings = burnsPair(s) ? [] : simulate(s.config, s.flight).notes;
+  return [made, ...warnings].filter(Boolean).join(' · ');
+}
+
 type MixKind = 'ratio' | 'temperature' | 'none';
 
 /**
@@ -145,11 +155,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           options: (s) => propellantsFor(s.config.energy).map((id) => ({ value: id, label: PROPELLANTS[id].name, tip: PROPELLANTS[id].tip })),
           get: (s) => s.config.propellant,
           set: (v) => store.set({ config: { propellant: v as PropellantId } }),
-          note: (s) => {
-            if (s.config.propellant === 'calculated') return '';
-            const p = PROPELLANTS[s.config.propellant];
-            return `${p.fuel} + ${p.oxidiser}`;
-          },
+          note: propellantNote,
           // A combustion chamber picks its fuel and oxidiser separately instead.
           hidden: burnsPair,
         },
