@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { simulate } from '../physics/engine';
 import { pairRange, solveFluid, solvePair } from '../physics/chem/pair';
 import { PROPELLANTS } from '../physics/propellants';
+import { FUEL_IDS, OXIDISER_IDS } from '../physics/chem/ingredients';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
 import { SPECIES_NAMES, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
@@ -53,6 +54,28 @@ describe('exhaust species names', () => {
       for (const { name } of gas.exhaust) expect(SPECIES_NAMES, name).toHaveProperty([name]);
     });
   }
+
+  // Every fuel with a spread of oxidisers, and every oxidiser with a spread of fuels, at half, one and
+  // twice the pair's own mixture, in a small hot nozzle and a large cold one; each fuel alone too.
+  it('names everything any pair is likely to put in its exhaust', () => {
+    const OXIDISERS = ['lox', 'lf2', 'n2o4', 'clf3', 'htp98', 'nf3'];
+    const FUELS = ['h2', 'rp1', 'b2h6', 'al-slurry', 'be', 'li', 'nh3'];
+    const pairs = new Set<string>();
+    for (const f of FUEL_IDS) for (const o of [...OXIDISERS, 'none']) pairs.add(`${f}|${o}`);
+    for (const o of OXIDISER_IDS) for (const f of FUELS) pairs.add(`${f}|${o}`);
+    const unnamed = new Map<string, string>();
+    for (const pair of pairs) {
+      const [f, o] = pair.split('|');
+      const d = o === 'none' ? 0 : pairRange(f, o).ofDefault;
+      for (const m of o === 'none' ? [1] : [0.5, 1, 2]) {
+        for (const [pc, area] of [[100, 16], [10, 3], [30, 150]]) {
+          const gas = solvePair(f, o, d * m, pc, area);
+          for (const { name } of gas.exhaust) if (!Object.hasOwn(SPECIES_NAMES, name)) unnamed.set(name, `${f}/${o} at ${(d * m).toFixed(2)}`);
+        }
+      }
+    }
+    expect(Object.fromEntries(unnamed)).toEqual({});
+  }, 180_000);
 
   // The five reactor fluids the solver works out, across their core temperatures, pressures and nozzles.
   const FLUIDS = ['ntr-ammonia', 'ntr-methane', 'ntr-water', 'ntr-co2', 'ntr-helium'] as const;
