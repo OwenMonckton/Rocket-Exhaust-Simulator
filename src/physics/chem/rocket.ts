@@ -123,6 +123,9 @@ export function rocket(mix: Mixture, chamber: Problem, eps: number, start?: Rock
   }
   ok &&= throatOk;
   const throat = th!;
+  // A throat resting on frozen-composition derivatives is where the speed meets the frozen sound
+  // speed, not the equilibrium one: c* there can read many percent high. No answer instead.
+  ok &&= !throat.st.frozenDerivatives;
 
   /**
    * The station on the isentrope where equilibrium gives 200 K (within FLOOR_BAND above), going down

@@ -202,6 +202,15 @@ describe('rocket: chamber, throat and exit', () => {
     expect(best / throatFlux).toBeLessThan(1.002);
   });
 
+  it('gives no answer where the throat would rest on frozen-composition derivatives', () => {
+    // Fuel-rich lithium and oxygen at 400 bar: liquid lithium and liquid lithium oxide together make
+    // the derivative matrix singular, so gamma_s there is the frozen value; a throat found with it
+    // sits where the speed equals the frozen sound speed (c* once 18% high, shown as settled).
+    const mix = mixtureOf('li', 'lox', 0.65);
+    const r = rocket(mix, flame(mix, 400), 16);
+    expect(r.ok).toBe(false);
+  });
+
   it('is not ok when the chamber would settle colder than the data covers', () => {
     const mix = beryllium(0.85, 0.3775); // once a false chamber at 86 K
     expect(rocket(mix, flame(mix, 206.84), 30).ok).toBe(false);

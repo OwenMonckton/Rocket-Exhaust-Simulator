@@ -18,6 +18,12 @@ export interface EqState {
   molarMass: number;        // 1/n
   cp: number; gammaS: number; dlnVdlnT: number; dlnVdlnP: number;
   condensedMassFraction: number;
+  /**
+   * cp, gammaS and the volume derivatives are frozen-composition values, put in where the equilibrium
+   * derivatives could not be had (a singular matrix: two condensates together, or steam over its own
+   * liquid). Good enough to size a step toward a nozzle exit; not to place a throat. False otherwise.
+   */
+  frozenDerivatives: boolean;
   iterations: number;
 }
 
@@ -469,11 +475,14 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   // state itself is sound; take the frozen-composition values for its derivatives instead. An
   // equilibrium gamma_s at or below 1 is not a sign of this: a vapour over its own liquid (lithium
   // oxide and hydroxide, beryllium oxide near its boiling point) gives one, and the throat depends on
-  // it. What marks the singular case is cp absurdly large against the frozen value (1e7 times, where
-  // a real two-phase state reaches some hundreds).
+  // it. What marks the singular case is the derivative solve failing, or cp absurdly large against
+  // the frozen value (about 3e7 times, where a real two-phase state reaches about 3,300: lithium with
+  // 90% peroxide at 100 bar). A cut-off of 1e5 moved two settled beryllium figures in the last digits,
+  // so it stays at 1e4. Such a state is marked: rocket will not take it as a throat.
   const sane = derivOk && cpOverR > 0 && cpOverR < 1e4 * (sumNC + sumCC)
     && Number.isFinite(gammaS) && gammaS > 0 && dlnVdlnP < 0;
-  if (!sane && active.length > 0) {
+  const frozenDerivatives = !sane && active.length > 0;
+  if (frozenDerivatives) {
     cpOverR = sumNC + sumCC;
     gammaS = cpOverR / (cpOverR - n);
     dlnVdlnT = 1;
@@ -492,6 +501,7 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     molarMass: 1 / n,
     cp: R * cpOverR, gammaS, dlnVdlnT, dlnVdlnP,
     condensedMassFraction: condensedMass,
+    frozenDerivatives,
     iterations,
   };
   const settled = ok && derivOk && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite)
