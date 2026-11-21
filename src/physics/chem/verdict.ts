@@ -12,6 +12,8 @@ const DROPLET_NOTE_SHARE = 0.02;
 const DATA_TOP_K = 6000;
 /** deg C: one propellant must boil this far below the other's freezing point to freeze it. */
 const FREEZE_MARGIN_C = 5;
+/** deg C: a propellant boiling above this (chlorine trifluoride at 12) is stored at ordinary temperature, not kept cold. */
+const ROOM_C = 10;
 // Lower-case the first letter for mid-sentence use, but leave acronyms (UDMH, RP-1) alone.
 const lower = (name: string) => (/[A-Z]/.test(name.charAt(1)) ? name : name.charAt(0).toLowerCase() + name.slice(1));
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
@@ -46,7 +48,10 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
     for (const [a, b] of [[f, o], [o, f]] as const) {
       // A propellant kept liquid by pressure is not held at its boiling point, so it freezes nothing.
       if (a.boilC !== undefined && b.freezeC !== undefined && !a.pressurised && a.boilC < b.freezeC - FREEZE_MARGIN_C) {
-        notes.push(`${named(a)} is kept below ${Math.round(a.boilC)} °C, cold enough to freeze ${lower(named(b))} (which freezes at ${Math.round(b.freezeC)} °C) in neighbouring plumbing.`);
+        // One that boils above room temperature is not kept cold: the other is kept molten.
+        notes.push(a.boilC < ROOM_C
+          ? `${named(a)} is kept below ${Math.round(a.boilC)} °C, cold enough to freeze ${lower(named(b))} (which freezes at ${Math.round(b.freezeC)} °C) in neighbouring plumbing.`
+          : `${named(b)} must be kept molten above ${Math.round(b.freezeC)} °C; ${lower(named(a))}, at ordinary temperature, would freeze it in neighbouring plumbing.`);
       }
     }
   }

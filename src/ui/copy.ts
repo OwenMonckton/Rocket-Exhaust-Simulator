@@ -131,7 +131,7 @@ export function showsFigures(result: SimResult): boolean {
 const FAILURE_NOTE: Partial<Record<Exclude<Failure, null>, string>> = {
   flameout: 'This mixture will not keep burning.',
   inert: 'Nothing here will burn.',
-  detonation: 'One of these propellants would explode in the engine.',
+  detonation: 'A propellant here would explode in the engine.',
   unsolved: 'No figures: the chemistry would not settle.',
 };
 
@@ -363,7 +363,7 @@ export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): 
   if (failure === 'unsolved' && ENERGY_SOURCES[energy].mixKind === 'temperature') {
     return {
       title: FAILURE_COPY.unsolved.title,
-      text: 'The chemistry of this fluid would not settle at this temperature, so there is no way to say how the engine runs, and no figures are shown. Try a different temperature or chamber pressure. Relighting with nothing changed goes back to the last setup that ran.',
+      text: 'The chemistry of this fluid would not settle at this temperature, so there is no way to say how the engine runs, and no figures are shown. Try a different temperature or chamber pressure. Restarting with nothing changed goes back to the last setup that ran.',
     };
   }
   return FAILURE_COPY[failure];

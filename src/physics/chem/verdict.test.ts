@@ -63,6 +63,15 @@ describe('verdictFor', () => {
     expect(h2[0]).toContain('°C');
   });
 
+  it('words the freeze note for a propellant at ordinary temperature beside molten lithium', () => {
+    const gas = at('h2', 'lox', 6);
+    for (const o of ['htp90', 'n2o4', 'clf3']) {
+      const notes = verdictFor('li', o, gas).notes.filter((n) => /freez/.test(n));
+      expect(notes.length, o).toBe(1);
+      expect(notes[0], o).toMatch(/^Lithium must be kept molten above 181 °C; .+, at ordinary temperature, would freeze it in neighbouring plumbing\.$/);
+    }
+  });
+
   it('says when the flame is hotter than the data covers', () => {
     const hot = verdictFor('be', 'lf2', solvePair('be', 'lf2', 4.5, 100, 40));
     expect(has(hot.notes, '6,000 K')).toBe(true);

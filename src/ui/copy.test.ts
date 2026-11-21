@@ -35,6 +35,10 @@ describe('failure copy for the chemistry failures', () => {
       }
     }
   });
+  it('says restarting, not relighting, for a reactor, whose button reads Restart engine', () => {
+    expect(failureCopy('unsolved', 'reactor').text).toMatch(/Restarting with nothing changed/);
+    expect(failureCopy('unsolved', 'reactor').text).not.toMatch(/Relighting/);
+  });
   it('uses the final titles', () => {
     expect(failureCopy('flameout', 'combustion').title).toBe('Flame-out');
     expect(failureCopy('inert', 'combustion').title).toBe('Nothing to burn it with');
@@ -189,10 +193,10 @@ describe('the line under the limit bars', () => {
     expect(as('inert', false)).toBe('Nothing here will burn.');
     expect(as('unsolved', false)).toBe('No figures: the chemistry would not settle.');
     expect(as('burst', true)).toBe('Past a limit: this engine will fail when fired.');
-    expect(as('detonation', true)).toBe('One of these propellants would explode in the engine.');
+    expect(as('detonation', true)).toBe('A propellant here would explode in the engine.');
   });
   it('says a detonation is one, settled or not', () => {
-    expect(as('detonation', false)).toBe('One of these propellants would explode in the engine.');
+    expect(as('detonation', false)).toBe('A propellant here would explode in the engine.');
   });
 });
 
