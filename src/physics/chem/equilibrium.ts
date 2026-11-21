@@ -112,10 +112,18 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   // Phases of one substance share a formula.
   const formula = new Map<number, string>();
   for (const j of cond) formula.set(j, elements.map((e) => list[j].elements[e] ?? 0).join(','));
-  /** Whether T lies in the species' own fitted range. */
+  /**
+   * Whether T lies in the species' own fitted range. The coldest phase of a substance holds down to
+   * the 200 K floor: most of NASA's solids, like most of its gases, start at 300 K, and the gases are
+   * already extrapolated below that; a solid deleted there would force the metal into gas.
+   */
   const covers = (j: number, temp: number) => {
     const iv = list[j].intervals;
-    return iv[0].tMin <= temp && temp <= iv[iv.length - 1].tMax;
+    if (temp > iv[iv.length - 1].tMax) return false;
+    if (iv[0].tMin <= temp) return true;
+    if (temp < T_FLOOR) return false;
+    const f = formula.get(j);
+    return !cond.some((x) => x !== j && formula.get(x) === f && list[x].intervals[0].tMin < iv[0].tMin);
   };
 
   // Unknowns: π_i (0..L-1), Δn_j of each active condensed species (in `active` order), Δln n, then

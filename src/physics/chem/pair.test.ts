@@ -128,6 +128,27 @@ describe('cold exits', () => {
   });
 });
 
+describe('condensed products below their data', () => {
+  // Every lithium and beryllium solid starts at 300 K in NASA's file, as most gases do; between the
+  // 200 K floor and 300 K the coldest phase is extrapolated, as those gases are, and kept.
+  it('keeps the oxide in an oxidiser-rich beryllium exhaust cooled below 300 K', () => {
+    clearChemCache();
+    const small = solvePair('be', 'lox', 28.1, 70, 198);
+    const big = solvePair('be', 'lox', 28.1, 70, 300);
+    expect(small.ok && big.ok).toBe(true);
+    expect(big.ispVac).toBeGreaterThanOrEqual(small.ispVac);
+    expect(big.condensedShare).toBeGreaterThan(0.05);
+  });
+
+  it('keeps the fluoride in an oxidiser-rich lithium exhaust cooled below 300 K', () => {
+    clearChemCache();
+    const small = solvePair('li', 'lf2', 124, 70, 3);
+    const big = solvePair('li', 'lf2', 124, 70, 5);
+    expect(small.ok && big.ok).toBe(true);
+    expect(big.ispVac).toBeGreaterThanOrEqual(small.ispVac);
+  });
+});
+
 describe('solveFluid', () => {
   it('expands a fluid heated to a set temperature', () => {
     const gas = solveFluid('NH3(L)', 2800, 55, 100);
