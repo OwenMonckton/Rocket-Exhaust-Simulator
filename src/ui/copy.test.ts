@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from '../physics/engine';
-import { pairRange, solvePair } from '../physics/chem/pair';
+import { pairRange, solveFluid, solvePair } from '../physics/chem/pair';
+import { PROPELLANTS } from '../physics/propellants';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
 import { SPECIES_NAMES, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
@@ -43,6 +44,27 @@ describe('exhaust species names', () => {
       expect(gas.ok).toBe(true);
       expect(gas.exhaust.length).toBeGreaterThan(0);
       for (const { name } of gas.exhaust) expect(SPECIES_NAMES, name).toHaveProperty([name]);
+    });
+  }
+
+  // The five reactor fluids the solver works out, across their core temperatures, pressures and nozzles.
+  const FLUIDS = ['ntr-ammonia', 'ntr-methane', 'ntr-water', 'ntr-co2', 'ntr-helium'] as const;
+  for (const id of FLUIDS) {
+    it(`names everything in the ${id} exhaust`, () => {
+      const p = PROPELLANTS[id];
+      expect(p.fluid, id).toBeTruthy();
+      const unnamed = new Set<string>();
+      let solves = 0;
+      for (const tK of [p.ofMin, p.ofDefault, p.ofMax]) {
+        for (const [pcBar, area] of [[40, 100], [70, 16]]) {
+          const gas = solveFluid(p.fluid!, tK, pcBar, area);
+          if (!gas.ok) continue;
+          solves++;
+          for (const { name } of gas.exhaust) if (!Object.hasOwn(SPECIES_NAMES, name)) unnamed.add(name);
+        }
+      }
+      expect(solves, id).toBeGreaterThan(0);
+      expect([...unnamed], id).toEqual([]);
     });
   }
 

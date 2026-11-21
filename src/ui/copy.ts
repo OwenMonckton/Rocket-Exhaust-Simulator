@@ -162,6 +162,7 @@ export const SPECIES_NAMES: Record<string, string> = {
   N2: 'Nitrogen',
   NO: 'Nitric oxide',
   NH3: 'Ammonia',
+  He: 'Helium',
   // Fluorine and chlorine
   HF: 'Hydrogen fluoride',
   H2F2: 'Paired hydrogen fluoride (H2F2)',
