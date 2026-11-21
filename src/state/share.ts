@@ -1,3 +1,4 @@
+import { FUEL_IDS, OXIDISER_IDS } from '../physics/chem/ingredients';
 import { sanitize, sanitizeFlight } from '../physics/engine';
 import { isEnergyId, isExhaustId } from '../physics/parts';
 import { getPreset } from '../physics/presets';
@@ -9,7 +10,7 @@ export interface AppState {
   flight: FlightState;
 }
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 
 /** What the propellant names in links made before engines had separate parts are called now. */
 const OLD_PROPELLANTS: Record<string, PropellantId> = { nuclear: 'ntr-hydrogen' };
@@ -31,6 +32,8 @@ export function encodeState(s: AppState): string {
     c.energy,
     c.exhaust,
     c.propellant,
+    c.fuel,
+    c.oxidiser,
     c.chamberDia,
     c.chamberLen,
     c.throatDia,
@@ -55,12 +58,23 @@ const allNumbers = (a: unknown[]): a is number[] => a.every((n) => typeof n === 
  * The parts and numbers of a link, whichever version wrote it. The numbers are always in the
  * current order: nine of the engine, altitude, throttle, chambers, extension size and travel.
  */
-function unpack(version: string, a: unknown[]): { parts: Pick<EngineConfig, 'energy' | 'exhaust' | 'propellant'>; n: number[] } | null {
+function unpack(
+  version: string,
+  a: unknown[],
+): { parts: Pick<EngineConfig, 'energy' | 'exhaust' | 'propellant'>; fuel: unknown; oxidiser: unknown; n: number[] } | null {
+  // v3 adds the fuel and oxidiser after the propellant. An unknown one is not a reason to refuse
+  // the link: sanitize gives it the first in its list.
   if (version === VERSION) {
+    if (a.length !== 20) return null;
+    const [, energy, exhaust, propellant, fuel, oxidiser, ...n] = a;
+    if (!isEnergyId(energy) || !isExhaustId(exhaust) || !isPropellantId(propellant) || !allNumbers(n)) return null;
+    return { parts: { energy, exhaust, propellant }, fuel, oxidiser, n };
+  }
+  if (version === 'v2') {
     if (a.length !== 18) return null;
     const [, energy, exhaust, propellant, ...n] = a;
     if (!isEnergyId(energy) || !isExhaustId(exhaust) || !isPropellantId(propellant) || !allNumbers(n)) return null;
-    return { parts: { energy, exhaust, propellant }, n };
+    return { parts: { energy, exhaust, propellant }, fuel: FUEL_IDS[0], oxidiser: OXIDISER_IDS[0], n };
   }
   if (version !== 'v1') return null;
   // Links from before engines had separate parts: the propellant said what kind of engine it
@@ -74,6 +88,8 @@ function unpack(version: string, a: unknown[]): { parts: Pick<EngineConfig, 'ene
   const exhaust = n[14] === 1 ? 'aerospike' : 'bell';
   return {
     parts: { energy: PROPELLANTS[propellant].energy, exhaust, propellant },
+    fuel: FUEL_IDS[0],
+    oxidiser: OXIDISER_IDS[0],
     n: [...n.slice(0, 11), n.length > 11 ? n[11] : 1, n.length > 13 ? n[12] : 0, n.length > 13 ? n[13] : 1],
   };
 }
@@ -93,6 +109,9 @@ export function decodeState(hash: string): AppState | null {
     const config = sanitize({
       presetId: typeof presetId === 'string' && getPreset(presetId) ? presetId : null,
       ...link.parts,
+      // Older links carry none: sanitize gives a tabled propellant its own pair.
+      fuel: link.fuel as string,
+      oxidiser: link.oxidiser as string,
       chamberDia: n[0],
       chamberLen: n[1],
       throatDia: n[2],

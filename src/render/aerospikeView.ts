@@ -1,5 +1,6 @@
 import { machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
-import { PROPELLANTS } from '../physics/propellants';
+import { staticLook } from '../physics/gasSource';
+import { destroys } from '../physics/limits';
 import type { EngineConfig, RGB, SimResult } from '../physics/types';
 import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3 } from './drawUtil';
 import type { EngineAnim } from './engineView';
@@ -30,7 +31,7 @@ export function drawAerospike(
   const ppm = view.ppm;
   const cy = view.centreY;
   const cell = spike.cell;
-  const look = PROPELLANTS[cfg.propellant].look;
+  const look = staticLook(cfg);
   const g = result.gamma;
   const cellPts = cell.points;
   const chamberR = cellPts[0].r;
@@ -230,8 +231,9 @@ export function drawAerospike(
   ctx.setLineDash([]);
 
   // --- Failure -------------------------------------------------------------
-  // The top cell gives way: through its throat if it overheated, through its chamber otherwise.
-  if (anim.failure) {
+  // The top cell gives way: through its throat if it overheated, through its chamber otherwise
+  // (a detonation included). A flame that goes out, or never lights, leaves the engine whole.
+  if (anim.failure && destroys(anim.failure)) {
     const at = anim.failure === 'burnthrough' ? cell.throatS : 0.55 * cell.chamberEndS;
     const centre = S(C(at, 0), 1);
     const size = Math.max(30, 2.5 * chamberR * ppm);

@@ -1,0 +1,11 @@
+thermo.json is derived from NASA's thermodynamic database file thermo.inp.
+
+Source: https://raw.githubusercontent.com/nasa/cea/main/data/thermo.inp
+sha256: fa7746572952d74e249e818a82a35c113829742fb421a308e167185528884363
+
+NASA Glenn thermodynamic database, from NASA/TP-2002-211556; distributed with NASA CEA under the Apache License 2.0
+
+Copyright (c) 2025, United States Government as represented by the Administrator of the National Aeronautics and Space Administration
+
+Notice from https://raw.githubusercontent.com/nasa/cea/main/NOTICE.txt. Licensed under the Apache License, Version 2.0.
+Rebuild with: node scripts/build-thermo.mjs <path to thermo.inp>

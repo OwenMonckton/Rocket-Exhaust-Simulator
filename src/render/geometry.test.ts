@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from '../physics/engine';
+import { destroys } from '../physics/limits';
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { PRESETS } from '../physics/presets';
 import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
@@ -239,5 +240,17 @@ describe('solid motor grain label (final review)', () => {
   });
   it('says so when the motor has burnt out', () => {
     expect(grainLabel(withExhaust(motor, 'aerospike'), 1)).toBe('Burnt out. Fire loads a fresh motor.');
+  });
+});
+
+describe('which failures tear the engine open', () => {
+  it('draws damage only for the failures that destroy the engine', () => {
+    expect(destroys(null)).toBe(false);
+    expect(destroys('flameout')).toBe(false);
+    expect(destroys('inert')).toBe(false);
+    expect(destroys('unsolved')).toBe(false);
+    expect(destroys('detonation')).toBe(true);
+    expect(destroys('burst')).toBe(true);
+    expect(destroys('burnthrough')).toBe(true);
   });
 });

@@ -3,7 +3,7 @@ import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
 import { ENERGY_SOURCES } from '../physics/parts';
-import { gasProps } from '../physics/propellants';
+import { resolveGas } from '../physics/gasSource';
 import type { Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
@@ -13,6 +13,7 @@ import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
+import { engineAfterRebuild, latchesNow } from './rebuild';
 
 export interface FrameInfo {
   result: SimResult;
@@ -130,7 +131,7 @@ export function createRuntime(
     // A solid motor burns its grain away while it fires, and goes out when there is none left.
     // Choosing a different engine casts a fresh grain.
     const isSolid = state.config.energy === 'solid';
-    const motor = `${state.config.presetId}|${state.config.energy}|${state.config.exhaust}|${state.config.propellant}`;
+    const motor = `${state.config.presetId}|${state.config.energy}|${state.config.exhaust}|${state.config.propellant}|${state.config.fuel}|${state.config.oxidiser}`;
     if (motor !== burningMotor) burnt = 0;
     burningMotor = motor;
     if (isSolid && !failure && fire > 0.5) {
@@ -145,7 +146,7 @@ export function createRuntime(
       failT += dt;
     } else {
       fire = firing ? Math.min(1, fire + dt / RAMP_UP_S) : Math.max(0, fire - dt / RAMP_DOWN_S);
-      if (firing && fire > 0.6 && result.failure) {
+      if (firing && latchesNow(result.failure, fire)) {
         failure = result.failure;
         failT = 0;
         firing = false;
@@ -198,7 +199,8 @@ export function createRuntime(
     // clipped to where the formula puts the jet, and the plume starts from the formula.
     // It is the gas that decides, not the engine: a reactor heating water or carbon dioxide has
     // exhaust as heavy as a flame's.
-    const lightExhaust = gasProps(state.config.propellant, state.config.mixtureRatio).molarMass < LIGHT_EXHAUST_MOLAR_MASS;
+    const lightExhaust =
+      resolveGas(state.config, result.pc / 1e5, result.expansionRatio).gas.molarMass < LIGHT_EXHAUST_MOLAR_MASS;
     // The engine's gas simulation follows the wall of a bell from the injector to the exit. An
     // aerospike has no such wall: its gas runs along the outside of a spike, with open air on the
     // other side. That is the plume grid's kind of flow, so with the plume simulated the spike
@@ -308,7 +310,7 @@ export function createRuntime(
       const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
       const exitPressure = Math.pow(exitTemp, g / (g - 1));
       // A different stretch of engine starts afresh, as a different engine does.
-      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.energy}|${cfg.exhaust}|${cfg.propellant}`;
+      const engine = (extensionInEngine ? 'whole|' : '') + `${cfg.presetId}|${cfg.energy}|${cfg.exhaust}|${cfg.propellant}|${cfg.fuel}|${cfg.oxidiser}`;
       if (engine !== simulatedEngine) {
         plume?.resetEngineSim();
         settledFrames = 0;
@@ -411,7 +413,7 @@ export function createRuntime(
           pc: result.pc,
           pa: result.pa,
           tc: result.tc,
-          gasR: gasProps(state.config.propellant, state.config.mixtureRatio).R,
+          gasR: resolveGas(state.config, result.pc / 1e5, result.expansionRatio).gas.R,
           combustionEff: result.combustionEff,
           chambers: state.config.chambers,
         });
@@ -490,7 +492,10 @@ export function createRuntime(
       failT = 0;
       fire = 0;
       firing = false;
-      store.replace(lastGood);
+      const current = store.get();
+      const next = engineAfterRebuild(current, lastGood);
+      if (next === current) lastGood = current; // kept: nothing changes, so the subscriber will not see it
+      else store.replace(next);
     },
     clearFailure() {
       // A whole engine comes with a fresh grain, even where the last one had not failed.

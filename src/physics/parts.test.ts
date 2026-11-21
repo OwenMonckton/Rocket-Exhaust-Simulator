@@ -16,8 +16,8 @@ describe('engine parts', () => {
     }
   });
 
-  it('offers a combustion chamber the four liquid pairs', () => {
-    expect(propellantsFor('combustion')).toEqual(['kerolox', 'hydrolox', 'methalox', 'hypergolic']);
+  it('offers a combustion chamber the four liquid pairs, then any pair worked out by the solver', () => {
+    expect(propellantsFor('combustion')).toEqual(['kerolox', 'hydrolox', 'methalox', 'hypergolic', 'calculated']);
   });
 
   it("swaps a propellant the energy source can't use for its first one", () => {

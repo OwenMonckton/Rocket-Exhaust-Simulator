@@ -1,5 +1,6 @@
 import { areaRatio, machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
-import { PROPELLANTS } from '../physics/propellants';
+import { staticLook } from '../physics/gasSource';
+import { destroys } from '../physics/limits';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { drawAerospike } from './aerospikeView';
 import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3, rand } from './drawUtil';
@@ -161,7 +162,6 @@ export function drawEngine(
 ): void {
   ctx.clearRect(0, 0, widthPx, heightPx);
   const profile = engineProfile(cfg);
-  const prop = PROPELLANTS[cfg.propellant];
   const isSolid = cfg.energy === 'solid';
   const isNuclear = cfg.energy === 'reactor';
   // Engines fed a single propellant: hydrogen for nuclear thermal, uranium salt water otherwise.
@@ -324,7 +324,7 @@ export function drawEngine(
     if (!simGas) {
     cavity(jet);
     const grad = ctx.createLinearGradient(X(0), 0, X(profile.exitX), 0);
-    const look = prop.look;
+    const look = staticLook(cfg);
     const N = 14;
     const g = result.gamma;
     const exitM = machFromAreaRatio(result.expansionRatio, g);
@@ -605,7 +605,8 @@ export function drawEngine(
 
   // --- Failure -------------------------------------------------------------
   // One chamber failing is enough to end the run, so only the first one is shown torn open.
-  if (anim.failure && index === 0) {
+  // A flame that goes out, or never lights, leaves the engine whole. A detonation bursts the chamber.
+  if (anim.failure && destroys(anim.failure) && index === 0) {
     const fx = X(anim.failure === 'burnthrough' ? profile.throatX : cfg.chamberLen * 0.55);
     const fr = (anim.failure === 'burnthrough' ? rt : rc) * ppm;
     const size = Math.max(40, profile.maxRadius * ppm);

@@ -7,6 +7,8 @@ const base: EngineConfig = {
   presetId: null,
   energy: 'combustion',
   propellant: 'kerolox',
+  fuel: 'rp1',
+  oxidiser: 'lox',
   chamberDia: 0.4,
   chamberLen: 0.5,
   throatDia: 0.22,

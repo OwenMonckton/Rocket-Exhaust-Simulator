@@ -1,7 +1,7 @@
 import { RANGES, sanitize, sanitizeFlight } from '../physics/engine';
 import { ENERGY_SOURCES, isEnergyId } from '../physics/parts';
 import { getPreset } from '../physics/presets';
-import { starterEngine, withEnergy, withExhaust, withPropellant } from '../physics/reshape';
+import { starterEngine, withEnergy, withExhaust, withPair, withPropellant } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, FlightState } from '../physics/types';
 import type { AppState } from './share';
 
@@ -25,6 +25,7 @@ export function isModified(cfg: EngineConfig): boolean {
   const stock = getPreset(cfg.presetId)?.config;
   if (!stock) return false;
   if (cfg.energy !== stock.energy || cfg.exhaust !== stock.exhaust || cfg.propellant !== stock.propellant) return true;
+  if (cfg.fuel !== stock.fuel || cfg.oxidiser !== stock.oxidiser) return true;
   const keys: (keyof EngineConfig)[] = [
     'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'nozzleLenPct',
     'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers', 'extFixedDia', 'extDeploy',
@@ -47,6 +48,10 @@ export interface Store {
   setEnergy(id: EnergyId): void;
   /** Swap the exhaust, keeping the engine about as powerful */
   setExhaust(id: ExhaustId): void;
+  /** Work the gas out from this fuel (with the current oxidiser), at the pair's own mixture */
+  setFuel(id: string): void;
+  /** Work the gas out from this oxidiser (with the current fuel), at the pair's own mixture */
+  setOxidiser(id: string): void;
   setScale(scale: number): void;
   subscribe(fn: (s: AppState) => void): () => void;
 }
@@ -55,6 +60,13 @@ export function createStore(initial: AppState): Store {
   let state: AppState = { config: sanitize(initial.config), flight: sanitizeFlight(initial.flight) };
   const listeners = new Set<(s: AppState) => void>();
   const emit = () => listeners.forEach((fn) => fn(state));
+  /** Calculate the gas from a changed fuel or oxidiser, starting at the new pair's default mixture. */
+  const calculate = (part: Partial<Pick<EngineConfig, 'fuel' | 'oxidiser'>>) => {
+    // Only a combustion chamber burns a fuel and oxidiser; any other engine keeps what it has.
+    if (state.config.energy !== 'combustion') return;
+    state = { config: withPair(state.config, part), flight: state.flight };
+    emit();
+  };
 
   return {
     get: () => state,
@@ -98,6 +110,8 @@ export function createStore(initial: AppState): Store {
       state = { config: sanitize(withExhaust(state.config, id)), flight: state.flight };
       emit();
     },
+    setFuel: (id) => calculate({ fuel: id }),
+    setOxidiser: (id) => calculate({ oxidiser: id }),
     setScale(scale) {
       state = { config: sanitize(applyScale(state.config, scale)), flight: state.flight };
       emit();

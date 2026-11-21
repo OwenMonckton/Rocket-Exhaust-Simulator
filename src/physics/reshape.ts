@@ -1,7 +1,9 @@
+import { pairRange } from './chem/pair';
 import { RANGES, sanitize, simulate } from './engine';
+import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
-import { PROPELLANTS, isPropellantId } from './propellants';
+import { isPropellantId } from './propellants';
 import type { EnergyId, EngineConfig, ExhaustId, PropellantId } from './types';
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
@@ -36,6 +38,11 @@ export function chamberShape(
   return { chamberDia, chamberLen };
 }
 
+/** The chamber length a liquid needs to burn completely in this engine, at its own pressure and area ratio. */
+function lStarRefOf(cfg: EngineConfig): number {
+  return resolveGas(cfg, cfg.chamberPressureBar, (cfg.exitDia / cfg.throatDia) ** 2).lStarRef;
+}
+
 /** Chamber wall (m) that puts an engine at `fraction` of its structural limit. */
 export function wallFor(pcBar: number, chamberDia: number, fraction: number): number {
   return (pcBar * chamberDia) / (2 * SIGMA_ALLOW_BAR * fraction);
@@ -44,9 +51,10 @@ export function wallFor(pcBar: number, chamberDia: number, fraction: number): nu
 /**
  * The same engine built round a different energy source. The throat, the exit and the chamber
  * pressure stay; the chamber takes the proportions that source usually has, the propellant
- * becomes the source's first, and the wall is re-sized so the engine is as close to bursting
- * as it was before: no more, no less. Where that would overheat the engine it is turned down:
- * the temperature where that is a setting, the chamber pressure where a flame sets it.
+ * becomes the source's first (for a combustion chamber, RP-1 and liquid oxygen, worked out by the
+ * solver), and the wall is re-sized so the engine is as close to bursting as it was before: no
+ * more, no less. Where that would overheat the engine it is turned down: the temperature where
+ * that is a setting, the chamber pressure where a flame sets it.
  *
  * `throttle` is where the throttle stands. A source that cannot throttle runs flat out, so an
  * engine throttled down and given one takes the pressure it was really running at as its own:
@@ -60,11 +68,14 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): E
     const running = Math.max(RANGES.chamberPressureBar.min, Math.floor(cfg.chamberPressureBar * throttle + 1e-9));
     cfg = { ...cfg, chamberPressureBar: Math.min(cfg.chamberPressureBar, running) };
   }
-  const propellant = propellantsFor(energy)[0];
-  const prop = PROPELLANTS[propellant];
-  const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, prop.lStarRef);
+  const burns = energy === 'combustion';
+  const propellant: PropellantId = burns ? 'calculated' : propellantsFor(energy)[0];
+  const parts = { energy, propellant, fuel: burns ? 'rp1' : cfg.fuel, oxidiser: burns ? 'lox' : cfg.oxidiser };
+  const mixtureRatio = mixRange({ ...cfg, ...parts }).ofDefault;
+  const lStarRef = lStarRefOf({ ...cfg, ...parts, mixtureRatio });
+  const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, lStarRef);
   // Sanitise first: the wall has to follow the chamber the engine really ends up with.
-  const shaped = sanitize({ ...cfg, energy, propellant, mixtureRatio: prop.ofDefault, ...shape });
+  const shaped = sanitize({ ...cfg, ...parts, mixtureRatio, ...shape });
   const swapped = sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia });
   // The new source starts at its own usual temperature, so there is no old setting to keep.
   return source.mixKind === 'temperature' ? cooled(swapped, 0) : eased(swapped, heatLoad(cfg));
@@ -123,9 +134,25 @@ function eased(cfg: EngineConfig, heatBefore: number): EngineConfig {
  */
 export function withPropellant(cfg: EngineConfig, propellant: PropellantId): EngineConfig {
   if (cfg.propellant === propellant) return cfg;
-  const mixtureRatio = isPropellantId(propellant) ? PROPELLANTS[propellant].ofDefault : cfg.mixtureRatio;
-  const next = sanitize({ ...cfg, propellant, mixtureRatio });
-  const heatBefore = heatLoad(cfg);
+  const mixtureRatio = isPropellantId(propellant)
+    ? mixRange({ ...sanitize({ ...cfg, propellant }), propellant }).ofDefault
+    : cfg.mixtureRatio;
+  return settled(sanitize({ ...cfg, propellant, mixtureRatio }), heatLoad(cfg));
+}
+
+/**
+ * The same combustion engine burning a different fuel or oxidiser, worked out by the solver, at
+ * the new pair's most efficient mixture. Turned down like any other change of propellant where
+ * the new flame would overheat an engine the old one did not. Any other engine is left alone.
+ */
+export function withPair(cfg: EngineConfig, part: { fuel?: string; oxidiser?: string }): EngineConfig {
+  if (cfg.energy !== 'combustion') return cfg;
+  const chosen = sanitize({ ...cfg, ...part, propellant: 'calculated' });
+  return settled(sanitize({ ...chosen, mixtureRatio: mixRange(chosen).ofDefault }), heatLoad(cfg));
+}
+
+/** An engine on a new propellant, turned down if it now runs hotter than its throat can take. */
+function settled(next: EngineConfig, heatBefore: number): EngineConfig {
   return ENERGY_SOURCES[next.energy].mixKind === 'temperature' ? cooled(next, heatBefore) : eased(next, heatBefore);
 }
 
@@ -155,7 +182,7 @@ function bellsFor(cfg: EngineConfig): number {
 function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineConfig {
   const k = Math.sqrt(cfg.chambers / count);
   // A chamber a liquid burns in keeps its length, and with it the time the propellant has to burn.
-  const burnsInChamber = PROPELLANTS[cfg.propellant].lStarRef > 0;
+  const burnsInChamber = lStarRefOf(cfg) > 0;
   const shaped = sanitize({
     ...cfg,
     exhaust,
@@ -208,27 +235,34 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
   return cooled(next, heatBefore);
 }
 
-/** The blank engine the simulator opens on: a mid-sized kerolox engine, well inside every limit. */
+/**
+ * The blank engine the simulator opens on: a mid-sized engine burning RP-1 with liquid oxygen,
+ * worked out by the solver, well inside every limit.
+ */
 export function starterEngine(): EngineConfig {
   const throatDia = 0.2;
   const pcBar = 100;
   const source = ENERGY_SOURCES.combustion;
-  const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, PROPELLANTS.kerolox.lStarRef);
-  return sanitize({
+  const unshaped: EngineConfig = {
     presetId: null,
     energy: 'combustion',
     exhaust: 'bell',
-    propellant: 'kerolox',
-    ...shape,
+    propellant: 'calculated',
+    fuel: 'rp1',
+    oxidiser: 'lox',
+    chamberDia: 0,
+    chamberLen: 0,
     throatDia,
     exitDia: round(throatDia * Math.sqrt(16)),
     nozzleLenPct: 80,
-    wall: round(wallFor(pcBar, shape.chamberDia, 0.5)),
+    wall: 0,
     chamberPressureBar: pcBar,
-    mixtureRatio: PROPELLANTS.kerolox.ofDefault,
+    mixtureRatio: pairRange('rp1', 'lox').ofDefault,
     scale: 1,
     chambers: 1,
     extFixedDia: 0,
     extDeploy: 1,
-  });
+  };
+  const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, lStarRefOf(unshaped));
+  return sanitize({ ...unshaped, ...shape, wall: round(wallFor(pcBar, shape.chamberDia, 0.5)) });
 }

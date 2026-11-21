@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { pairRange } from './chem/pair';
 import { sanitize, simulate } from './engine';
 import { ENERGY_IDS, propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
@@ -22,7 +23,7 @@ describe('the blank engine', () => {
     const s = starterEngine();
     expect(sanitize(s)).toEqual(s);
     expect(s.presetId).toBeNull();
-    expect(s).toMatchObject({ energy: 'combustion', exhaust: 'bell', propellant: 'kerolox' });
+    expect(s).toMatchObject({ energy: 'combustion', exhaust: 'bell', propellant: 'calculated', fuel: 'rp1', oxidiser: 'lox' });
     for (const flight of [ground, space]) {
       const r = simulate(s, flight);
       expect(r.failure).toBeNull();
@@ -44,7 +45,8 @@ describe('changing the energy source', () => {
       const from = starterEngine();
       const next = withEnergy(from, e);
       expect(next.energy).toBe(e);
-      expect(next.propellant).toBe(propellantsFor(e)[0]);
+      // A combustion chamber burns RP-1 with liquid oxygen, worked out by the solver.
+      expect(next.propellant).toBe(e === 'combustion' ? 'calculated' : propellantsFor(e)[0]);
       expect(next.throatDia).toBe(from.throatDia);
       expect(next.exitDia).toBe(from.exitDia);
       expect(next.chamberPressureBar).toBe(from.chamberPressureBar);
@@ -61,6 +63,13 @@ describe('changing the energy source', () => {
       }
     });
   }
+
+  it('gives a burning engine RP-1 and liquid oxygen, worked out by the solver', () => {
+    const back = withEnergy(withEnergy(starterEngine(), 'reactor'), 'combustion');
+    expect(back).toMatchObject({ propellant: 'calculated', fuel: 'rp1', oxidiser: 'lox', mixtureRatio: pairRange('rp1', 'lox').ofDefault });
+    expect(simulate(back, ground).calculated).toBe(true);
+    expect(simulate(back, ground).failure).toBeNull();
+  });
 
   it('shapes the chamber to suit the source', () => {
     const from = starterEngine();

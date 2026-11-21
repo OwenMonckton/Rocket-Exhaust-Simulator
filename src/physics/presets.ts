@@ -1,3 +1,4 @@
+import { FUEL_IDS, OXIDISER_IDS } from './chem/ingredients';
 import { simulate } from './engine';
 import { ENERGY_SOURCES } from './parts';
 import { PROPELLANTS } from './propellants';
@@ -149,6 +150,9 @@ function build(s: Spec): Preset {
       energy: PROPELLANTS[s.propellant].energy,
       exhaust: s.exhaust ?? 'bell',
       propellant: s.propellant,
+      // What sanitize gives: the propellant's own fuel and oxidiser, or the first of each.
+      fuel: PROPELLANTS[s.propellant].pair?.fuel ?? FUEL_IDS[0],
+      oxidiser: PROPELLANTS[s.propellant].pair?.oxidiser ?? OXIDISER_IDS[0],
       chamberDia,
       chamberLen,
       throatDia: round(throatDia),

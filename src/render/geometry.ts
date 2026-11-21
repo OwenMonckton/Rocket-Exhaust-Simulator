@@ -1,5 +1,5 @@
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
-import { gasProps } from '../physics/propellants';
+import { gasFor } from '../physics/engine';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -215,7 +215,7 @@ const SPIKE_SAMPLES = 40;
  * expanded, and the spike is cut off flat according to `nozzleLenPct`.
  */
 function aerospikeProfile(cfg: EngineConfig): EngineProfile {
-  const g = gasProps(cfg.propellant, cfg.mixtureRatio).gamma;
+  const g = gasFor(cfg).gas.gamma;
   // The whole engine's flow leaves across a circle n times one cell's share of the exit area.
   const lipR = (Math.sqrt(cfg.chambers) * cfg.exitDia) / 2;
   const eps = (cfg.exitDia / cfg.throatDia) ** 2;

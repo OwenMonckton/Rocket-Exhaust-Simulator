@@ -3,6 +3,7 @@ export type PropellantId =
   | 'hydrolox'
   | 'methalox'
   | 'hypergolic'
+  | 'calculated'
   | 'solid'
   | 'ntr-hydrogen'
   | 'ntr-ammonia'
@@ -64,6 +65,10 @@ export interface Propellant {
   lStarRef: number;
   table: { of: number; tc: number; gamma: number; molarMass: number }[];
   look: PlumeLook;
+  /** The fuel and oxidiser (ids in chem/ingredients) a tabled burning propellant is made of */
+  pair?: { fuel: string; oxidiser: string };
+  /** The thermo reactant a reactor heats, for a fluid the solver can work out */
+  fluid?: string;
 }
 
 export interface EngineConfig {
@@ -79,6 +84,9 @@ export interface EngineConfig {
    */
   exhaust: ExhaustId;
   propellant: PropellantId;
+  /** Fuel and oxidiser ids (chem/ingredients); what burns when the propellant is 'calculated' */
+  fuel: string;
+  oxidiser: string;
   /** metres */
   chamberDia: number;
   chamberLen: number;
@@ -116,7 +124,16 @@ export interface FlightState {
 
 /** 'compensating': an aerospike below its design altitude, its jet shaped by the air to match it */
 export type ExpansionState = 'ideal' | 'over' | 'under' | 'separated' | 'compensating';
-export type Failure = null | 'burst' | 'burnthrough' | 'instability' | 'meltdown';
+export type Failure =
+  | null
+  | 'burst'
+  | 'burnthrough'
+  | 'instability'
+  | 'meltdown'
+  | 'flameout'
+  | 'inert'
+  | 'detonation'
+  | 'unsolved';
 
 export interface Limits {
   structural: number;
@@ -156,4 +173,12 @@ export interface SimResult {
   shudder: number;
   limits: Limits;
   failure: Failure;
+  /** The exhaust's main species and their mole fractions, largest first; empty for a tabled propellant */
+  exhaust: { name: string; share: number }[];
+  /** Warnings about the fuel and oxidiser; empty for a tabled propellant */
+  notes: string[];
+  /** True when the gas was worked out by the chemistry solver rather than taken from a table */
+  calculated: boolean;
+  /** False when no solve settled and the figures come from a stand-in gas; none of them is real */
+  settled: boolean;
 }

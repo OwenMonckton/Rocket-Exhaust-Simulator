@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { RANGES, simulate } from '../physics/engine';
+import { RANGES, sanitize, simulate } from '../physics/engine';
 import { PRESETS, getPreset } from '../physics/presets';
 import { decodeState, encodeState } from './share';
 import { starterEngine } from '../physics/reshape';
+import { pairRange } from '../physics/chem/pair';
 import { applyScale, createStore, defaultState, isModified } from './store';
 
 describe('share links', () => {
@@ -47,10 +48,44 @@ describe('share links', () => {
   });
   it('writes links that carry the three parts', () => {
     const text = encodeState({ config: getPreset('nerva')!.config, flight: { altitudeKm: 100, throttle: 1 } });
-    expect(text.startsWith('v2.')).toBe(true);
+    expect(text.startsWith('v3.')).toBe(true);
     const packed = JSON.parse(atob(text.slice(3).replace(/-/g, '+').replace(/_/g, '/')));
-    expect(packed).toHaveLength(18);
+    expect(packed).toHaveLength(20);
     expect(packed.slice(0, 4)).toEqual(['nerva', 'reactor', 'bell', 'ntr-hydrogen']);
+    expect(packed.slice(4, 6)).toEqual([getPreset('nerva')!.config.fuel, getPreset('nerva')!.config.oxidiser]);
+  });
+  it('round-trips a calculated engine with its fuel, oxidiser and mixture', () => {
+    const config = sanitize({ ...PRESETS[0].config, presetId: null, propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
+    expect(config).toMatchObject({ propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
+    const s = { config, flight: { altitudeKm: 0, throttle: 1 } };
+    expect(decodeState(encodeState(s))).toEqual(s);
+  });
+  it('reads v1 and v2 links exactly as before, with the tabled pair filled in (review focus 5)', () => {
+    // Expected engines are what the links decoded to before Task 10 (share.ts at cb88400).
+    const nums = [0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 1, 0, 1];
+    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1 };
+    const flight = { altitudeKm: 0, throttle: 1 };
+    const v2 = decodeState('v2.' + btoa(JSON.stringify([null, 'combustion', 'bell', 'kerolox', ...nums])))!;
+    expect(v2).toEqual({ config: { presetId: null, energy: 'combustion', exhaust: 'bell', propellant: 'kerolox', fuel: 'rp1', oxidiser: 'lox', mixtureRatio: 2.36, ...shape }, flight });
+    const v1 = decodeState('v1.' + btoa(JSON.stringify(['merlin-1d', 'hydrolox', 0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 6, 1, 0, 1])))!;
+    expect(v1).toEqual({ config: { presetId: 'merlin-1d', energy: 'combustion', exhaust: 'bell', propellant: 'hydrolox', fuel: 'h2', oxidiser: 'lox', mixtureRatio: 6, ...shape }, flight });
+  });
+  it('opens a v3 link with an unknown or malformed fuel or oxidiser, sanitised, and refuses a wrong length (review focus 5)', () => {
+    const calc = sanitize({ ...PRESETS[0].config, presetId: null, propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
+    const good = encodeState({ config: calc, flight: { altitudeKm: 0, throttle: 1 } });
+    const packed = JSON.parse(atob(good.slice(3).replace(/-/g, '+').replace(/_/g, '/'))) as unknown[];
+    expect(packed.slice(3, 6)).toEqual(['calculated', 'b5h9', 'of2']);
+    const link = (a: unknown[]) => 'v3.' + btoa(JSON.stringify(a));
+    const edit = (fuel: unknown, oxidiser: unknown) => {
+      const e = [...packed];
+      e[4] = fuel;
+      e[5] = oxidiser;
+      return decodeState(link(e));
+    };
+    expect(edit('xyz', 'abc')!.config).toMatchObject({ propellant: 'calculated', fuel: 'rp1', oxidiser: 'lox' });
+    for (const bad of [7, null, {}, 'toString']) expect(edit(bad, bad)!.config, String(bad)).toMatchObject({ propellant: 'calculated', fuel: 'rp1', oxidiser: 'lox' });
+    expect(decodeState(link(packed.slice(0, 18)))).toBeNull();
+    expect(decodeState(link([...packed, 1]))).toBeNull();
   });
   it('opens a link whose propellant does not suit its energy source (review focus)', () => {
     const v2 = (a: unknown[]) => decodeState('v2.' + btoa(JSON.stringify(a)));
@@ -109,6 +144,57 @@ describe('store', () => {
     expect(isModified(store.get().config)).toBe(true);
     store.setScale(1);
     expect(isModified(store.get().config)).toBe(false);
+  });
+  it('calculates from a chosen fuel or oxidiser and resets to stock', () => {
+    const store = createStore(defaultState());
+    store.loadPreset('merlin-1d');
+    store.setFuel('ch4');
+    expect(store.get().config).toMatchObject({ propellant: 'calculated', fuel: 'ch4', oxidiser: 'lox' });
+    expect(store.get().config.mixtureRatio).toBe(pairRange('ch4', 'lox').ofDefault);
+    expect(isModified(store.get().config)).toBe(true);
+    store.setFuel('rp1');
+    expect(store.get().config.propellant).toBe('calculated');
+    expect(isModified(store.get().config)).toBe(true);
+    store.setOxidiser('of2');
+    expect(store.get().config).toMatchObject({ oxidiser: 'of2', mixtureRatio: pairRange('rp1', 'of2').ofDefault });
+    store.loadPreset('merlin-1d');
+    expect(store.get().config.propellant).toBe('kerolox');
+    expect(isModified(store.get().config)).toBe(false);
+  });
+  it('turns the chamber pressure down when a hotter fuel and oxidiser would burn through', () => {
+    const sl = { altitudeKm: 0, throttle: 1 };
+    const starter = starterEngine();
+    // The same engine at twice the pressure, with a wall to match: fine on RP-1 and oxygen.
+    const config = sanitize({ ...starter, chamberPressureBar: 200, wall: starter.wall * 2 });
+    expect(simulate(config, sl).failure).toBeNull();
+    // Beryllium with fluorine, set straight into it, burns through.
+    const forced = sanitize({ ...config, fuel: 'be', oxidiser: 'lf2', mixtureRatio: pairRange('be', 'lf2').ofDefault });
+    expect(simulate(forced, sl).failure).toBe('burnthrough');
+    // Picked through the store, the engine is turned down instead of being destroyed by the swap.
+    const store = createStore({ config, flight: sl });
+    store.setFuel('be');
+    store.setOxidiser('lf2');
+    const picked = store.get().config;
+    expect(picked).toMatchObject({ fuel: 'be', oxidiser: 'lf2', propellant: 'calculated' });
+    expect(picked.mixtureRatio).toBeCloseTo(pairRange('be', 'lf2').ofDefault, 6);
+    expect(picked.chamberPressureBar).toBeLessThan(200);
+    expect(simulate(picked, sl).failure).toBeNull();
+  });
+
+  it('leaves a reactor or solid engine alone when a fuel or oxidiser is picked', () => {
+    const store = createStore(defaultState());
+    store.loadPreset('nerva');
+    store.set({ config: { propellant: 'ntr-ammonia', mixtureRatio: 2600 } });
+    const before = store.get().config;
+    expect(before.propellant).toBe('ntr-ammonia');
+    store.setFuel('ch4');
+    store.setOxidiser('of2');
+    expect(store.get().config).toEqual(before);
+    store.loadPreset('solid-booster');
+    const solid = store.get().config;
+    store.setFuel('ch4');
+    store.setOxidiser('of2');
+    expect(store.get().config).toEqual(solid);
   });
   it('opens on a blank engine tied to no example', () => {
     expect(defaultState().config).toEqual(starterEngine());
