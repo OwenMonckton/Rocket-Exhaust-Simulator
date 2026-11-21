@@ -157,6 +157,29 @@ describe('solveFluid', () => {
     expect(gas.ispVac / G0).toBeGreaterThan(380);
     expect(gas.ispVac / G0).toBeLessThan(480);
   });
+
+  it('settles a water reactor whose exhaust condenses in a big nozzle', () => {
+    clearChemCache();
+    const gas = solveFluid('H2O(L)', 1500, 30, 300);
+    expect(gas.ok).toBe(true);
+    expect(gas.condensedShare).toBeGreaterThan(0);
+  });
+
+  it('settles water over the whole core-temperature slider in vacuum nozzles', () => {
+    // The NERVA example's pressure. Each point is solved cold, as after a reload or a shared link.
+    const failed: string[] = [];
+    for (const eps of [100, 144, 200, 289]) {
+      let prev: SolvedGas | undefined;
+      for (let t = 1500; t <= 2890; t += 10) {
+        clearChemCache();
+        const gas = solveFluid('H2O(L)', t, 38.6, eps);
+        if (!gas.ok) { failed.push(`${t} K at ${eps}`); prev = undefined; continue; }
+        if (prev) expect(relErr(gas.ispVac, prev.ispVac), `Isp step to ${t} K at ${eps}`).toBeLessThan(0.01);
+        prev = gas;
+      }
+    }
+    expect(failed).toEqual([]);
+  }, 60_000);
 });
 
 describe('the cache', () => {

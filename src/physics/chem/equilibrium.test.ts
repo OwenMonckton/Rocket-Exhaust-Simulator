@@ -159,6 +159,21 @@ describe('equilibrium with liquid and solid products', () => {
     expect(Number.isNaN(st.molarMass)).toBe(false);
   });
 
+  it('gives sane derivatives where steam meets its own liquid or ice', () => {
+    // With water and its own condensate the only species, T is fixed by P and the derivative matrix
+    // is singular; it once "settled" here with cp 1.2e12 J/(kg K) and gamma_s 0.52.
+    const mix = mixtureFrom([{ reactant: REACTANTS['H2O(L)'], massFraction: 1 }]);
+    const ch = equilibrate(mix, { kind: 'tp', t: 1700, pBar: 30 });
+    for (const pBar of [0.004, 0.003, 0.002]) {
+      const st = equilibrate(mix, { kind: 'sp', s: ch.s, pBar });
+      if (!st.ok) continue;
+      expect(st.cp, `cp at ${pBar} bar`).toBeGreaterThan(0);
+      expect(st.cp, `cp at ${pBar} bar`).toBeLessThan(1e6);
+      expect(st.gammaS, `gamma_s at ${pBar} bar`).toBeGreaterThan(1);
+      expect(st.dlnVdlnP, `dlnV/dlnP at ${pBar} bar`).toBeLessThan(0);
+    }
+  });
+
   it('does not accept a state colder than the thermodynamic data covers', () => {
     // Fuel 85% of the mass, 37.75% of it beryllium: this once "settled" at 86 K, gas only.
     const mix = mixtureFrom([

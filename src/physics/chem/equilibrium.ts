@@ -403,14 +403,26 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   for (let k = 0; k < L; k++) anh[k] = -g[k * wd + md];
   g[iN * wd + md] = -sumNH;
   g[iN * wd + md + 1] = sumN;
-  const derivOk = solve(g, md, 2);
+  let derivOk = solve(g, md, 2);
   let cpOverR = sumNC + sumCC + sumNHH + sumNH * g[iN * wd + md];
   for (let i = 0; i < L; i++) cpOverR += anh[i] * g[i * wd + md];
   for (let c = 0; c < nc; c++) cpOverR += dH[c] * g[(L + c) * wd + md];
-  const dlnVdlnT = 1 + g[iN * wd + md];
-  const dlnVdlnP = -1 + g[iN * wd + md + 1];
+  let dlnVdlnT = 1 + g[iN * wd + md];
+  let dlnVdlnP = -1 + g[iN * wd + md + 1];
   const cvOverR = cpOverR + (n * dlnVdlnT * dlnVdlnT) / dlnVdlnP;
-  const gammaS = twoPhase ? -1 / dlnVdlnP : -(cpOverR / cvOverR) / dlnVdlnP; // 3.9 on a melting point
+  let gammaS = twoPhase ? -1 / dlnVdlnP : -(cpOverR / cvOverR) / dlnVdlnP; // 3.9 on a melting point
+  // A gas with its own condensate as the only species present (steam over water or ice) has its
+  // element rows dependent and T fixed by P: the derivative matrix is singular, and whether the
+  // elimination notices is down to rounding (it once gave cp 1.2e12 J/(kg K), gamma_s 0.52). The
+  // state itself is sound; take the frozen-composition values for its derivatives instead.
+  const sane = derivOk && cpOverR > 0 && Number.isFinite(gammaS) && (twoPhase || gammaS > 1) && dlnVdlnP < 0;
+  if (!sane && active.length > 0) {
+    cpOverR = sumNC + sumCC;
+    gammaS = cpOverR / (cpOverR - n);
+    dlnVdlnT = 1;
+    dlnVdlnP = -1;
+    derivOk = true;
+  }
 
   let condensedMass = 0;
   for (const j of cond) condensedMass += moles[j] * list[j].molarMass;
@@ -425,7 +437,8 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
     condensedMassFraction: condensedMass,
     iterations,
   };
-  const settled = ok && derivOk && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite);
+  const settled = ok && derivOk && [t, n, state.h, state.s, state.cp, gammaS].every(Number.isFinite)
+    && state.cp > 0 && gammaS > 0 && dlnVdlnP < 0;
   state.ok = settled && t >= T_FLOOR;
   state.belowFloor = settled && t < T_FLOOR;
   return state;
