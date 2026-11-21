@@ -131,6 +131,7 @@ export function showsFigures(result: SimResult): boolean {
 const FAILURE_NOTE: Partial<Record<Exclude<Failure, null>, string>> = {
   flameout: 'This mixture will not keep burning.',
   inert: 'Nothing here will burn.',
+  detonation: 'One of these propellants would explode in the engine.',
   unsolved: 'No figures: the chemistry would not settle.',
 };
 

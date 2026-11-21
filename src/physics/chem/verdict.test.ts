@@ -69,6 +69,12 @@ describe('verdictFor', () => {
     expect(has(verdictFor('h2', 'lox', at('h2', 'lox', 6)).notes, '6,000 K')).toBe(false);
   });
 
+  it('drops "alone" from a fuel named for running alone once it has an oxidiser', () => {
+    const notes = verdictFor('htp90-mono', 'lox', at('h2', 'lox', 6)).notes;
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes.join(' ')).not.toMatch(/alone/);
+  });
+
   it('warns about aniline and about blends of toxic propellants', () => {
     const gas = at('h2', 'lox', 6);
     expect(verdictFor('aniline', 'wfna', gas).notes).toContain('Toxic: aniline.');

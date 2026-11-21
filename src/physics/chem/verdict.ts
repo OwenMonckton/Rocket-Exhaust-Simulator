@@ -35,6 +35,8 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
   else if (!gas.ok) failure = 'unsolved';
   else if (!noOx && gas.tc < FLAMEOUT_K) failure = 'flameout';
 
+  // A fuel named for running alone ("... alone") is not alone once it has an oxidiser.
+  const named = (p: Ingredient) => (noOx ? p.name : p.name.replace(/ alone$/, ''));
   const notes: string[] = [];
   if (!noOx) {
     const lit = lightsOnContact(fuel, oxidiser);
@@ -44,14 +46,14 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
     for (const [a, b] of [[f, o], [o, f]] as const) {
       // A propellant kept liquid by pressure is not held at its boiling point, so it freezes nothing.
       if (a.boilC !== undefined && b.freezeC !== undefined && !a.pressurised && a.boilC < b.freezeC - FREEZE_MARGIN_C) {
-        notes.push(`${a.name} is kept below ${Math.round(a.boilC)} °C, cold enough to freeze ${lower(b.name)} (which freezes at ${Math.round(b.freezeC)} °C) in neighbouring plumbing.`);
+        notes.push(`${named(a)} is kept below ${Math.round(a.boilC)} °C, cold enough to freeze ${lower(named(b))} (which freezes at ${Math.round(b.freezeC)} °C) in neighbouring plumbing.`);
       }
     }
   }
   for (const p of parts) if (p.attacksMaterials) notes.push(sentence(p.attacksMaterials.text));
   for (const p of parts) {
-    if (p.toxicity === 3) notes.push(`Extremely toxic: ${lower(p.name)}.`);
-    else if (p.toxicity === 2) notes.push(`Toxic: ${lower(p.name)}.`);
+    if (p.toxicity === 3) notes.push(`Extremely toxic: ${lower(named(p))}.`);
+    else if (p.toxicity === 2) notes.push(`Toxic: ${lower(named(p))}.`);
   }
   for (const p of parts) if (p.toxicExhaust) notes.push(sentence(p.toxicExhaust.text));
   for (const p of parts) if (p.warning) notes.push(sentence(p.warning.text));

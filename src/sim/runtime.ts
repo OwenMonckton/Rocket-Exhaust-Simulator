@@ -13,7 +13,7 @@ import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
-import { engineAfterRebuild } from './rebuild';
+import { engineAfterRebuild, latchesNow } from './rebuild';
 
 export interface FrameInfo {
   result: SimResult;
@@ -139,7 +139,7 @@ export function createRuntime(
       failT += dt;
     } else {
       fire = firing ? Math.min(1, fire + dt / RAMP_UP_S) : Math.max(0, fire - dt / RAMP_DOWN_S);
-      if (firing && fire > 0.6 && result.failure) {
+      if (firing && latchesNow(result.failure, fire)) {
         failure = result.failure;
         failT = 0;
         firing = false;

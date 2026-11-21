@@ -124,10 +124,10 @@ describe('the line under the limit bars', () => {
     expect(as('inert', false)).toBe('Nothing here will burn.');
     expect(as('unsolved', false)).toBe('No figures: the chemistry would not settle.');
     expect(as('burst', true)).toBe('Past a limit: this engine will fail when fired.');
-    expect(as('detonation', true)).toBe('Past a limit: this engine will fail when fired.');
+    expect(as('detonation', true)).toBe('One of these propellants would explode in the engine.');
   });
-  it('says there are no figures when a failure with no note of its own did not settle', () => {
-    expect(as('detonation', false)).toBe('No figures: the chemistry would not settle.');
+  it('says a detonation is one, settled or not', () => {
+    expect(as('detonation', false)).toBe('One of these propellants would explode in the engine.');
   });
 });
 

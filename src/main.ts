@@ -107,7 +107,9 @@ const runtime = createRuntime(store, $('stage'), $<HTMLCanvasElement>('gl'), $<H
     failureBox.querySelector('h2')!.textContent = copy.title;
     failureBox.querySelector('p')!.textContent = copy.text;
     // A flame that went out leaves the engine whole: it only needs lighting again.
-    rebuildBtn.textContent = destroys(info.failure) ? 'Rebuild engine' : 'Relight engine';
+    // Nothing is lit in a reactor: it is started again, not relit.
+    const relight = store.get().config.energy === 'combustion' ? 'Relight engine' : 'Restart engine';
+    rebuildBtn.textContent = destroys(info.failure) ? 'Rebuild engine' : relight;
   }
   failureBox.hidden = info.failure === null;
 });
