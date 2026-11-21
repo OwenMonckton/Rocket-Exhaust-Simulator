@@ -375,8 +375,14 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
   one position each at 100 bar and 16. Pentaborane with nitrogen tetroxide at 79.7 : 1, 100 bar
   and area ratio 16, misses because its exit lands in the 273.122–273.15 K sliver where water's
   ice and liquid data disagree (see the phase edge cases below); it settled before the coldest
-  solid phases were kept down to 200 K, which moved its exit there. Hydrogen with oxygen at its
-  oxidiser-rich end (140 : 1) gives no answer at area ratio 300.
+  solid phases were kept down to 200 K, which moved its exit there; it misses at 30 bar and area
+  ratio 150 too. In a big nozzle at low pressure (30 bar, area ratio 150) the fuel-rich ends of
+  the borane pairs, mixture ratios about 0.04 to 0.24, give no answer, and so do a few
+  oxidiser-rich positions: aluminium slurry with fluorine at 71.7 and 86.2, pentaborane with
+  fluorine at 125 and 151, diborane with 90% peroxide at 78.65, among others found in a sample of
+  the metal and borane pairs (aluminium slurry with oxygen at 22 to 49, beryllium with oxygen at 75
+  and 84). Hydrogen with oxygen at its oxidiser-rich end (140 : 1) gives no answer at area ratio
+  300.
 - **The fitted gas's gamma still steps at area ratio 3** for an exhaust with droplets (1.13 below,
   1.31 above, aluminium slurry with oxygen), and changes where the fit falls back for a reactor
   fluid (methane at area ratio 10). Isp and thrust do not step: what the one-gamma gas cannot carry
@@ -457,8 +463,19 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
 - The fix for steam over its own liquid treated any equilibrium gamma at or below 1 as nonsense and
   put frozen values in its place; such a gamma is real where a vapour sits over its own liquid
   (lithium oxide and hydroxide), and the throat moved off the greatest mass flux, giving lithium
-  with peroxide above about 150 bar a characteristic velocity up to 2.6% high. Only a heat capacity
-  absurdly large against the frozen one now counts as nonsense.
+  with peroxide above about 150 bar a characteristic velocity up to 2.6% high. Frozen values are now
+  used only where the derivative solve fails or gives a heat capacity absurdly large against the
+  frozen one. Such a state can still serve as a nozzle exit, but no longer as a throat: where two
+  condensates together (liquid lithium with liquid lithium oxide, say) left the throat on frozen
+  values, the throat sat where the speed meets the frozen sound speed and characteristic velocity
+  read high as a settled figure (lithium with oxygen at 0.65 : 1 and area ratio 16: 5% at 300 bar,
+  18% at 400; lithium with fluorine at 0.48 : 1, 4% at 100 bar; beryllium with oxygen at 0.78 : 1,
+  10% at 300 bar). The cost: fuel-rich lithium and beryllium mixtures, at very high pressure and
+  some at ordinary pressure, read "No answer". The fuel-rich ends of three sliders moved in
+  (lithium with fluorine from 0.48 to 0.96 : 1, beryllium with oxygen from 0.78 to 1.10, with
+  nitrogen tetroxide from 1.11 to 1.28); on a 3,000-point sample of the metal and borane pairs, 24
+  points went from settled to no answer, every one with its throat on frozen values and none at a
+  pair's starting mixture, and no settled figure moved.
 - Four gases were still shown by their data names (aluminium monochloride, beryllium
   monohydroxide, chlorotrifluoromethane, difluoroboric acid); Li3AlF6 was called cryolithionite,
   which is another mineral. The 30 s names sweep became the 6 s one above.
@@ -495,8 +512,8 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
   aluminium slurry and oxygen's mixtures takes about 280 ms against a 600 ms limit) and could fail
   on a loaded machine; the fit test re-derives the simulator's formula instead of calling it;
   the "attacks materials" note is matched on
-  its exact wording; the exhaust-names test runs at 100 bar and area ratio 16 rather than the
-  defaults; only Aerozine 50's blend shares are checked by value; one of the property-data
+  its exact wording; the exhaust-names sweep runs at 10 bar and area ratio 3 and at 30 bar and
+  area ratio 150 rather than the defaults; only Aerozine 50's blend shares are checked by value; one of the property-data
   functions (entropy) has no test of its own and another (heat content) is checked on one
   substance only.
 - **Work repeated each frame, with no solving**: the verdict and its notes are rebuilt about five
