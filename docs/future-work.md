@@ -138,7 +138,10 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
   NERVA example is pinned to it. The fluids still borrow part 1's hand-picked plume look until
   piece 4.
 - **Swapping a part is not allowed to destroy the engine by itself**, with one exception. A
-  reactor or salt-water reaction is turned down if the swap would overheat it, and an engine given
+  reactor or salt-water reaction is turned down if the swap would overheat it, a flame that a new
+  energy source or propellant would make too hot for its throat runs at a lower chamber pressure,
+  a spike's cells merge into more than one bell where one chamber would be wide enough to be
+  unstable, and an engine given
   an aerospike gets fewer than twenty cells where twenty would have throats too small to make or
   to keep cool (a Raptor gets two). The exception is honest physics: a very large engine rebuilt
   round a combustion chamber is unstable, as the F-1 nearly was, and says so.
@@ -227,6 +230,20 @@ The design is in `docs/superpowers/specs/2026-11-20-fuel-chemistry-design.md`.
 - **The examples are untouched.** All twelve keep their pinned figures. An example's tabled pair
   shows in the pickers; changing either picker makes the engine calculated and marks it modified,
   and Reset brings the table back.
+
+### Joined with the first piece's later fixes
+
+After this piece branched off, three review fixes were made to the first piece: a propellant
+change now turns an engine down where the new propellant would overheat it, an engine throttled
+down keeps its real pressure when given a solid motor, and choosing a whole engine clears the
+wreck of the last one. Joining the two, the same rule was carried to the new pickers: picking a
+hotter fuel or oxidiser turns the chamber pressure down, with the wall thinned to match, where
+the new flame would burn through an engine the old one did not (beryllium with fluorine on the
+blank engine at 200 bar comes down to about 136 bar). The mixture slider keeps the first
+piece's fix that an arrow key always moves it for a tabled propellant or a temperature; a
+calculated pair's slider is still spread by ratio over a thousand positions. Which exhaust is
+"light" enough to need the simpler treatment of a separated jet is now read from the calculated
+gas, not from a table.
 
 ### Decisions made during the build, in order
 

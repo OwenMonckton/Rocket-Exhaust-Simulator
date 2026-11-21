@@ -15,6 +15,12 @@ interface SliderSpec {
   tip: string;
   /** Spread the slider's range evenly by ratio rather than by difference */
   log?: boolean | ((s: AppState) => boolean);
+  /**
+   * The size of one step of the setting. The slider then runs over the range itself in steps of
+   * this size, so an arrow key always moves it; without one (or where it returns null) it runs
+   * over a thousand positions.
+   */
+  step?(s: AppState): number | null;
   range(s: AppState): { min: number; max: number };
   get(s: AppState): number;
   set(v: number): void;
@@ -125,6 +131,18 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
   });
 
+  /**
+   * One step of the mixture setting: a hundredth for a mixture ratio; for a temperature a round
+   * number suited to its range, 10 K for a reactor core and 1,000 K for a fission reaction.
+   */
+  const mixStep = (s: AppState) => {
+    const p = mixRange(s.config);
+    const span = p.ofMax - p.ofMin;
+    return ENERGY_SOURCES[s.config.energy].mixKind === 'temperature' && span > 0
+      ? Math.pow(10, Math.floor(Math.log10(span)) - 2)
+      : 0.01;
+  };
+
   const groups: { title: string; selects?: SelectSpec[]; sliders: SliderSpec[] }[] = [
     {
       title: 'Parts',
@@ -202,6 +220,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'chambers',
           label: COUNT_COPY.bell.label,
           tip: COUNT_COPY.bell.tip,
+          step: () => 1,
           range: (s) => (s.config.exhaust === 'aerospike' ? RANGES.cells : RANGES.chambers),
           get: (s) => s.config.chambers,
           set: (v) => store.set({ config: { chambers: Math.round(v) } }),
@@ -216,6 +235,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'nozzleLenPct',
           label: 'Nozzle length',
           tip: TIPS.nozzleLenPct,
+          step: () => 1,
           range: () => RANGES.nozzleLenPct,
           get: (s) => s.config.nozzleLenPct,
           set: (v) => store.set({ config: { nozzleLenPct: Math.round(v) } }),
@@ -230,6 +250,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'chamberPressureBar',
           label: 'Chamber pressure',
           tip: TIPS.chamberPressureBar,
+          step: () => 1,
           range: () => RANGES.chamberPressureBar,
           get: (s) => s.config.chamberPressureBar,
           set: (v) => store.set({ config: { chamberPressureBar: Math.round(v) } }),
@@ -244,8 +265,10 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'mixtureRatio',
           label: 'Mixture ratio',
           tip: TIPS.mixtureRatio,
-          // A burning pair's ratio can span a hundredfold, so it is spread by ratio.
+          // A burning pair's ratio can span a hundredfold, so it is spread by ratio over a thousand
+          // positions; a tabled propellant or a temperature steps by its own size.
           log: mixLog,
+          step: (s) => (mixLog(s) ? null : mixStep(s)),
           range: (s) => {
             const p = mixRange(s.config);
             return { min: p.ofMin, max: Math.max(p.ofMax, p.ofMin + 1e-6) };
@@ -280,6 +303,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           id: 'throttle',
           label: 'Throttle',
           tip: TIPS.throttle,
+          step: () => 0.01,
           range: () => RANGES.throttle,
           get: (s) => s.flight.throttle,
           set: (v) => store.set({ flight: { throttle: Math.round(v * 100) / 100 } }),
@@ -360,12 +384,15 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       box.append(row);
 
       const isLog = (s: AppState) => (typeof spec.log === 'function' ? spec.log(s) : (spec.log ?? false));
+      const stepOf = (s: AppState) => spec.step?.(s) ?? null;
       const toValue = (pos: number, s: AppState) => {
+        if (stepOf(s) !== null) return pos;
         const { min, max } = spec.range(s);
         const f = pos / STEPS;
         return isLog(s) ? min * Math.pow(max / min, f) : min + (max - min) * f;
       };
       const toPos = (v: number, s: AppState) => {
+        if (stepOf(s) !== null) return v;
         const { min, max } = spec.range(s);
         const f = isLog(s) ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
         return Math.round(Math.min(1, Math.max(0, f)) * STEPS);
@@ -373,8 +400,18 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));
       syncers.push((s) => {
         const v = spec.get(s);
+        if (spec.step) {
+          // The slider's own ends and step are the setting's, which change with the engine's parts;
+          // where the setting has no step of its own, the slider is a thousand positions.
+          const own = stepOf(s);
+          const { min, max } = own !== null ? spec.range(s) : { min: 0, max: STEPS };
+          const step = String(own ?? 1);
+          if (input.min !== String(min)) input.min = String(min);
+          if (input.max !== String(max)) input.max = String(max);
+          if (input.step !== step) input.step = step;
+        }
         const pos = String(toPos(v, s));
-        if (input.value !== pos) input.value = pos;
+        if (Number(input.value) !== Number(pos)) input.value = pos;
         value.textContent = spec.format(v, s);
         const text = spec.describe?.(s);
         if (text) {

@@ -161,6 +161,26 @@ describe('store', () => {
     expect(store.get().config.propellant).toBe('kerolox');
     expect(isModified(store.get().config)).toBe(false);
   });
+  it('turns the chamber pressure down when a hotter fuel and oxidiser would burn through', () => {
+    const sl = { altitudeKm: 0, throttle: 1 };
+    const starter = starterEngine();
+    // The same engine at twice the pressure, with a wall to match: fine on RP-1 and oxygen.
+    const config = sanitize({ ...starter, chamberPressureBar: 200, wall: starter.wall * 2 });
+    expect(simulate(config, sl).failure).toBeNull();
+    // Beryllium with fluorine, set straight into it, burns through.
+    const forced = sanitize({ ...config, fuel: 'be', oxidiser: 'lf2', mixtureRatio: pairRange('be', 'lf2').ofDefault });
+    expect(simulate(forced, sl).failure).toBe('burnthrough');
+    // Picked through the store, the engine is turned down instead of being destroyed by the swap.
+    const store = createStore({ config, flight: sl });
+    store.setFuel('be');
+    store.setOxidiser('lf2');
+    const picked = store.get().config;
+    expect(picked).toMatchObject({ fuel: 'be', oxidiser: 'lf2', propellant: 'calculated' });
+    expect(picked.mixtureRatio).toBeCloseTo(pairRange('be', 'lf2').ofDefault, 6);
+    expect(picked.chamberPressureBar).toBeLessThan(200);
+    expect(simulate(picked, sl).failure).toBeNull();
+  });
+
   it('leaves a reactor or solid engine alone when a fuel or oxidiser is picked', () => {
     const store = createStore(defaultState());
     store.loadPreset('nerva');
@@ -209,5 +229,33 @@ describe('store', () => {
     off();
     store.set({ flight: { throttle: 0.5 } });
     expect(calls).toBe(2);
+  });
+});
+
+describe('part swaps through the store (code review)', () => {
+  it('does not lower the pressure again each time a throttled engine goes to a solid and back', () => {
+    const store = createStore(defaultState());
+    store.set({ flight: { throttle: 0.4 } });
+    const running = (s = store.get()) => simulate(s.config, s.flight).limits.structural;
+    const before = running();
+    store.setEnergy('solid');
+    expect(store.get().config.chamberPressureBar).toBe(40);
+    // The throttle it was at is now its pressure, so the throttle goes back to full.
+    expect(store.get().flight.throttle).toBe(1);
+    store.setEnergy('combustion');
+    expect(store.get().config.chamberPressureBar).toBe(40);
+    expect(running()).toBeCloseTo(before, 2);
+    store.setEnergy('solid');
+    expect(store.get().config.chamberPressureBar).toBe(40);
+  });
+
+  it('checks the heat when the propellant is changed', () => {
+    const store = createStore(defaultState());
+    store.setEnergy('reactor');
+    store.set({ config: { throatDia: 0.02, chamberDia: 0.12, exitDia: 0.08, wall: 0.016, chamberPressureBar: 400, mixtureRatio: 1500 } });
+    expect(simulate(store.get().config, store.get().flight).failure).toBeNull();
+    store.set({ config: { propellant: 'ntr-ammonia' } });
+    expect(store.get().config.propellant).toBe('ntr-ammonia');
+    expect(simulate(store.get().config, store.get().flight).failure).toBeNull();
   });
 });

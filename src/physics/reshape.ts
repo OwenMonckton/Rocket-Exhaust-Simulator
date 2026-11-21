@@ -3,6 +3,7 @@ import { RANGES, sanitize, simulate } from './engine';
 import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
+import { isPropellantId } from './propellants';
 import type { EnergyId, EngineConfig, ExhaustId, PropellantId } from './types';
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
@@ -15,6 +16,9 @@ const CELL_HEAT = 0.97;
 
 /** Share of its heat limit an engine is brought down to when a new energy source would overheat it. */
 const SAFE_HEAT = 0.9;
+
+/** The most of its instability limit an engine's chambers may run at when its cells are merged into bells. */
+const SAFE_INSTABILITY = 0.9;
 
 /**
  * Chamber diameter and length for a throat. `contraction` is chamber diameter over throat
@@ -49,11 +53,21 @@ export function wallFor(pcBar: number, chamberDia: number, fraction: number): nu
  * pressure stay; the chamber takes the proportions that source usually has, the propellant
  * becomes the source's first (for a combustion chamber, RP-1 and liquid oxygen, worked out by the
  * solver), and the wall is re-sized so the engine is as close to bursting as it was before: no
- * more, no less.
+ * more, no less. Where that would overheat the engine it is turned down: the temperature where
+ * that is a setting, the chamber pressure where a flame sets it.
+ *
+ * `throttle` is where the throttle stands. A source that cannot throttle runs flat out, so an
+ * engine throttled down and given one takes the pressure it was really running at as its own:
+ * otherwise the swap alone would raise the pressure, and could burst it.
  */
-export function withEnergy(cfg: EngineConfig, energy: EnergyId): EngineConfig {
+export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): EngineConfig {
   if (cfg.energy === energy) return cfg;
   const source = ENERGY_SOURCES[energy];
+  if (ENERGY_SOURCES[cfg.energy].throttleable && !source.throttleable && throttle < 1) {
+    // Whole bars, as the slider sets them, and never more than it was running at.
+    const running = Math.max(RANGES.chamberPressureBar.min, Math.floor(cfg.chamberPressureBar * throttle + 1e-9));
+    cfg = { ...cfg, chamberPressureBar: Math.min(cfg.chamberPressureBar, running) };
+  }
   const burns = energy === 'combustion';
   const propellant: PropellantId = burns ? 'calculated' : propellantsFor(energy)[0];
   const parts = { energy, propellant, fuel: burns ? 'rp1' : cfg.fuel, oxidiser: burns ? 'lox' : cfg.oxidiser };
@@ -62,7 +76,9 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId): EngineConfig {
   const shape = chamberShape(cfg.throatDia, source.starter.contraction, source.starter.lStar, lStarRef);
   // Sanitise first: the wall has to follow the chamber the engine really ends up with.
   const shaped = sanitize({ ...cfg, ...parts, mixtureRatio, ...shape });
-  return cooled(sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia }), 0);
+  const swapped = sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia });
+  // The new source starts at its own usual temperature, so there is no old setting to keep.
+  return source.mixKind === 'temperature' ? cooled(swapped, 0) : eased(swapped, heatLoad(cfg));
 }
 
 /** How close an engine is to its heat limit: 1 or more and it fails. */
@@ -86,6 +102,80 @@ function cooled(cfg: EngineConfig, heatBefore: number): EngineConfig {
   const target = (cfg.mixtureRatio * SAFE_HEAT) / heat;
   const step = Math.pow(10, Math.floor(Math.log10(target)) - 1);
   return sanitize({ ...cfg, mixtureRatio: Math.floor(target / step) * step });
+}
+
+/**
+ * A flame's temperature is not a setting, so a burning engine that a new energy source has made
+ * too hot for its throat (a small, high-pressure reactor turned into a solid motor) runs at a
+ * lower chamber pressure instead, with a wall thinned to match, so it is as close to bursting as
+ * it was. `heatBefore` is how hot the engine ran before the swap: an engine the swap has not
+ * made any hotter keeps its pressure.
+ */
+function eased(cfg: EngineConfig, heatBefore: number): EngineConfig {
+  const limit = Math.max(SAFE_HEAT, heatBefore);
+  const heat = heatLoad(cfg);
+  if (heat <= limit) return cfg;
+  const lowest = RANGES.chamberPressureBar.min;
+  // The throat's heating goes as pressure to the power 0.8; whole bars, as the slider sets them.
+  let pc = Math.floor(cfg.chamberPressureBar * Math.pow(limit / heat, 1.25));
+  for (;;) {
+    pc = Math.max(lowest, pc);
+    const next = sanitize({ ...cfg, chamberPressureBar: pc, wall: (cfg.wall * pc) / cfg.chamberPressureBar });
+    if (pc <= lowest || heatLoad(next) <= limit) return next;
+    pc -= 1;
+  }
+}
+
+/**
+ * The same engine on a different propellant, at that propellant's usual mixture or temperature.
+ * Where that would overheat an engine the old propellant did not, it is turned down as a change
+ * of energy source is: the temperature where that is a setting, the chamber pressure where a
+ * flame sets it.
+ */
+export function withPropellant(cfg: EngineConfig, propellant: PropellantId): EngineConfig {
+  if (cfg.propellant === propellant) return cfg;
+  const mixtureRatio = isPropellantId(propellant)
+    ? mixRange({ ...sanitize({ ...cfg, propellant }), propellant }).ofDefault
+    : cfg.mixtureRatio;
+  return settled(sanitize({ ...cfg, propellant, mixtureRatio }), heatLoad(cfg));
+}
+
+/**
+ * The same combustion engine burning a different fuel or oxidiser, worked out by the solver, at
+ * the new pair's most efficient mixture. Turned down like any other change of propellant where
+ * the new flame would overheat an engine the old one did not. Any other engine is left alone.
+ */
+export function withPair(cfg: EngineConfig, part: { fuel?: string; oxidiser?: string }): EngineConfig {
+  if (cfg.energy !== 'combustion') return cfg;
+  const chosen = sanitize({ ...cfg, ...part, propellant: 'calculated' });
+  return settled(sanitize({ ...chosen, mixtureRatio: mixRange(chosen).ofDefault }), heatLoad(cfg));
+}
+
+/** An engine on a new propellant, turned down if it now runs hotter than its throat can take. */
+function settled(next: EngineConfig, heatBefore: number): EngineConfig {
+  return ENERGY_SOURCES[next.energy].mixKind === 'temperature' ? cooled(next, heatBefore) : eased(next, heatBefore);
+}
+
+/**
+ * The fewest bell chambers an engine's cells fit into: one, unless a single chamber of the same
+ * total area would be bigger than a chamber, a throat or a nozzle can be, and then as few as
+ * hold it. A spike too big even for the most chambers a bell engine can have gets that many, at
+ * their largest size, and is the one merge that loses area.
+ */
+function bellsFor(cfg: EngineConfig): number {
+  const most = RANGES.chambers.max;
+  const fits = (dia: number, k: number, max: number) => dia * k <= max * (1 + 1e-9);
+  for (let count = 1; count < most; count++) {
+    const k = Math.sqrt(cfg.chambers / count);
+    if (
+      fits(cfg.throatDia, k, RANGES.throatDia.max) &&
+      fits(cfg.chamberDia, k, RANGES.chamberDia.max) &&
+      fits(cfg.exitDia, k, RANGES.exitDia.max)
+    ) {
+      return count;
+    }
+  }
+  return most;
 }
 
 /** The engine divided into, or merged down to, `count` chambers of the same total throat and exit area. */
@@ -113,15 +203,28 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
 /**
  * The same engine with a different exhaust. An aerospike's dimensions describe one of its
  * thrust cells, so going to one divides the engine into cells with the same total throat and
- * exit area, and coming back merges them into one chamber: thrust stays about the same either
- * way. It gets `DEFAULT_CELLS` cells unless that would destroy it: fewer where the throats
+ * exit area, and coming back merges them into one chamber (or more, where one would be bigger
+ * than a chamber can be, or so wide that it would be unstable when the cells were not): thrust
+ * stays about the same either way. It gets `DEFAULT_CELLS` cells unless that would destroy it: fewer where the throats
  * would be smaller than a throat can be, and fewer where a flame would burn through throats
  * that small (small throats are the hardest to keep cool).
  */
 export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
   if (cfg.exhaust === exhaust) return cfg;
   const heatBefore = heatLoad(cfg);
-  if (exhaust !== 'aerospike') return cooled(divided(cfg, exhaust, 1), heatBefore);
+  if (exhaust !== 'aerospike') {
+    // A wide chamber is an unstable one: more, smaller chambers where the fewest would shake
+    // themselves apart. Where even the most would, the fewest stand: that is the physics, not the swap.
+    const instability = (c: EngineConfig) => simulate(c, { altitudeKm: 0, throttle: 1 }).limits.instability;
+    const calm = Math.max(SAFE_INSTABILITY, instability(cfg));
+    const fewest = divided(cfg, exhaust, bellsFor(cfg));
+    let merged = fewest;
+    for (let bells = fewest.chambers; instability(merged) > calm; ) {
+      if (++bells > RANGES.chambers.max) { merged = fewest; break; }
+      merged = divided(cfg, exhaust, bells);
+    }
+    return cooled(merged, heatBefore);
+  }
   const smallest = RANGES.throatDia.min;
   let count = Math.max(1, Math.min(DEFAULT_CELLS, Math.floor(cfg.chambers * (cfg.throatDia / smallest) ** 2 + 1e-9)));
   let next = divided(cfg, exhaust, count);

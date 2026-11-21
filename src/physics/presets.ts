@@ -160,7 +160,8 @@ function build(s: Spec): Preset {
       nozzleLenPct: s.nozzleLenPct,
       wall: round(wallFor(s.pcBar, chamberDia, s.structural)),
       chamberPressureBar: s.pcBar,
-      mixtureRatio: ENERGY_SOURCES[PROPELLANTS[s.propellant].energy].throttleable ? s.of : PROPELLANTS[s.propellant].ofDefault,
+      // Where the source has no mixture setting, the propellant's own figure stands.
+      mixtureRatio: ENERGY_SOURCES[PROPELLANTS[s.propellant].energy].mixKind !== 'none' ? s.of : PROPELLANTS[s.propellant].ofDefault,
       scale: 1,
       chambers: s.chambers ?? 1,
       // Deployable extension: stock engines have it seated.
