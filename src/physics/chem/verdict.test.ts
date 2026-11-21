@@ -63,6 +63,12 @@ describe('verdictFor', () => {
     expect(h2[0]).toContain('°C');
   });
 
+  it('says when the flame is hotter than the data covers', () => {
+    const hot = verdictFor('be', 'lf2', solvePair('be', 'lf2', 4.5, 100, 40));
+    expect(has(hot.notes, '6,000 K')).toBe(true);
+    expect(has(verdictFor('h2', 'lox', at('h2', 'lox', 6)).notes, '6,000 K')).toBe(false);
+  });
+
   it('warns about aniline and about blends of toxic propellants', () => {
     const gas = at('h2', 'lox', 6);
     expect(verdictFor('aniline', 'wfna', gas).notes).toContain('Toxic: aniline.');

@@ -8,6 +8,8 @@ export type ChemFailure = 'flameout' | 'inert' | 'detonation' | 'unsolved';
 export interface Verdict { failure: ChemFailure | null; notes: string[] }
 
 const DROPLET_NOTE_SHARE = 0.02;
+/** K: every gas's data in NASA's thermo.inp ends here. */
+const DATA_TOP_K = 6000;
 /** deg C: one propellant must boil this far below the other's freezing point to freeze it. */
 const FREEZE_MARGIN_C = 5;
 // Lower-case the first letter for mid-sentence use, but leave acronyms (UDMH, RP-1) alone.
@@ -55,6 +57,9 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
   for (const p of parts) if (p.warning) notes.push(sentence(p.warning.text));
   const drops = dropletNote(gas);
   if (drops) notes.push(drops);
+  if (gas.ok && gas.tc > DATA_TOP_K) {
+    notes.push(`The flame is hotter than 6,000 K, where NASA's data stops, so these figures are stretched beyond it; some of the gas would also be ionised, which is not modelled.`);
+  }
   if (fuel === 'n2h4' && noOx) {
     // Which way the figure errs is not established here, so the note only says it differs.
     notes.push('Hydrazine alone breaks down into ammonia, hydrogen and nitrogen. Real thrusters stop that part-way, so this figure differs from what a real thruster gives.');
