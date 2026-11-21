@@ -305,6 +305,43 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   // energies meet, the boundary of their ranges, while the energy row sets the split. A phase that
   // then goes negative is removed as usual, leaving the other.
   const lastSwap = new Map<string, [number, number]>(); // formula -> [from, to]
+  /**
+   * Species j's atoms as a combination of the held condensed species, [species, count] for each, if
+   * they are one (a melting pair counts as one substance and ends the search: null); otherwise null.
+   */
+  const makeUp = (j: number): [number, number][] | null => {
+    const held: number[] = [];
+    for (const x of active) {
+      if (held.some((y) => formula.get(y) === formula.get(x))) return null;
+      held.push(x);
+    }
+    const k = held.length;
+    if (k === 0) return null;
+    const w = k + 1;
+    const m = new Float64Array(L * w);
+    for (let i = 0; i < L; i++) {
+      for (let c = 0; c < k; c++) m[i * w + c] = a[i * NS + held[c]];
+      m[i * w + k] = a[i * NS + j];
+    }
+    const pivots: number[] = [];
+    let r = 0;
+    for (let c = 0; c < k && r < L; c++) {
+      let p = -1, big = 1e-9;
+      for (let i = r; i < L; i++) if (Math.abs(m[i * w + c]) > big) { big = Math.abs(m[i * w + c]); p = i; }
+      if (p < 0) return null; // the held species are not independent: leave them be
+      for (let q = 0; q < w; q++) { const t = m[r * w + q]; m[r * w + q] = m[p * w + q]; m[p * w + q] = t; }
+      for (let i = 0; i < L; i++) {
+        if (i === r) continue;
+        const f = m[i * w + c] / m[r * w + c];
+        if (f !== 0) for (let q = 0; q < w; q++) m[i * w + q] -= f * m[r * w + q];
+      }
+      pivots.push(c);
+      r++;
+    }
+    if (pivots.length < k) return null;
+    for (let i = r; i < L; i++) if (Math.abs(m[i * w + k]) > 1e-9) return null;
+    return held.map((x, c) => [x, m[c * w + k] / m[c * w + c]]);
+  };
   let ok = false;
   for (let change = 0; change <= CONDENSED_CHANGES; change++) {
     if (!converge()) break;
@@ -346,6 +383,21 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
       if (test < bestTest) { bestTest = test; best = j; }
     }
     if (best < 0) { ok = true; break; }
+    // A newcomer made of the same building blocks as condensed species already held (boric oxide
+    // beside metaboric acid and ice: 2 HBO2 = B2O3 + H2O) would make the matrix singular. It takes
+    // the place of the held species it uses up first, the others giving it their share of atoms.
+    const mix = makeUp(best);
+    if (mix) {
+      let out = -1, theta = Infinity;
+      for (const [x, c] of mix) if (c > 0 && moles[x] / c < theta) { theta = moles[x] / c; out = x; }
+      if (out < 0) break;
+      for (const [x, c] of mix) moles[x] -= c * theta;
+      moles[out] = 0;
+      active.splice(active.indexOf(out), 1);
+      active.push(best);
+      moles[best] = theta;
+      continue;
+    }
     active.push(best);
     moles[best] = 0;
   }

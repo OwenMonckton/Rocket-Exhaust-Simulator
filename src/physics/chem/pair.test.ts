@@ -198,6 +198,20 @@ describe('condensed products below their data', () => {
     expect(small.ok && big.ok).toBe(true);
     expect(big.ispVac).toBeGreaterThanOrEqual(small.ispVac);
   });
+
+  it('settles oxidiser-rich borane exhausts where boric oxide, its acids and ice are all kept', () => {
+    // Below 300 K boric oxide, metaboric acid, boric acid and ice are all held, and any three of
+    // them are made of the same two building blocks (B2O3 and H2O): together they made the matrix
+    // singular and the solve run away.
+    for (const [fuel, oxidiser, of, tc] of [
+      ['b5h9', 'lox', 58.63, 992], ['b2h6', 'n2o4', 71.51, 1040], ['b5h9', 'n2o4', 65.66, 1058],
+    ] as const) {
+      clearChemCache();
+      const gas = solvePair(fuel, oxidiser, of, 70, 40);
+      expect(gas.ok, `${fuel}/${oxidiser}`).toBe(true);
+      expect(Math.abs(gas.tc / tc - 1), `${fuel}/${oxidiser}`).toBeLessThan(0.01);
+    }
+  });
 });
 
 describe('solveFluid', () => {
