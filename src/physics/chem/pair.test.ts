@@ -114,7 +114,7 @@ describe('pairRange', () => {
     expect(r.ofMax).toBeGreaterThan(20);
     for (const of of [r.ofMin, r.ofMax]) {
       const gas = solvePair('h2', 'lox', of, 70, 40);
-      expect(!gas.ok || gas.tc < 800, `cold at ${of}`).toBe(true);
+      expect(gas.ok && gas.tc < 800, `cold at ${of}`).toBe(true);
     }
   });
 
@@ -122,7 +122,7 @@ describe('pairRange', () => {
     const r = pairRange('rp1', 'lox');
     expect(Math.abs(r.ofMin - r.ofDefault / 50)).toBeLessThan(0.01);
     const gas = solvePair('rp1', 'lox', r.ofMax, 70, 40);
-    expect(!gas.ok || gas.tc < 800).toBe(true);
+    expect(gas.ok && gas.tc < 800).toBe(true);
   });
 });
 
@@ -152,6 +152,18 @@ describe('pairRange: the ends of the slider', () => {
       }
     }
   }, 60_000);
+});
+
+describe('pairRange: oxidisers that give off heat breaking down', () => {
+  it('holds peroxide at fifty times the best mixture, where it still runs hot', () => {
+    // Nitrous oxide, peroxide and MON-25 are hot at equilibrium on their own, so the oxidiser-rich
+    // end never cools to a flame-out: the range stops at the hold, deliberately.
+    const r = pairRange('rp1', 'htp90');
+    expect(Math.abs(r.ofMax - 50 * r.ofDefault)).toBeLessThan(0.01);
+    const gas = solvePair('rp1', 'htp90', r.ofMax, 70, 40);
+    expect(gas.ok).toBe(true);
+    expect(gas.tc).toBeGreaterThanOrEqual(800);
+  });
 });
 
 describe('cold exits', () => {

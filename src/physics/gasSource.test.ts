@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FUEL_IDS, OXIDISER_IDS } from './chem/ingredients';
-import { solveFluid, solvePair } from './chem/pair';
+import { clearChemCache, solveFluid, solvePair } from './chem/pair';
+import { showsFigures } from '../ui/copy';
 import { sanitize, simulate } from './engine';
 import { mixRange, resolveGas } from './gasSource';
 import { propellantsFor } from './parts';
@@ -58,10 +59,16 @@ describe('a calculated engine', () => {
   });
 
   it('gives the same result for the same inputs, whatever was picked in between', () => {
+    // Each solve from an emptied cache, so the comparison is of two solves and not of one cached result.
     const cfg = starterEngine();
-    const before = simulate(cfg, sl);
+    clearChemCache();
     simulate({ ...cfg, fuel: 'h2' }, sl);
-    expect(simulate({ ...cfg, fuel: 'rp1' }, sl)).toEqual(before);
+    const after = simulate(cfg, sl);
+    clearChemCache();
+    const alone = simulate(cfg, sl);
+    for (const k of ['ispVacuum', 'thrust', 'tc'] as const) {
+      expect(Math.abs(after[k] / alone[k] - 1), k).toBeLessThan(0.001);
+    }
   });
 
   it('fails as the chemistry says', () => {
@@ -211,6 +218,17 @@ describe('every pick gives finite figures', () => {
 });
 
 describe('whether the gas settled', () => {
+  it('hides the figures of a real solve that does not settle, from the solver through to the screen', () => {
+    // Beryllium and oxygen burnt to almost nothing but solid oxide: the solver does not settle here
+    // today. If it learns to, replace this with another real unsettled point; do not delete it.
+    clearChemCache();
+    const r = simulate({ ...starterEngine(), fuel: 'be', oxidiser: 'lox', mixtureRatio: 1.78 }, sl);
+    expect(r.failure).toBe('unsolved');
+    expect(r.settled).toBe(false);
+    expect(r.exhaust).toEqual([]);
+    expect(showsFigures(r)).toBe(false);
+  });
+
   it('is settled for a tabled example and a solved pair, not for the stand-in gas', () => {
     const cfg = starterEngine();
     expect(simulate(getPreset('merlin-1d')!.config, sl).settled).toBe(true);

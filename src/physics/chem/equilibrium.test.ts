@@ -153,7 +153,6 @@ describe('equilibrium with liquid and solid products', () => {
     const mix = byRatio('RP-1', 'O2(L)', 200);
     const st = equilibrate(mix, { kind: 'hp', h: mix.h0, pBar: 70 });
     if (st.ok) expect(Number.isFinite(st.t)).toBe(true);
-    else expect(st.ok).toBe(false);
     expect(Number.isNaN(st.t)).toBe(false);
     expect(Number.isNaN(st.n)).toBe(false);
     expect(Number.isNaN(st.molarMass)).toBe(false);
