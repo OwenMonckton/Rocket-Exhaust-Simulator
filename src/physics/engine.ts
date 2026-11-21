@@ -182,6 +182,9 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   // that pressure was produced, so the momentum term uses the ideal flow.
   const idealFlow = (pc * at) / cStarIdeal;
   const nozzleEff = 0.965 + (0.025 * (cfg.nozzleLenPct - 60)) / 40;
+  // A solved gas's vacuum thrust is scaled to the solver's own Isp (exactly 1, and so no change at
+  // all, for a tabled gas): the exit momentum and exit pressure terms, not the ambient pressure.
+  const ispScale = gasSource.ispScale;
 
   const exitMach = machFromAreaRatio(eps, g);
   const pe = pc * pressureRatio(exitMach, g);
@@ -212,7 +215,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       state = Math.abs(r - 1) <= 0.1 ? 'ideal' : r < 1 ? 'over' : 'under';
     }
     let ve = exitVelocity(mach, g, gas.R, gas.tc);
-    let thrust = nozzleEff * idealFlow * ve + (pExit - pa) * area;
+    let thrust = ispScale * nozzleEff * idealFlow * ve + (ispScale * pExit - pa) * area;
     if (cfg.exhaust === 'aerospike' && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
       // aerospike's jet, so below its design altitude the air squeezes the jet in until it leaves
@@ -225,7 +228,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       // Air is a poor wall, and some of the expansion is lost in waves along the spike and in
       // drag on its flat base. Measuring the loss from what a real bell manages, separation
       // included, keeps it to a few percent however large the spike is.
-      const matched = nozzleEff * idealFlow * ve;
+      const matched = ispScale * nozzleEff * idealFlow * ve + (ispScale - 1) * pa * area;
       thrust += AEROSPIKE_COMPENSATION * Math.max(0, matched - thrust);
     }
     return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve };

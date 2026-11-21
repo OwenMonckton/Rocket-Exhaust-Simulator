@@ -15,6 +15,11 @@ export interface GasSource {
   /** False when `gas` is the cold-air stand-in because there was no settled solve: no figure from it is real */
   settled: boolean;
   gas: GasProps;
+  /**
+   * What `simulate` scales its thrust by (never its mass flow) so that a solved gas shows the
+   * solver's own vacuum Isp where the one-gamma gas cannot carry it. Exactly 1 for a tabled gas.
+   */
+  ispScale: number;
   /** Characteristic chamber length (m) needed for complete combustion */
   lStarRef: number;
   look: PlumeLook;
@@ -28,8 +33,10 @@ export interface GasSource {
 /** What stands in for the gas when the chemistry gives none: cold air, never shown as real. */
 const NO_GAS: GasProps = { tc: 300, gamma: 1.4, molarMass: 28, R: R_UNIVERSAL / 28 };
 const NOT_SOLVED: SolvedGas = {
-  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, condensedShare: 0, exhaust: [],
+  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [],
 };
+/** The thrust scale of a solve: 1 for the stand-in gas. */
+const scaleOf = (solved: SolvedGas) => (solved.ok ? solved.ispScale : 1);
 
 /** The simulator's gas from a solve, or cold air if it did not settle. */
 function gasOf(solved: SolvedGas): GasProps {
@@ -83,6 +90,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
         calculated: true,
         settled: solved.ok,
         gas: gasOf(solved),
+        ispScale: scaleOf(solved),
         lStarRef: 0,
         look: p.look,
         // As hydrogen's table gives it: the hottest core, at the top of the range, is the "peak".
@@ -96,6 +104,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
       calculated: false,
       settled: true,
       gas: gasProps(cfg.propellant, cfg.mixtureRatio),
+      ispScale: 1,
       lStarRef: p.lStarRef,
       look: p.look,
       richness: richness(cfg.propellant, cfg.mixtureRatio),
@@ -120,6 +129,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
     calculated: true,
     settled: solved.ok,
     gas: gasOf(solved),
+    ispScale: scaleOf(solved),
     lStarRef: borrowed.lStarRef,
     look: borrowed.look,
     richness: rich,

@@ -15,6 +15,12 @@ export interface SolvedGas {
   ok: boolean;
   tc: number; gamma: number; molarMass: number;   // the fitted simple gas
   cStar: number; ispVac: number;                  // solver's own, m/s, droplet loss applied to ispVac
+  /**
+   * The solver's vacuum Isp over the fitted gas's: 1 (to rounding) where the fit pins gamma down;
+   * otherwise (small nozzles, a ratio outside the gamma span) the share the simulator scales its
+   * thrust by so that it shows the solver's Isp, droplet loss included.
+   */
+  ispScale: number;
   condensedShare: number;                         // mass fraction at the exit
   exhaust: { name: string; share: number }[];     // exit mole fractions over all species, largest first, at most 6, each ≥ 0.005
 }
@@ -34,7 +40,7 @@ const FLAME_OUT_T = 700;      // K, where pairRange puts the ends of a pair's mi
 const HOLD = 50;              // ofMin and ofMax stay within ofDefault / HOLD and ofDefault × HOLD
 
 const NOT_SETTLED: SolvedGas = {
-  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, condensedShare: 0, exhaust: [],
+  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [],
 };
 
 /** Vacuum Isp over c* for a simple gas of ratio of specific heats `g` at area ratio `eps`. */
@@ -49,7 +55,8 @@ function ispOverCStar(g: number, eps: number): number {
  * area ratio `eps` in the simulator's maths. Gamma is found by bisection over 1.01–1.67 so that the
  * vacuum Isp over c* matches, clamped to that span; then the molar mass from c* at `tc`. Where the
  * ratio does not pin gamma down (area ratios below 3, or a ratio outside the span), `fallbackGamma`
- * (the solver's throat gamma) is used if given, clamped to 1.05–1.67.
+ * (the solver's throat gamma) is used if given, clamped to 1.05–1.67. What the fallen-back gas
+ * cannot carry of the solver's Isp is handed on as SolvedGas.ispScale.
  */
 export function fitGas(tc: number, cStar: number, ispVac: number, eps: number, fallbackGamma?: number): { gamma: number; molarMass: number } {
   const target = ispVac / cStar;
@@ -116,7 +123,9 @@ function toGas(r: RocketResult, eps: number): SolvedGas {
   const ispVac = r.ispVac * (1 - DROPLET_LOSS * condensedShare);
   const tc = r.chamber.t;
   const { gamma, molarMass } = fitGas(tc, r.cStar, ispVac, eps, r.throat.gammaS);
-  if (![tc, gamma, molarMass, r.cStar, ispVac].every(Number.isFinite)) return NOT_SETTLED;
+  // Whatever the fit could not carry (gamma fell back or was clamped), as one factor on thrust.
+  const ispScale = ispVac / (ispOverCStar(gamma, eps) * r.cStar);
+  if (![tc, gamma, molarMass, r.cStar, ispVac, ispScale].every(Number.isFinite)) return NOT_SETTLED;
   let total = 0;
   for (let j = 0; j < ex.moles.length; j++) total += ex.moles[j];
   const exhaust = ex.species
@@ -124,7 +133,7 @@ function toGas(r: RocketResult, eps: number): SolvedGas {
     .filter((e) => e.share >= EXHAUST_MIN_SHARE)
     .sort((x, y) => y.share - x.share)
     .slice(0, EXHAUST_MAX);
-  return { ok: true, tc, gamma, molarMass, cStar: r.cStar, ispVac, condensedShare, exhaust };
+  return { ok: true, tc, gamma, molarMass, cStar: r.cStar, ispVac, ispScale, condensedShare, exhaust };
 }
 
 /** A cached solve: `chain` names the pair or fluid whose last settled result is the warm start. */

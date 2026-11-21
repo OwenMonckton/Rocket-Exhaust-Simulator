@@ -9,6 +9,7 @@ import { PROPELLANTS, gasProps } from './propellants';
 import { starterEngine } from './reshape';
 import type { EngineConfig } from './types';
 
+const G0 = 9.80665;
 const sl = { altitudeKm: 0, throttle: 1 };
 const vac = { altitudeKm: 100, throttle: 1 };
 const TABLED = propellantsFor('combustion').filter((id) => id !== 'calculated');
@@ -77,6 +78,26 @@ describe('a calculated engine', () => {
     expect(r.tc).toBe(solvePair(cfg.fuel, cfg.oxidiser, cfg.mixtureRatio, cfg.chamberPressureBar, eps).tc);
   });
 
+  it('shows the solver\'s own vacuum Isp, droplet loss included, on a stub nozzle', () => {
+    const base = sanitize({ ...starterEngine(), fuel: 'al-slurry', oxidiser: 'lox', mixtureRatio: Number.NaN, nozzleLenPct: 100 });
+    const r = simulate(sanitize({ ...base, exitDia: base.throatDia * Math.sqrt(2) }), vac);
+    const solved = solvePair('al-slurry', 'lox', base.mixtureRatio, base.chamberPressureBar, r.expansionRatio);
+    expect(solved.ok && solved.condensedShare > 0.1).toBe(true);
+    const ratio = (r.ispVacuum * G0) / r.combustionEff / solved.ispVac;
+    expect(ratio).toBeGreaterThan(0.985);
+    expect(ratio).toBeLessThan(1.005);
+  });
+
+  it('has no step down in vacuum Isp as an aluminised engine\'s nozzle grows past area ratio 3', () => {
+    const base = sanitize({ ...starterEngine(), fuel: 'al-slurry', oxidiser: 'lox', mixtureRatio: Number.NaN });
+    let prev = 0;
+    for (let k = 1.5; k <= 2.2; k *= 1.01) {
+      const r = simulate(sanitize({ ...base, exitDia: k * base.throatDia }), vac);
+      if (prev) expect(r.ispVacuum / prev - 1, `at area ratio ${r.expansionRatio.toFixed(3)}`).toBeGreaterThan(-0.005);
+      prev = r.ispVacuum;
+    }
+  });
+
   it('stays within 10% of the tables for the four tabled pairs', () => {
     for (const id of TABLED) {
       const p = PROPELLANTS[id];
@@ -128,6 +149,29 @@ describe('a reactor fluid', () => {
     const cfg = at('ntr-methane', 2800);
     const src = resolveGas(cfg, cfg.chamberPressureBar, eps);
     expect(src.notes.some((n) => /droplets/.test(n))).toBe(true);
+  });
+
+  it('shows the solver\'s own vacuum Isp where the fitted gas cannot carry it', () => {
+    // Below area ratio 3, or with droplets in the exhaust, the one-gamma gas cannot match the
+    // solver's Isp; it once read 9% high for methane here. With every efficiency but the nozzle's
+    // and the chamber's at 1, the shown vacuum Isp over the combustion efficiency is the solver's
+    // less up to the nozzle's 1% (a full-length bell).
+    const engine = { ...nerva, propellant: 'ntr-methane' as const, mixtureRatio: 2360, chamberPressureBar: 30, nozzleLenPct: 100 };
+    for (const e of [1.5, 3, 5, 7]) {
+      const cfg = sanitize({ ...engine, presetId: null, exitDia: engine.throatDia * Math.sqrt(e) });
+      const r = simulate(cfg, vac);
+      const solved = solveFluid('CH4(L)', 2360, 30, r.expansionRatio);
+      expect(solved.ok).toBe(true);
+      const ratio = (r.ispVacuum * G0) / r.combustionEff / solved.ispVac;
+      expect(ratio, `area ratio ${e}`).toBeGreaterThan(0.985);
+      expect(ratio, `area ratio ${e}`).toBeLessThan(1.005);
+    }
+  });
+
+  it('never shows less vacuum Isp for a bigger nozzle', () => {
+    const engine = { ...nerva, propellant: 'ntr-methane' as const, mixtureRatio: 2360, chamberPressureBar: 30, presetId: null };
+    const isp = (e: number) => simulate(sanitize({ ...engine, exitDia: engine.throatDia * Math.sqrt(e) }), vac).ispVacuum;
+    expect(isp(10)).toBeGreaterThan(isp(7));
   });
 
   it('fails only as unsolved', () => {
