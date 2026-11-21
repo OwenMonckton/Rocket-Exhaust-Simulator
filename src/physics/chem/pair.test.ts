@@ -126,6 +126,34 @@ describe('pairRange', () => {
   });
 });
 
+describe('pairRange: the ends of the slider', () => {
+  it('keeps the hottest mixture on the slider and offers no ratio the solver rounds away', () => {
+    for (const [f, o] of [['n2o-mono', 'lox'], ['htp90-mono', 'lox'], ['ch3no2', 'lox'], ['n2o-mono', 'o3'],
+      ['htp90-mono', 'n2o'], ['c2n2', 'htp90'], ['c2n2', 'nf3'], ['c2n2', 'clf3']]) {
+      const r = pairRange(f, o);
+      expect(r.ofMin, `${f}/${o} ofMin`).toBeGreaterThanOrEqual(0.01);
+      expect(r.ofPeak, `${f}/${o} ofPeak`).toBeGreaterThanOrEqual(r.ofMin);
+      expect(r.ofPeak, `${f}/${o} ofPeak`).toBeLessThanOrEqual(r.ofMax);
+      expect(r.ofDefault, `${f}/${o} ofDefault`).toBeGreaterThanOrEqual(r.ofMin);
+      expect(r.ofDefault, `${f}/${o} ofDefault`).toBeLessThanOrEqual(r.ofMax);
+      // A best mixture at the top of the scan is not the middle of a slider reaching 50 times past it.
+      if (r.ofDefault >= 100) expect(r.ofMax, `${f}/${o} ofMax`).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it('ends on mixtures that settle from a cold start', () => {
+    // Metal-heavy pairs once ended where only a solve walked in from a neighbouring mixture settled.
+    for (const [f, o] of [['be', 'htp90'], ['al-slurry', 'lox'], ['al-slurry', 'clf3'], ['be', 'htp98'], ['li', 'lox']]) {
+      clearChemCache();
+      const r = pairRange(f, o);
+      for (const of of [r.ofMin, 1.2 * r.ofMin, r.ofMax]) {
+        clearChemCache();
+        expect(solvePair(f, o, of, 70, 40).ok, `${f}/${o} at ${of}`).toBe(true);
+      }
+    }
+  }, 60_000);
+});
+
 describe('cold exits', () => {
   it('gives an answer for a hydrogen-rich pair in a big nozzle', () => {
     expect(solvePair('h2', 'lox', 1.0, 70, 40).ok).toBe(true);

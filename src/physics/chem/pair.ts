@@ -190,6 +190,9 @@ const GRID_POINTS = 49;
 const ISP_SCAN_SHARE = 0.5;   // vacuum Isp is scanned only where the chamber is at least this share of its hottest
 const REFINE_TOL = 0.004;     // golden-section stops when the bracket is this wide in O/F
 const EDGE_TOL = 0.01;        // the 700 K ends are found to about 1% in O/F
+const EDGE_WALK = 20;         // steps in toward ofDefault from an end whose nozzle does not settle
+const EDGE_WALK_SHARE = 0.1;  // each a tenth of the way, in log O/F
+const OF_FINEST = 0.01;       // solvePair rounds O/F to this
 
 /**
  * The span of mixtures for a pair, at 70 bar and area ratio 40: `ofPeak` gives the hottest chamber,
@@ -269,28 +272,44 @@ export function pairRange(fuel: string, oxidiser: string): MixRange {
   const ofDefault = round2(refine(kIsp, ispAt));
   warmCh = chambers[kTc];
   const ofPeak = refine(kTc, tcAt);
-  // The chamber at ofDefault, to start the searches for the ends from.
-  warmCh = undefined;
-  const tcDefault = tcAt(ofDefault);
-  const hotStart = warmCh;
-
-  /** Where the chamber cools to 700 K between ofDefault and the hold `limit`, or the hold. */
-  const edge = (limit: number) => {
-    warmCh = undefined;
-    if (tcAt(limit) >= FLAME_OUT_T) return limit;
-    if (!(tcDefault >= FLAME_OUT_T)) return limit;
-    let lo = Math.log(ofDefault); // hot side
-    let hi = Math.log(limit);     // cold side
-    let hotSide = hotStart;
-    while (Math.abs(hi - lo) > EDGE_TOL) {
-      const mid = 0.5 * (lo + hi);
-      warmCh = hotSide; // each probe starts from the hot side's state
-      if (tcAt(Math.exp(mid)) >= FLAME_OUT_T) { lo = mid; hotSide = warmCh; }
-      else hi = mid;
-    }
-    return Math.exp(hi);
+  // The ends are judged from a cold start, as a solve after a reload or a shared link is: a start
+  // walked in from a neighbouring mixture can settle where a solve from scratch does not.
+  const coldTc = (of: number) => { warmCh = undefined; return tcAt(of); };
+  /** Whether the whole engine settles from a cold start at `of` as solvePair will solve it (to 0.01). */
+  const runs = (of: number) => {
+    const { mix, chamber } = flame(Math.max(OF_FINEST, round2(of)));
+    return rocket(mix, chamber, RANGE_EPS).ok;
   };
-  const range = { ofMin: edge(ofDefault / HOLD), ofMax: edge(ofDefault * HOLD), ofDefault, ofPeak };
+  const tcDefault = coldTc(ofDefault);
+
+  /**
+   * Where the chamber cools to 700 K between ofDefault and the hold `limit`, or the hold. Where the
+   * far side of that boundary does not settle at all (rather than settling cold), the end is the
+   * last mixture that did, so the slider never ends on "no answer"; and an end where the nozzle
+   * does not settle from a cold start is moved in toward ofDefault until it does.
+   */
+  const edge = (limit: number) => {
+    let end = limit;
+    if (!(coldTc(limit) >= FLAME_OUT_T) && tcDefault >= FLAME_OUT_T) {
+      let lo = Math.log(ofDefault); // hot side
+      let hi = Math.log(limit);     // cold or unsettled side
+      let hiSettled = Number.isFinite(coldTc(limit));
+      while (Math.abs(hi - lo) > EDGE_TOL) {
+        const mid = 0.5 * (lo + hi);
+        const t = coldTc(Math.exp(mid));
+        if (t >= FLAME_OUT_T) lo = mid;
+        else { hi = mid; hiSettled = Number.isFinite(t); }
+      }
+      end = Math.exp(hiSettled ? hi : lo);
+    }
+    for (let step = 0; step < EDGE_WALK && !runs(end); step++) end = end ** (1 - EDGE_WALK_SHARE) * ofDefault ** EDGE_WALK_SHARE;
+    return end;
+  };
+  // A best mixture at the top of the scan is held there, not 50 times past it; the bottom end is
+  // held at 0.01, the finest mixture the solver tells apart.
+  const ofMin = Math.max(OF_FINEST, edge(ofDefault / HOLD));
+  const ofMax = kIsp === GRID_POINTS - 1 ? Math.min(GRID_HI, edge(ofDefault * HOLD)) : edge(ofDefault * HOLD);
+  const range = { ofMin, ofMax, ofDefault, ofPeak: Math.min(ofMax, Math.max(ofMin, ofPeak)) };
   ranges.set(key, range);
   return range;
 }
