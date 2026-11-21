@@ -179,6 +179,7 @@ export const SPECIES_NAMES: Record<string, string> = {
   CF2: 'Carbon difluoride (CF2)',
   CF3: 'Trifluoromethyl (CF3)',
   CF4: 'Carbon tetrafluoride',
+  CF3CL: 'Chlorotrifluoromethane (CF3Cl)',
   C2F2: 'Difluoroacetylene (C2F2)',
   COF2: 'Carbonyl fluoride',
   NF3: 'Nitrogen trifluoride',
@@ -199,6 +200,7 @@ export const SPECIES_NAMES: Record<string, string> = {
   BF2: 'Boron difluoride (BF2)',
   BF3: 'Boron trifluoride',
   BF2CL: 'Boron chlorodifluoride (BF2Cl)',
+  BF2OH: 'Difluoroboric acid (BF2OH)',
   'BN(cr)': 'Solid boron nitride',
   HBO: 'Oxoborane (HBO)',
   HBO2: 'Metaboric acid',
@@ -266,9 +268,11 @@ export const SPECIES_NAMES: Record<string, string> = {
   ALCL3: 'Aluminium chloride',
   ALFCL2: 'Aluminium dichlorofluoride (AlFCl2)',
   BeO: 'Beryllium oxide vapour',
+  BeOH: 'Beryllium monohydroxide (BeOH)',
   BeCL: 'Beryllium monochloride (BeCl)',
   'AL(cr)': 'Solid aluminium',
   'AL(L)': 'Liquid aluminium',
+  ALCL: 'Aluminium monochloride (AlCl)',
   'ALCL3(cr)': 'Solid aluminium chloride',
   'ALCL3(L)': 'Liquid aluminium chloride',
   'ALF3(I)': 'Solid aluminium fluoride',
@@ -313,19 +317,23 @@ export const SPECIES_NAMES: Record<string, string> = {
   'LiNO2(L)': 'Liquid lithium nitrite',
   'LiOH(L)': 'Liquid lithium hydroxide',
   'Li2O2(cr)': 'Solid lithium peroxide',
-  'Li3ALF6(IV)': 'Solid cryolithionite (Li3AlF6)',
-  'Li3ALF6(III)': 'Solid cryolithionite (Li3AlF6)',
-  'Li3ALF6(II)': 'Solid cryolithionite (Li3AlF6)',
-  'Li3ALF6(I)': 'Solid cryolithionite (Li3AlF6)',
-  'Li3ALF6(L)': 'Liquid cryolithionite (Li3AlF6)',
+  'Li3ALF6(IV)': 'Solid lithium hexafluoroaluminate',
+  'Li3ALF6(III)': 'Solid lithium hexafluoroaluminate',
+  'Li3ALF6(II)': 'Solid lithium hexafluoroaluminate',
+  'Li3ALF6(I)': 'Solid lithium hexafluoroaluminate',
+  'Li3ALF6(L)': 'Liquid lithium hexafluoroaluminate',
   'Li3N(cr)': 'Solid lithium nitride',
   'NH4CL(III)': 'Solid ammonium chloride',
   'NH4F(L)': 'Liquid ammonium fluoride',
 };
 
-/** A plain name for an exhaust species, or its formula where there is none. */
+/**
+ * A plain name for an exhaust species, or its formula where there is none, tidied from the data's
+ * spelling (AL and CL for Al and Cl, a comment after a comma) so that a miss reads as a formula.
+ */
 export function speciesName(name: string): string {
-  return Object.hasOwn(SPECIES_NAMES, name) ? SPECIES_NAMES[name] : name;
+  if (Object.hasOwn(SPECIES_NAMES, name)) return SPECIES_NAMES[name];
+  return name.split(',')[0].replace(/AL/g, 'Al').replace(/CL/g, 'Cl');
 }
 
 /** The exhaust as "Steam 63% · Hydrogen 29% · …", the dots marking what is too small to list. Never changes `exhaust`. */

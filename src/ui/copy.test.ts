@@ -2,10 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { simulate } from '../physics/engine';
 import { pairRange, solveFluid, solvePair } from '../physics/chem/pair';
 import { PROPELLANTS } from '../physics/propellants';
-import { FUEL_IDS, OXIDISER_IDS } from '../physics/chem/ingredients';
+import { FUEL_IDS, FUELS, NO_OXIDISER, OXIDISER_IDS, OXIDISERS, reactantOf } from '../physics/chem/ingredients';
+import { SPECIES } from '../physics/chem/thermo';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
 import { SPECIES_NAMES, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
+
+// Every gas met by sweeps of every pair across its slider (13 mixtures, five engines) and of every
+// fuel with a spread of oxidisers around its best and balanced mixtures; BeOH from a review's sweep.
+const SWEPT_GASES = [
+  'AL', 'AL2O', 'ALCL', 'ALCL3', 'ALF', 'ALF2CL', 'ALF3', 'ALFCL2', 'B2O2', 'B2O3', 'B3O3F3', 'BF',
+  'BF2', 'BF2CL', 'BF2OH', 'BF3', 'BFCL2', 'BHF2', 'BO', 'BO2', 'BOF', 'Be', 'Be(OH)2', 'Be2O',
+  'Be2OF2', 'Be3O3', 'Be4O4', 'BeCL', 'BeCL2', 'BeF', 'BeF2', 'BeO', 'BeOH', 'C2F2',
+  'C2H2,acetylene', 'C3', 'CF', 'CF2', 'CF3', 'CF3CL', 'CF4', 'CH4', 'CL', 'CL2', 'CLF', 'CLF3',
+  'CN', 'CO', 'CO2', 'COF2', 'F', 'F2', 'H', 'H2', 'H2F2', 'H2O', 'H3B3O6', 'H6F6', 'HBO', 'HBO2',
+  'HCL', 'HCN', 'HF', 'Li', 'Li2', 'Li2CL2', 'Li2F2', 'Li2O', 'Li2O2H2', 'Li3F3', 'LiCL', 'LiF',
+  'LiH', 'LiO', 'LiOH', 'N2', 'NF3', 'NH3', 'NO', 'NO2F', 'NOF', 'NOF3', 'O', 'O2', 'OH',
+];
 
 describe('failure copy for the chemistry failures', () => {
   for (const kind of ['flameout', 'inert', 'detonation', 'unsolved'] as const) {
@@ -35,6 +48,10 @@ describe('exhaust species names', () => {
     expect(speciesName('H2O')).toBe('Steam');
     expect(speciesName('XyZ')).toBe('XyZ');
   });
+  it('tidies the formula where there is no name, so a miss reads as a formula', () => {
+    expect(speciesName('ALCLF9')).toBe('AlClF9');
+    expect(speciesName('C9H7,indenyl')).toBe('C9H7');
+  });
 
   // The five test pairs, at their own mixtures in the starter engine's chamber and nozzle.
   const cfg = starterEngine();
@@ -55,27 +72,52 @@ describe('exhaust species names', () => {
     });
   }
 
-  // Every fuel with a spread of oxidisers, and every oxidiser with a spread of fuels, at half, one and
-  // twice the pair's own mixture, in a small hot nozzle and a large cold one; each fuel alone too.
+  // Every fuel with a spread of oxidisers, and every oxidiser with a spread of fuels, around the
+  // balanced mixture worked out from the ingredients' valences (at 0.3, 0.6, 1 and 1.8 times it), in a
+  // small hot nozzle and a large cold one; each fuel alone too. A sample, as any sweep is: the list
+  // below is what makes the guarantee for gases.
+  const VALENCE: Record<string, number> = { C: 4, H: 1, B: 3, Al: 3, Be: 2, Li: 1, O: -2, F: -1, Cl: -1, N: 0 };
+  const valence = (parts: { reactant: string; share: number }[]) => parts.reduce((sum, p) => {
+    const r = reactantOf(p.reactant);
+    return sum + (p.share / r.molarMass) * Object.entries(r.elements).reduce((v, [e, k]) => v + (VALENCE[e] ?? 0) * k, 0);
+  }, 0);
+  const balanced = (f: string, o: string) => {
+    const vf = valence(FUELS[f].parts), vo = valence(OXIDISERS[o].parts);
+    return vf > 0 && vo < 0 ? -vf / vo : 1;
+  };
   it('names everything any pair is likely to put in its exhaust', () => {
-    const OXIDISERS = ['lox', 'lf2', 'n2o4', 'clf3', 'htp98', 'nf3'];
-    const FUELS = ['h2', 'rp1', 'b2h6', 'al-slurry', 'be', 'li', 'nh3'];
+    const OX = ['lox', 'lf2', 'n2o4', 'clf3', 'htp98', 'nf3'];
+    const FU = ['h2', 'rp1', 'b2h6', 'al-slurry', 'be', 'li', 'nh3'];
     const pairs = new Set<string>();
-    for (const f of FUEL_IDS) for (const o of [...OXIDISERS, 'none']) pairs.add(`${f}|${o}`);
-    for (const o of OXIDISER_IDS) for (const f of FUELS) pairs.add(`${f}|${o}`);
+    for (const f of FUEL_IDS) for (const o of [...OX, NO_OXIDISER]) pairs.add(`${f}|${o}`);
+    for (const o of OXIDISER_IDS) if (o !== NO_OXIDISER) for (const f of FU) pairs.add(`${f}|${o}`);
     const unnamed = new Map<string, string>();
     for (const pair of pairs) {
       const [f, o] = pair.split('|');
-      const d = o === 'none' ? 0 : pairRange(f, o).ofDefault;
-      for (const m of o === 'none' ? [1] : [0.5, 1, 2]) {
-        for (const [pc, area] of [[100, 16], [10, 3], [30, 150]]) {
-          const gas = solvePair(f, o, d * m, pc, area);
-          for (const { name } of gas.exhaust) if (!Object.hasOwn(SPECIES_NAMES, name)) unnamed.set(name, `${f}/${o} at ${(d * m).toFixed(2)}`);
+      const s = o === NO_OXIDISER ? 0 : balanced(f, o);
+      for (const m of o === NO_OXIDISER ? [1] : [0.3, 0.6, 1, 1.8]) {
+        for (const [pc, area] of [[10, 3], [30, 150]]) {
+          const gas = solvePair(f, o, s * m, pc, area);
+          for (const { name } of gas.exhaust) if (!Object.hasOwn(SPECIES_NAMES, name)) unnamed.set(name, `${f}/${o} at ${(s * m).toFixed(2)}`);
         }
       }
     }
     expect(Object.fromEntries(unnamed)).toEqual({});
-  }, 180_000);
+  }, 60_000);
+
+  it('names every liquid and solid in the data, and every gas a sweep of the sliders has met', () => {
+    const condensed = SPECIES.filter((sp) => sp.phase !== 0).map((sp) => sp.name);
+    expect(condensed.length).toBeGreaterThan(0);
+    for (const name of condensed) expect(SPECIES_NAMES, name).toHaveProperty([name]);
+    // Naming all 427 gases would be most of them never met; these are the ones sweeps of every pair
+    // across its slider in five engines, and of every fuel with a spread of oxidisers around its
+    // best and balanced mixtures, have reported. A gas met nowhere here is still caught by the sweep
+    // above if it is common, and otherwise reads as a tidied formula.
+    for (const name of SWEPT_GASES) {
+      expect(SPECIES.find((sp) => sp.name === name)?.phase, name).toBe(0);
+      expect(SPECIES_NAMES, name).toHaveProperty([name]);
+    }
+  });
 
   // The five reactor fluids the solver works out, across their core temperatures, pressures and nozzles.
   const FLUIDS = ['ntr-ammonia', 'ntr-methane', 'ntr-water', 'ntr-co2', 'ntr-helium'] as const;
