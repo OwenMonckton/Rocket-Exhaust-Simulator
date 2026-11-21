@@ -154,31 +154,63 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
 
 The design is in `docs/superpowers/specs/2026-11-20-fuel-chemistry-design.md`.
 
+### Words used below
+
+- **CEA**: NASA's Chemical Equilibrium with Applications program, the standard tool for these
+  sums. Its manual is NASA RP-1311 (Gordon and McBride); **"Example N"** is one of the worked
+  sample problems in that manual, used as test cases here.
+- **Isp (efficiency)**: how many seconds a kilogram of propellant could hold up its own weight;
+  higher is better. "Vacuum Isp" is with no air outside the nozzle.
+- **Characteristic velocity**: a measure of how well the chamber turns propellant into hot gas,
+  independent of the nozzle.
+- **Gamma**: how a gas's pressure rises when it is squeezed without losing heat. It sets how much
+  of the heat a nozzle can turn into speed.
+- **Area ratio**: the nozzle exit's area over the throat's. Bigger means the gas expands further.
+- **Mixture ratio**: kilograms of oxidiser burned per kilogram of fuel.
+- **Equilibrium**: the make-up the hot gas would settle to if its reactions had time to finish.
+  **Frozen flow** is the opposite: the make-up is fixed and only the temperature and pressure
+  change.
+- **Settles**: the solver's repeated corrections stop changing the answer. A solve that does not
+  settle has no answer, and the simulator shows none.
+- **Warm and cold start**: a warm start begins the solver from a nearby answer already found; a
+  cold start begins from a fixed general guess.
+- **Tabled and calculated**: a tabled engine reads its gas from a hand-typed table (the four
+  original pairs, used by the examples); a calculated one has it worked out by the solver.
+- Sources named below: the **NIST** Chemistry WebBook (heat contents of substances) and **CAMEO**
+  Chemicals (a US database of chemical hazards).
+
 ### What was built
 
-- **A chemical-equilibrium solver** in `src/physics/chem/`, after NASA RP-1311 (Gordon and
-  McBride): NASA's thermo data for ten elements (`thermo.json`, `thermo.ts`), the equilibrium of
-  gases and condensed products at fixed enthalpy, entropy or temperature (`equilibrium.ts`), and
-  the flow from chamber through throat to exit at the chamber's entropy (`rocket.ts`).
-- **The fitted gas.** The solver's flame temperature, characteristic velocity and vacuum
-  efficiency for the engine's own pressure, mixture and area ratio are handed to the simulator as
-  one simple gas that reproduces them (`fitGas` in `pair.ts`), so the nozzle maths, the flow view,
-  separation and the aerospike are unchanged. Results are cached; the solver never runs per frame
-  for unchanged inputs.
+- **A chemical-equilibrium solver** in `src/physics/chem/`, following CEA's method: NASA's
+  property data for ten elements (`thermo.json`, `thermo.ts`), the equilibrium of gases and of
+  solid and liquid products (`equilibrium.ts`), and the flow from the chamber through the throat to
+  the nozzle exit (`rocket.ts`).
+- **The fitted gas.** The solver's flame temperature, characteristic velocity and vacuum Isp for
+  the engine's own pressure, mixture and area ratio are handed to the simulator as one simple gas
+  (one gamma, one molar mass) that reproduces them (`fitGas` in `pair.ts`). So the nozzle maths,
+  the flow view, separation and the aerospike are unchanged. Results are kept, so the solver does
+  not run again each frame for inputs that have not changed. (Some work around it is still repeated
+  each frame, and swapping a part runs one solve to read a fixed figure: see the small things
+  below.)
 - **Two pickers** for a combustion chamber: 30 fuels (two of them meant to run alone: nitrous
-  oxide and 90% peroxide) and 16 oxidisers plus "None (fuel alone)", grouped into everyday,
-  storable and exotic, with hover text (`ingredients.ts`). Every fact about an ingredient carries a
-  source string.
-- **The mixture slider** spans each pair from where the flame cools to 700 K on one side to the
-  other, held within a fiftieth and fifty times the most efficient ratio, and starts at the most
-  efficient (`pairRange`).
-- **Whether it works** (`verdict.ts`): three new failures shown on screen (flame-out below 800 K,
-  detonation for liquid ozone, tetranitromethane and acetylene, and "Nothing to burn it with"),
-  and warnings beside the pickers (igniter or lights on contact, one propellant freezing the
-  other, attacks materials, toxic propellant or exhaust, droplets or soot, hydrazine alone).
+  oxide and 90% hydrogen peroxide) and 16 oxidisers plus "None (fuel alone)", grouped into
+  everyday, storable and exotic, with hover text (`ingredients.ts`). Every fact about an
+  ingredient carries a source string.
+- **The mixture slider** spans each pair from where the flame cools to 700 K on the fuel-rich side
+  to the same on the oxidiser-rich side, kept between a fiftieth and fifty times the most
+  efficient ratio, and starts at the most efficient (`pairRange`).
+- **Whether it works** (`verdict.ts`): four new failures shown on screen, and warnings beside the
+  pickers (needs an igniter or lights on contact, one propellant freezing the other, attacks
+  engine materials, toxic propellant or exhaust, droplets or soot, hydrazine alone). The four
+  failures:
+  - **flame-out**, when the flame would be below 800 K. The engine stays whole and can be
+    relit. Its figures stay on screen: they are real answers, for a gas too cold to keep burning;
+  - **detonation**, for liquid ozone, tetranitromethane and acetylene, which destroys the engine;
+  - **nothing to burn it with**, a fuel with no oxidiser that cannot break down by itself;
+  - **no answer**, when the solve does not settle.
+- **No figures without an answer.** For the last two, every figure shows a dash and the limit bars
+  are hidden.
 - **The exhaust readout**: what leaves the nozzle, by share of molecules, in plain names.
-- **No figures without an answer.** When the solve does not settle, or there is nothing to burn,
-  every figure shows a dash and the limit bars are hidden.
 - **The nuclear fluids** other than hydrogen come from the solver (see the next section).
 - **Share links** in a new `v3` format carry fuel, oxidiser and mixture; `v1` and `v2` links open
   as before.
@@ -186,52 +218,58 @@ The design is in `docs/superpowers/specs/2026-11-20-fuel-chemistry-design.md`.
   shows in the pickers; changing either picker makes the engine calculated and marks it modified,
   and Reset brings the table back.
 
-### Rulings made during the build, in order
+### Decisions made during the build, in order
 
 Each was a choice the plan did not settle. What it costs if it was the wrong choice follows it.
 
 1. **The four solver-against-table figures are recorded here, not printed by a test** (they are
-   below). If wrong: they were seen one task later.
+   below), so that the test output stays clean. If wrong: the figures were seen at the end of the
+   build instead of when the test was written.
 2. **A product sitting on its melting point holds both phases.** The plan said to keep whichever
-   phase was in hand; that read Example 13's throat 265 K wrong and depended on the starting guess.
-   CEA's own rule (RP-1311 sec. 3.5) replaced it: when a phase swap would undo the previous one at
-   the same point, both phases are kept and the temperature is held at the melting point. If wrong:
-   more solver work, and a throat search that must cope with gamma near 1 there.
+   phase (solid or liquid) was in hand; on CEA's Example 13 that put the throat 265 K out and
+   depended on where the solver started. CEA's own rule (RP-1311 section 3.5) replaced it: when
+   switching phase would undo the previous switch at the same point, both phases are kept and the
+   temperature is held at the melting point. If wrong: more solver work, and a throat search that
+   must cope with the gas behaving oddly there (gamma near 1).
 3. **A state colder than 200 K reports "no answer".** NASA's data stops at 200 K; below it every
-   figure is an extrapolated fit and condensed products cannot be tested. A beryllium-rich mixture
-   had "settled" at 23 K. If wrong: a mixture that is simply very cold reads "no answer" instead of
-   flame-out. The slider stops at 700 K, so ordinary pairs never get there.
-4. **Four extras in the flow solver stand**: one cold retry of a failed warm solve, off-centre
-   bisection probes, an exit that cannot step upstream of the throat, and pressure ratios carried as
-   first guesses. Each makes a result independent of the starting guess or stops a non-physical
-   step. If wrong: extra code with little effect.
-5. **Where the flow crosses sonic three times around a melting band** (11 of 288 beryllium
-   mixtures tried), the throat is the first sonic point, not the point of greatest mass flow, as
-   CEA's own iteration does. Characteristic velocity reads up to 0.36% high there. If wrong: a third
-   of a percent on rare beryllium mixtures.
+   figure is stretched past its data, and solid and liquid products cannot be checked. A
+   beryllium-rich mixture had "settled" at 23 to 86 K. If wrong: a mixture that is simply very cold
+   reads "no answer" instead of flame-out. The slider stops at 700 K, so ordinary pairs never get
+   there.
+4. **Four additions to the flow solver stand**: one cold-start retry of a failed warm start;
+   off-centre trial points in the throat search; an exit search that cannot step back upstream of
+   the throat; and the previous answer's pressure ratios used as first guesses. Each makes a result
+   independent of where the solver started, or stops a step that makes no physical sense. If wrong:
+   extra code with little effect.
+5. **Where the flow passes the speed of sound three times around a melting point** (11 of 288
+   beryllium mixtures tried), the throat is taken at the first crossing, not where the most gas can
+   pass, as CEA's own method does. Characteristic velocity reads up to 0.36% high there. If wrong:
+   a third of a percent on rare beryllium mixtures.
 6. **One kilogram of hydrogen per eight of oxygen is 1.984 hydrogen atoms per oxygen atom**; the
-   plan's test figure was twice that. No cost.
-7. **Nitrous oxide (both entries) is modelled from the data file's gas record**; no cited figure
-   for the liquid was found. Its heat content is overstated by the heat of vaporisation (about 16
+   plan's test figure was twice that, a slip in the plan. No cost.
+7. **Nitrous oxide (both entries) is modelled from NASA's data for the gas**; no cited figure for
+   the liquid was found. Its heat content is overstated by the heat needed to boil it (about 16
    kJ/mol of 82), so its efficiency reads a little high. If wrong: a percent or two on nitrous
    pairs.
 8. **The 200 K floor applies to the chamber and the throat only.** An exit colder than 200 K is
-   reached by frozen flow: equilibrium down to the 200 K station on the chamber's isentrope, then
-   composition and specific heat frozen to the exit. Without it, helium in NERVA's nozzle (exit
-   near 60 K) and any hydrogen-rich pair in a big nozzle would read "no answer". If wrong: a small
-   error in the last few percent of expansion for cold exits; no exhaust condenses below 200 K.
+   reached by frozen flow: equilibrium while the gas expands down to 200 K, then the make-up and
+   the gas's heat capacity are held fixed out to the exit. Without it, helium in NERVA's nozzle
+   (exit near 60 K) and any hydrogen-rich pair in a big nozzle would read "no answer". If wrong: a
+   small error in the last few percent of expansion for cold exits, and condensation below 200 K is
+   not modelled.
 9. **Picking a pair must take well under half a second.** Met: the slowest pair measured
    (aluminium slurry with oxygen) went from about 1 s to about 150 ms.
-10. **A condensed product outside its temperature range is dropped and the point solved again, and
-    a solve starts warm only from a nearby state.** Started from a distant state, aluminium slurry
-    with oxygen had settled at 2,009 K holding a solid far outside its range, where a cold start gives
-    3,955 K. If wrong: a few more cold starts, a little slower.
-11. **Picking "calculated" sets the mixture to the pair's best** (a change to `store.ts` made with
-    the solver hookup). Without it, picking Calculated flamed out at once. If wrong: none seen.
-12. **The fuel and oxidiser pickers do nothing unless the engine burns a pair.** They are shown only
-    for a combustion chamber, and quietly turning a reactor into a combustion engine would be a
-    surprise. No cost.
-13. **"Nothing to burn it with" hides the figures too**, as an unsettled solve does: no calculation
+10. **A solid or liquid product outside its temperature range is dropped and the point solved
+    again, and a solve starts warm only from a nearby state.** Warm-started from a distant state,
+    aluminium slurry with oxygen had settled at 2,009 K holding a solid far outside its range,
+    where a cold start gives 3,955 K. If wrong: a few more cold starts, a little slower.
+11. **Picking "calculated" sets the mixture to the pair's most efficient** (a change to `store.ts`
+    made with the solver hookup). Without it, picking Calculated flamed out at once. No cost was
+    named.
+12. **The fuel and oxidiser pickers do nothing unless the engine burns a pair.** They are shown
+    only for a combustion chamber, and quietly turning a reactor into a combustion engine would be
+    a surprise. No cost.
+13. **"Nothing to burn it with" hides the figures too**, as "no answer" does: no calculation
     produced them; they came from a cold stand-in gas. No cost.
 
 ### What the solver reads against the tables
@@ -244,28 +282,31 @@ vacuum Isp in seconds, the simulator's usual losses applied to both):
 | RP-1 and oxygen | 2.36 | 311.7 | 322.5 | +3.49% |
 | Hydrogen and oxygen | 6.0 | 408.3 | 412.5 | +1.03% |
 | Methane and oxygen | 3.6 | 326.0 | 332.8 | +2.08% |
-| UDMH and nitrogen tetroxide | 2.6 | 296.0 | 309.4 | +4.50% |
+| UDMH (unsymmetrical dimethylhydrazine) and nitrogen tetroxide | 2.6 | 296.0 | 309.4 | +4.50% |
 
-Measured twice, the same to the hundredth. The solver is ideal equilibrium flow; the tables were
-tuned to real engines, which lose a few percent to incomplete burning, finite reaction rates and
-the like that the simulator's own losses do not fully cover. So **an example whose fuel or
-oxidiser is re-picked**, even back to the same one, becomes calculated and reads higher than its
-stock self: the Merlin 1D goes from 283 to 295 s at sea level (+4.1%), with its mixture moved from
-2.36 to the solver's best, 2.76. It is marked modified, and Reset returns it to the table.
+Measured twice, the same to the hundredth. The solver is ideal equilibrium flow, and the tables
+were tuned to real engines' published figures. The likely cause of the gap, not measured, is that
+real engines lose a few percent more than the simulator's own losses allow for (burning not quite
+finishing, reactions not keeping up in the nozzle). So **an example whose fuel or oxidiser is
+re-picked**, even back to the same one, becomes calculated and reads higher than its stock self:
+the Merlin 1D goes from 283 to 295 s at sea level (+4.1%), with its mixture moved from 2.36 to the
+solver's most efficient, 2.76. It is marked modified, and Reset returns it to the table.
 
 ### What was left
 
 - **Ingredients left out for want of a sourced heat content:** liquid chlorine pentafluoride (NIST
-  has gas-phase data only), turpentine (no record; a mixture anyway), hydrazine hydrate and so
-  UH25 (not found by name, CAS or formula), and condensed beryllium hydride (no condensed-phase
-  data).
+  has data for the gas only), turpentine (no record; a mixture anyway), hydrazine hydrate and so
+  UH25 (75% UDMH, 25% hydrazine hydrate; not found by name, registry number or formula), and solid
+  beryllium hydride (no data for the solid).
 - **Facts left unset for want of a source**, so no note appears for them:
   - freezing and boiling points for gasoline, Jet-A, JP-10, Syntin, beryllium, the aluminium
-    slurry and every blend (75% ethanol, Aerozine 50, MON-25, FLOX-70, IRFNA, 98% peroxide); RP-1
-    (the source gives only a bound and a range); pentaborane's boiling point (a range);
+    slurry and every blend: 75% ethanol, Aerozine 50 (half hydrazine, half UDMH), MON-25
+    (nitrogen tetroxide with 25% nitric oxide), FLOX-70 (70% fluorine, 30% oxygen), IRFNA
+    (inhibited red fuming nitric acid) and 98% peroxide; RP-1 (the source gives only a bound and
+    a range); pentaborane's boiling point (a range);
   - toxicity for liquid ozone, oxygen difluoride, nitrogen trifluoride, perchloryl fluoride and
-    nitrous oxide (unrated in CAMEO), for the blends, gasoline, JP-10, Syntin and beryllium;
-    lithium's rating rests on a search summary, not an opened page;
+    nitrous oxide (unrated in CAMEO), and for the blends, gasoline, JP-10, Syntin and beryllium;
+    lithium's rating rests on a search summary, not the database page itself;
   - "attacks materials" is set only for fluorine, FLOX, chlorine trifluoride, the nitric acids and
     the three peroxides; wet nitrogen tetroxide, hydrazine, UDMH, ammonia, tetranitromethane,
     acetylene and molten lithium were not added;
@@ -273,27 +314,38 @@ stock self: the Merlin 1D goes from 283 to 295 s at sea level (+4.1%), with its 
     tetranitromethane and ozone, and for acetylene, the boranes, the metals, cyanogen,
     nitromethane, and hydrogen with the nitric and tetroxide family.
   Where sources disagreed, the first-named figure was taken (aniline's toxicity, five freezing
-  points).
-- **Nitrous oxide is modelled from gas data** (ruling 7): a percent or two high.
+  points). Syntin is a mixture of forms of one molecule in reality; it is modelled as one of them
+  (the trans form), as its source string says.
+- **Nitrous oxide is modelled from gas data** (decision 7): a percent or two high.
 - **The fitted gas's exit pressure reads 12–25% high.** One gamma and one molar mass reproduce the
-  solver's efficiency and characteristic velocity, not its exit pressure, so a separated jet tears
-  off later in the bell than it should.
-- **No ions.** The species list has none. In the hottest flames (fluorine and hydrogen, near
-  5,000 K) a little of the gas would be ionised; that is left out.
-- **Melting points hold both phases** (ruling 2), and where the flow crosses sonic three times the
-  first crossing is taken, reading characteristic velocity up to 0.36% high (ruling 5).
-- **Exits colder than 200 K are frozen flow** (ruling 8): nothing condenses in the exhaust below
-  200 K, and the last stretch of expansion is a little off.
-- **An over-cold chamber reads "no answer"** rather than flame-out (ruling 3). The slider never
+  solver's efficiency and characteristic velocity, not its exit pressure, so a jet tears off the
+  nozzle wall later in the bell than it should.
+- **No ions.** Electrically charged molecules are left out of the solver's list. The one CEA
+  example that includes them (Example 11, lithium and fluorine) still came within 0.24% on
+  characteristic velocity and 0.07% on Isp.
+- **Melting points hold both phases** (decision 2), and where the flow passes the speed of sound
+  three times the first crossing is taken, reading characteristic velocity up to 0.36% high
+  (decision 5).
+- **Exits colder than 200 K are frozen flow** (decision 8): condensation below 200 K is not
+  modelled, and the last stretch of expansion is a little off.
+- **An over-cold chamber reads "no answer"** rather than flame-out (decision 3). The slider never
   reaches it for an ordinary pair.
-- **Kerosene, the hydrazines and the boranes never flame out at the fuel-rich end.** At equilibrium
-  they fall apart and give off heat with almost no oxidiser, so that end of the slider runs cool
-  (RP-1 at 0.055 : 1 reads 859 K) but does not go out. Real engines there would leave unburned
-  fuel and soot. Only the oxidiser-rich end flames out for them; hydrogen flames out at both.
-- **Hydrazine alone runs to full equilibrium**: ammonia breaks down all the way to hydrogen and
-  nitrogen. Real thrusters stop that part-way over the catalyst, so the figure differs from a real
-  thruster's; the note says so.
+- **Some fuels never flame out at the fuel-rich end.** Read in the browser: RP-1 with oxygen at its
+  fuel-rich end (0.055 : 1) runs at 859 K and does not go out, while its oxidiser-rich end
+  flames out; hydrogen flames out at both ends. At equilibrium kerosene falls apart and gives off
+  heat with almost no oxidiser. The hydrazines and boranes should behave the same for the same
+  reason (found while planning), but were not read in the browser. Real engines there would leave
+  unburned fuel and soot.
+- **Hydrazine alone breaks down as far as equilibrium allows**: at the default about a quarter of
+  the exhaust is still ammonia (read in the browser: hydrogen 45%, nitrogen 29%, ammonia 26%).
+  Real thrusters stop the breakdown of ammonia earlier, over the catalyst, so the figure differs
+  from a real thruster's; the note says so.
 - **The solver against the tables** reads 1–4.5% higher (above). A re-picked example shows it.
+- **Frame rate on a real display was never measured.** The final browser checks ran with the
+  browser pane hidden, where the page drew one frame a second, so they ran under a stand-in 16 ms
+  timer. The only figures are the main-thread work per frame: 0.39 ms for a tabled engine against
+  0.41 ms for a calculated one while firing, and at worst 8.9 ms while dragging the mixture slider
+  every frame. Time spent by the graphics card was not measured.
 - **Three-propellant engines** (lithium, fluorine and hydrogen) **and blends made by the user** are
   not done.
 - **Plume colour** still comes from a hand-picked look per family, for pairs and fluids alike
@@ -302,46 +354,55 @@ stock self: the Merlin 1D goes from 283 to 295 s at sea level (+4.1%), with its 
 
 ### Small things deferred during review
 
-- **Parts of the solver that work but are untested or undocumented**: the restart after a singular
-  matrix; the iteration limit being per attempt (up to 300 with restarts); warm starts matching
-  species by name and seeding the rest at ln(10⁻⁶); a convergence test that divides by the total
-  moles with no guard if every gas is zeroed; removal of one phase of a melting pair at a band edge;
-  specific heat at a two-phase point being a frozen-split hybrid (said only in a code comment); and
-  `equilibrate` being one long function of about 420 lines.
-- **Phase edge cases that end in "no answer", never a wrong figure**: water's ice and liquid cross
-  at 273.122 K but its data ranges meet at 273.15 K, so a solve landing in that sliver cycles; a
-  phase pair can form without checking the phases are neighbours (two forms of beryllium oxide);
-  aluminium nitride's solid and liquid have no latent heat in the data.
-- **The flow solver's guards**: the exit guard has no test; the throat bisection does not check the
-  subsonic side is at the higher pressure; an area ratio between 1 and 2 starts next to the sonic
-  singularity; a failed station inside the throat passes does not stop the bisection; a second
-  below-floor exit after the 200 K station returns not settled (safe, untested); the cold-exit
-  search assumes frozen supersonic flow at the 200 K station (uncommented); a condensing exit at a
-  large area ratio is tested only through one CEA example.
-- **Shared results are not frozen**: cached gases, the "not settled" result and the exhaust list on
-  a result are shared by reference.
-- **Tests that are weaker than they look**: the timing budgets have about 3.7 times margin and could
-  fail on a loaded machine; one "same basis" test cannot fail (its second call is a cache hit); the
-  fit test re-derives the simulator's formula instead of calling it; no test drives a real
-  non-convergence through to the gas; the attack note is matched on its exact wording; the species
-  test runs at 100 bar and area ratio 16 rather than the literal defaults; only Aerozine 50's blend
-  shares are checked by value; Task 1 left `sR` untested and `hRT` checked on one species.
-- **Work repeated per frame, without solving**: the verdict (and its notes) is rebuilt about five
+- **Parts of the solver that work but are untested or undocumented**: the restart when its sums
+  cannot be solved at a step; the step limit counting per attempt (up to 300 steps with
+  restarts); a warm start matching products by name and starting any others at a tiny trace; a
+  convergence check that divides by the total amount of gas with no guard if it is zero; dropping
+  one phase of a melting pair at the edge of its range; the heat capacity at a melting point being
+  a mix of two methods (said only in a code comment); and `equilibrate` being one long function of
+  about 420 lines. One test, for an almost pure oxidiser, has a branch that cannot fail.
+- **Phase edge cases that end in "no answer", never a wrong figure**: water's ice and liquid swap
+  at 273.122 K but its data ranges meet at 273.15 K, so a solve landing in that sliver goes round
+  in circles; a pair of phases can form without checking they are next to each other (two forms of
+  beryllium oxide); aluminium nitride's solid and liquid have no melting heat in the data.
+- **The flow solver's guards**: the exit guard has no test; the throat search does not check its
+  slower side is at the higher pressure; an area ratio between 1 and 2 starts very close to the
+  throat, where the sums are touchy; a failed point inside the throat search does not stop it; a
+  second too-cold exit after the 200 K point returns "no answer" (safe, untested); the cold-exit
+  search assumes the gas is faster than sound at its 200 K point (not commented); an exit where
+  products condense, at a large area ratio, is tested only through one CEA example.
+- **The mixture and the slider's range**: the function that builds a mixture accepts a negative or
+  missing ratio (a ratio of −1 divides by zero); the callers guard against it. A comment in
+  `pair.ts` overstates how close a warm start must be in `pairRange`, and the ends of the range are
+  not checked warm against cold.
+- **Shared results are not locked**: kept results, the "no answer" result and the exhaust list on a
+  result are the same objects everywhere they are used, so one careless change would alter all.
+- **Tests that are weaker than they look**: the timing limits have about 3.7 times margin and could
+  fail on a loaded machine; one "same basis" test cannot fail (its second call just returns the
+  kept result); the fit test re-derives the simulator's formula instead of calling it; no test
+  drives a real failure to settle through to the gas; the "attacks materials" note is matched on
+  its exact wording; the exhaust-names test runs at 100 bar and area ratio 16 rather than the
+  defaults; only Aerozine 50's blend shares are checked by value; one of the property-data
+  functions (entropy) has no test of its own and another (heat content) is checked on one
+  substance only.
+- **Work repeated each frame, with no solving**: the verdict and its notes are rebuilt about five
   times a frame for a calculated engine; `simulate` still reads the propellant table for a range it
-  already has; the chamber-length constant of a fuel family is read by running a solve.
+  already has. Swapping a part runs one solve only to read a fixed figure for the fuel family (how
+  long a chamber it needs).
 - **Data and wording**: liquid fluorine and FLOX "light everything" where the source says "almost
   anything"; Jet-A inherits kerosene's facts without saying so; the freeze note reads awkwardly ("so
-  it would freeze"), writes "C" for "°C", and fires for hydrogen with liquid oxygen (the spec's rule
-  asks for it); the data file's notice has no licence text; a comment in `controls.ts` calls a result
-  cached that is not; the fluid's richness formula is written out by hand in `gasSource.ts`; one
-  test loop calls `run()` twice per temperature.
+  it would freeze"), writes "C" for "°C", and appears for hydrogen with liquid oxygen (the design's
+  rule asks for it); the data file's notice has no licence text; a comment in `controls.ts` says the
+  notes cost nothing because "the result is cached", but only the solver's result is kept and the
+  notes are rebuilt each time; the fluid richness formula is written out by hand in `gasSource.ts`;
+  one test loop runs the simulation twice per temperature.
 - **Small behaviour**: below a mixture of about 0.05 the slider shows three figures but results step
   in 0.01; the modified mark counts fuel and oxidiser picks left over on a propellant with no pair;
-  an unknown fuel id becomes the first fuel (as the spec asks).
-- **Seen in the browser at the end**: helium's exhaust reads "He 100%", not a plain name (the
-  names list has no entry for it); at phone width the readout grid is wider than its column (172
-  px in 145), so some labels are cut, as before this piece; the exhaust readout itself wraps and
-  can be scrolled to.
+  an unknown fuel id becomes the first fuel (as the design asks).
+- **Seen in the browser at the end**: at phone width the readout grid is wider than its column (172
+  px in 145), so some labels are cut, as before this piece; the exhaust readout itself wraps and can
+  be scrolled to. Helium's exhaust read "He 100%"; it now reads as a plain name. Frame rate on a real
+  display was not measured (see "What was left").
 
 ## Chemistry piece: nuclear fluids against published figures
 
@@ -368,9 +429,9 @@ All three are more than 5% from Zubrin's area-ratio-100 figure, in different dir
 - **The share kept at area ratio 100 depends on the gas.** Carbon dioxide's gamma is low (about 1.13
   at the throat), so more of its heat is still in the gas at area ratio 100. Taking the area ratio
   from 100 to 10,000 at 55 bar adds 12% for carbon dioxide (247 → 276 s) and 9% for methane (532 →
-  582 s); both solves settle at 10,000 (re-checked with `rocket` directly: 276.4 s and 582.4 s, exits
-  at 491 K and 498 K). Water's solve settles only up to area ratio 5,000 (tried 1,000 to 10,000; from 5,500 up
-  it does not settle at the exit); from 100 to 5,000 it adds 7% (364 → 389 s).
+  582 s); both solves settle at 10,000 (re-checked with `rocket` directly: 276.4 s and 582.4 s,
+  exits at 491 K and 498 K). Water's solve settles only up to area ratio 5,000 (tried 1,000 to
+  10,000; from 5,500 up it does not settle at the exit); from 100 to 5,000 it adds 7% (364 → 389 s).
 - **No pressure is stated.** At 10 bar instead of 55 every fluid dissociates a little more and gains
   1 to 3% at area ratio 100 (water 374, carbon dioxide 256, methane 538 s). Neither pressure brings
   all three to 93%.
