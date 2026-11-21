@@ -180,6 +180,28 @@ describe('rocket: chamber, throat and exit', () => {
     expect(best / throatFlux).toBeLessThan(1.001);
   });
 
+  it('keeps the throat on the flux maximum where a vapour sits over its own liquid', () => {
+    // Lithium and peroxide at 200 bar: the equilibrium gamma_s falls below 1 as lithium oxide and
+    // hydroxide liquids condense. That is real; replacing it with the frozen value once moved the
+    // throat to 113 bar where the mass flux peaks at 130, and gave c* 1.8% high.
+    const mix = mixtureOf('li', 'htp90', 2.69);
+    const r = rocket(mix, flame(mix, 200), 16);
+    expect(r.ok).toBe(true);
+    const throatFlux = (1e5 * 200) / r.cStar;
+    let from = r.chamber;
+    let best = 0;
+    for (let p = 200 * 0.95; p > 200 * 0.4; p *= 0.995) {
+      let st = equilibrate(mix, { kind: 'sp', s: r.chamber.s, pBar: p }, undefined, from);
+      if (!st.ok) st = equilibrate(mix, { kind: 'sp', s: r.chamber.s, pBar: p });
+      if (!st.ok) continue;
+      from = st;
+      const u2 = 2 * (r.chamber.h - st.h);
+      best = Math.max(best, ((1e5 * p) / (st.n * R_UNIVERSAL * st.t)) * Math.sqrt(u2));
+    }
+    expect(best).toBeGreaterThan(0);
+    expect(best / throatFlux).toBeLessThan(1.002);
+  });
+
   it('is not ok when the chamber would settle colder than the data covers', () => {
     const mix = beryllium(0.85, 0.3775); // once a false chamber at 86 K
     expect(rocket(mix, flame(mix, 206.84), 30).ok).toBe(false);

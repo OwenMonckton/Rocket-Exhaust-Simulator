@@ -414,8 +414,13 @@ export function equilibrate(mix: Mixture, problem: Problem, species?: Species[],
   // A gas with its own condensate as the only species present (steam over water or ice) has its
   // element rows dependent and T fixed by P: the derivative matrix is singular, and whether the
   // elimination notices is down to rounding (it once gave cp 1.2e12 J/(kg K), gamma_s 0.52). The
-  // state itself is sound; take the frozen-composition values for its derivatives instead.
-  const sane = derivOk && cpOverR > 0 && Number.isFinite(gammaS) && (twoPhase || gammaS > 1) && dlnVdlnP < 0;
+  // state itself is sound; take the frozen-composition values for its derivatives instead. An
+  // equilibrium gamma_s at or below 1 is not a sign of this: a vapour over its own liquid (lithium
+  // oxide and hydroxide, beryllium oxide near its boiling point) gives one, and the throat depends on
+  // it. What marks the singular case is cp absurdly large against the frozen value (1e7 times, where
+  // a real two-phase state reaches some hundreds).
+  const sane = derivOk && cpOverR > 0 && cpOverR < 1e4 * (sumNC + sumCC)
+    && Number.isFinite(gammaS) && gammaS > 0 && dlnVdlnP < 0;
   if (!sane && active.length > 0) {
     cpOverR = sumNC + sumCC;
     gammaS = cpOverR / (cpOverR - n);
