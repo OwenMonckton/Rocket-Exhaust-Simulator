@@ -207,7 +207,16 @@ export function rocket(mix: Mixture, chamber: Problem, eps: number, start?: Rock
     let warmest = throat;          // the lowest-pressure station seen that settled at or above the floor
     let lnPrMax = Infinity;        // ln(Pc/P) at the 200 K station, once found: an equilibrium exit lies above it
     for (let pass = 0; pass < EXIT_PASSES; pass++) {
-      const x = station(pc / Math.exp(lnPr), from);
+      let x = station(pc / Math.exp(lnPr), from);
+      if (x.st.belowFloor && lnPrMax === Infinity) {
+        // A start far from the answer can land on vapour colder than the data where the true state
+        // is warmer with liquid: walk there from the warmest station, at most halving the pressure
+        // per step and each step started from the last, before believing it.
+        const target = pc / Math.exp(lnPr);
+        let w = warmest;
+        while (settled(w) && w.st.pBar > target * (1 + 1e-7)) w = station(Math.max(target, w.st.pBar / 2), w.st);
+        if (settled(w)) x = w;
+      }
       if (x.st.belowFloor && lnPrMax === Infinity) {
         // Colder than the data: find where the isentrope crosses 200 K.
         const c = floorStation(warmest);

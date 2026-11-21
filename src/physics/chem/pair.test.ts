@@ -69,6 +69,17 @@ describe('solvePair: the fitted gas', () => {
     }
   });
 
+  it('settles peroxide alone in a vacuum nozzle at a round 70 bar, as at 69', () => {
+    // A cold first guess at the exit once settled on vapour below 200 K, where the true state is
+    // warm with liquid water, and the solve gave up.
+    clearChemCache();
+    const at69 = solvePair('htp90-mono', 'none', 0, 69, 100);
+    clearChemCache();
+    const at70 = solvePair('htp90-mono', 'none', 0, 70, 100);
+    expect(at69.ok && at70.ok).toBe(true);
+    expect(relErr(at70.ispVac, at69.ispVac)).toBeLessThan(0.002);
+  });
+
   it('runs a monopropellant alone', () => {
     expect(pairRange('n2h4', 'none')).toEqual({ ofMin: 0, ofMax: 0, ofDefault: 0, ofPeak: 0 });
     const gas = solvePair('n2h4', 'none', 0, 20, 50);
