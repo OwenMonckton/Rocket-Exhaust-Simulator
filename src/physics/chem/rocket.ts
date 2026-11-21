@@ -19,6 +19,7 @@ export interface RocketResult {
 
 const THROAT_TOL = 0.4e-4;   // |u² − a²|/u² at the throat
 const THROAT_PASSES = 8;
+const THROAT_SAMPLES = 12;   // stations between chamber and throat checked for an earlier sonic point
 const JUMP_WIDTH = 1e-6;     // relative pressure bracket that locates a sonic jump
 const JUMP_STEPS = 60;
 const EXIT_TOL = 4e-5;       // change in ln(Pc/Pe)
@@ -94,6 +95,23 @@ export function rocket(mix: Mixture, chamber: Problem, eps: number, start?: Rock
     }
     return x;
   };
+  // The throat is the first sonic point going down from the chamber. Where a product melts, the
+  // sound speed jumps and the flow can go sonic, back below sonic and sonic again; the iteration
+  // above can settle on the later point (c* once 4% high). With condensed mass about, look at
+  // stations between the chamber and the throat in hand, each started from the last; if one is
+  // already supersonic, search between it and the last subsonic one above it instead.
+  if (throatOk && th && (ch.condensedMassFraction > 0 || th.st.condensedMassFraction > 0)) {
+    let above: Station = { st: ch, u2: 0, a2: ch.n * R * ch.t * ch.gammaS };
+    let fromUp = ch;
+    for (let k = 1; k < THROAT_SAMPLES; k++) {
+      const x = station(pc * (th.st.pBar / pc) ** (k / THROAT_SAMPLES), fromUp);
+      if (!settled(x)) continue;
+      fromUp = x.st;
+      if (x.u2 < x.a2) { above = x; continue; }
+      sub = above; sup = x; throatOk = false;
+      break;
+    }
+  }
   if (!throatOk && sub && sup) {
     for (let step = 0; step < JUMP_STEPS; step++) {
       if ((sub.st.pBar - sup.st.pBar) / sub.st.pBar <= JUMP_WIDTH) { th = sub; throatOk = true; break; }

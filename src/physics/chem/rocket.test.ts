@@ -3,6 +3,7 @@ import { R_UNIVERSAL, REACTANTS } from './thermo';
 import { equilibrate, mixtureFrom, type Mixture } from './equilibrium';
 import { rocket } from './rocket';
 import { areaRatio, cStar, exitVelocity, pressureRatio } from '../nozzle';
+import { mixtureOf } from './ingredients';
 
 const G0 = 9.80665;
 
@@ -155,6 +156,28 @@ describe('rocket: chamber, throat and exit', () => {
     const exit = equilibrate(mix, { kind: 'sp', s: r.chamber.s, pBar: r.pExitBar });
     expect(relErr(r.exit.t, exit.t)).toBeLessThan(1e-4);
     expect(Number.isFinite(r.ispVac)).toBe(true);
+  });
+
+  it('takes the first sonic point when a product melts near the throat', () => {
+    // Very fuel-rich beryllium and peroxide at 5 bar: the flow goes sonic, back below sonic as the
+    // oxide starts to freeze, and sonic again further down. The throat is the first, where the mass
+    // flux is greatest; the second once gave c* 4% high.
+    const mix = mixtureOf('be', 'htp90', 1.127);
+    const r = rocket(mix, flame(mix, 5), 10);
+    expect(r.ok).toBe(true);
+    const throatFlux = (1e5 * 5) / r.cStar;
+    let from = r.chamber;
+    let best = 0;
+    for (let p = 5 * 0.95; p > r.throat.pBar; p *= 0.995) {
+      let st = equilibrate(mix, { kind: 'sp', s: r.chamber.s, pBar: p }, undefined, from);
+      if (!st.ok) st = equilibrate(mix, { kind: 'sp', s: r.chamber.s, pBar: p });
+      if (!st.ok) continue;
+      from = st;
+      const u2 = 2 * (r.chamber.h - st.h);
+      best = Math.max(best, ((1e5 * p) / (st.n * R_UNIVERSAL * st.t)) * Math.sqrt(u2));
+    }
+    expect(best).toBeGreaterThan(0);
+    expect(best / throatFlux).toBeLessThan(1.001);
   });
 
   it('is not ok when the chamber would settle colder than the data covers', () => {
