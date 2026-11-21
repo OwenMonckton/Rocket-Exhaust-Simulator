@@ -341,7 +341,8 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
 - **The cold-start ends cost slider span on a few metal pairs.** Beryllium with 90% peroxide now
   starts at 0.85 : 1, not 0.115: below that a chamber solve started from scratch does not settle,
   though one walked down from a neighbouring mixture does. Aluminium slurry with oxygen starts at
-  0.098 (was 0.036), with chlorine trifluoride at 0.197 (was 0.062).
+  0.098 (was 0.036), with chlorine trifluoride at 0.197 (was 0.062); beryllium with fluorine at 1.14
+  (was 0.64).
 - **Lithium with oxygen has a band inside its slider with no answer**, about 32 : 1 to 37 : 1 at
   70 bar and area ratio 40; hydrogen with oxygen at its oxidiser-rich end (140 : 1) gives no answer
   at area ratio 300.
