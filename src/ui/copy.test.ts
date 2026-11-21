@@ -14,6 +14,13 @@ describe('failure copy for the chemistry failures', () => {
       expect(copy.text.length).toBeGreaterThan(20);
     });
   }
+  it('says that relighting unchanged goes back to the last setup that ran', () => {
+    for (const kind of ['flameout', 'inert', 'unsolved'] as const) {
+      for (const energy of ['combustion', 'reactor'] as const) {
+        expect(failureCopy(kind, energy).text, `${kind} ${energy}`).toMatch(/last setup that ran/);
+      }
+    }
+  });
   it('uses the final titles', () => {
     expect(failureCopy('flameout', 'combustion').title).toBe('Flame-out');
     expect(failureCopy('inert', 'combustion').title).toBe('Nothing to burn it with');

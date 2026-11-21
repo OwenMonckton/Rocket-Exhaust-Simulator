@@ -106,11 +106,11 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
   flameout: {
     title: 'Flame-out',
-    text: 'The mixture is too cold to keep burning: there is so much more of one propellant than the other that the flame went out. The engine is unharmed. Move the mixture ratio back toward the middle of its range.',
+    text: 'The mixture is too cold to keep burning: there is so much more of one propellant than the other that the flame went out. The engine is unharmed. Move the mixture ratio back toward the middle of its range. Relighting with nothing changed goes back to the last setup that ran.',
   },
   inert: {
     title: 'Nothing to burn it with',
-    text: 'This fuel cannot burn without an oxidiser, and it does not break down by itself, so the engine never lit. The engine is unharmed. Pick an oxidiser.',
+    text: 'This fuel cannot burn without an oxidiser, and it does not break down by itself, so the engine never lit. The engine is unharmed. Pick an oxidiser. Relighting with nothing changed goes back to the last setup that ran.',
   },
   detonation: {
     title: 'Detonation',
@@ -118,7 +118,7 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
   },
   unsolved: {
     title: 'No answer',
-    text: 'The chemistry would not settle for this mixture, so there is no way to say how the engine runs, and no figures are shown. Try a different mixture ratio or chamber pressure.',
+    text: 'The chemistry would not settle for this mixture, so there is no way to say how the engine runs, and no figures are shown. Try a different mixture ratio or chamber pressure. Relighting with nothing changed goes back to the last setup that ran.',
   },
 };
 
@@ -282,7 +282,7 @@ export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): 
   if (failure === 'unsolved' && ENERGY_SOURCES[energy].mixKind === 'temperature') {
     return {
       title: FAILURE_COPY.unsolved.title,
-      text: 'The chemistry of this fluid would not settle at this temperature, so there is no way to say how the engine runs, and no figures are shown. Try a different temperature or chamber pressure.',
+      text: 'The chemistry of this fluid would not settle at this temperature, so there is no way to say how the engine runs, and no figures are shown. Try a different temperature or chamber pressure. Relighting with nothing changed goes back to the last setup that ran.',
     };
   }
   return FAILURE_COPY[failure];

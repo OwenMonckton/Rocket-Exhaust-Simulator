@@ -13,6 +13,7 @@ import { createPlumeRenderer, type EngineGas } from '../render/plume';
 import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
+import { engineAfterRebuild } from './rebuild';
 
 export interface FrameInfo {
   result: SimResult;
@@ -481,7 +482,10 @@ export function createRuntime(
       failT = 0;
       fire = 0;
       firing = false;
-      store.replace(lastGood);
+      const current = store.get();
+      const next = engineAfterRebuild(current, lastGood);
+      if (next === current) lastGood = current; // kept: nothing changes, so the subscriber will not see it
+      else store.replace(next);
     },
     setZoom(z) {
       zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
