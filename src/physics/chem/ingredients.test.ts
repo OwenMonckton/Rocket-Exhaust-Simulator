@@ -40,7 +40,7 @@ describe('ingredients: the records', () => {
   });
 
   it('gives every fact, custom record and set value a source', () => {
-    const facts: (keyof Ingredient)[] = ['toxicExhaust', 'detonates', 'attacksMaterials', 'warning', 'monopropellant'];
+    const facts: (keyof Ingredient)[] = ['toxicExhaust', 'detonates', 'attacksMaterials', 'warning', 'monopropellant', 'pressurised'];
     for (const [id, ing] of all()) {
       for (const k of facts) {
         const f = ing[k] as Fact | undefined;

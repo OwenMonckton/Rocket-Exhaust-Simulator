@@ -8,6 +8,8 @@ export type ChemFailure = 'flameout' | 'inert' | 'detonation' | 'unsolved';
 export interface Verdict { failure: ChemFailure | null; notes: string[] }
 
 const DROPLET_NOTE_SHARE = 0.02;
+/** deg C: one propellant must boil this far below the other's freezing point to freeze it. */
+const FREEZE_MARGIN_C = 5;
 // Lower-case the first letter for mid-sentence use, but leave acronyms (UDMH, RP-1) alone.
 const lower = (name: string) => (/[A-Z]/.test(name.charAt(1)) ? name : name.charAt(0).toLowerCase() + name.slice(1));
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
@@ -38,8 +40,9 @@ export function verdictFor(fuel: string, oxidiser: string, gas: SolvedGas): Verd
   }
   if (f && o) {
     for (const [a, b] of [[f, o], [o, f]] as const) {
-      if (a.boilC !== undefined && b.freezeC !== undefined && a.boilC < b.freezeC) {
-        notes.push(`${a.name} stays liquid only below ${Math.round(a.boilC)} C, but ${lower(b.name)} freezes at ${Math.round(b.freezeC)} C, so it would freeze.`);
+      // A propellant kept liquid by pressure is not held at its boiling point, so it freezes nothing.
+      if (a.boilC !== undefined && b.freezeC !== undefined && !a.pressurised && a.boilC < b.freezeC - FREEZE_MARGIN_C) {
+        notes.push(`${a.name} is kept below ${Math.round(a.boilC)} °C, cold enough to freeze ${lower(b.name)} (which freezes at ${Math.round(b.freezeC)} °C) in neighbouring plumbing.`);
       }
     }
   }

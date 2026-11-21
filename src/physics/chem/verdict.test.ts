@@ -50,6 +50,19 @@ describe('verdictFor', () => {
     expect(has(v.notes, 'eal thrusters')).toBe(true);
   });
 
+  it('warns of one propellant freezing the other only where it really would', () => {
+    const gas = at('h2', 'lox', 6);
+    // Nitrous oxide, propane and the like are kept liquid by pressure, not cold; methane and oxygen
+    // are within a degree of each other.
+    for (const [f, o] of [['ch4', 'lox'], ['ipa', 'n2o'], ['c3h8', 'n2o4'], ['c2h6', 'lox'], ['n2h4', 'n2o']]) {
+      expect(verdictFor(f, o, gas).notes.filter((n) => /freez/.test(n)), `${f}/${o}`).toEqual([]);
+    }
+    const h2 = verdictFor('h2', 'lox', gas).notes.filter((n) => /freez/.test(n));
+    expect(h2.length).toBe(1);
+    expect(h2[0]).toContain('freeze liquid oxygen');
+    expect(h2[0]).toContain('°C');
+  });
+
   it('warns about toxic propellant, droplets and materials', () => {
     expect(has(dflt('b5h9', 'of2').notes, 'Extremely toxic')).toBe(true);
     expect(dflt('b5h9', 'of2').failure).toBeNull();

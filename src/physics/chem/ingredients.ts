@@ -17,6 +17,8 @@ export interface Ingredient {
   freezeC?: number; boilC?: number; pointsSource?: string;
   toxicity?: 0 | 1 | 2 | 3; toxicitySource?: string; toxicExhaust?: Fact;
   detonates?: Fact; attacksMaterials?: Fact; warning?: Fact;
+  /** Kept liquid at room temperature by its own pressure, not by cold (its critical point is above 20 °C) */
+  pressurised?: Fact;
   /** Runs alone over a catalyst */
   monopropellant?: Fact;
 }
@@ -68,6 +70,12 @@ const N2O_WARNING: Fact = {
   source: 'CAMEO Chemicals 8909 (nitrous oxide)',
 };
 const N2O_POINTS = pts(-90.8, -88.48, hsdb('nitrous oxide'));
+/** Stored as a liquid under its own pressure at room temperature: the critical point, from NIST, is above it. */
+const underPressure = (tcK: number, id: string): Fact => ({
+  text: `Kept liquid at room temperature under its own pressure (it can be liquid up to ${Math.round(tcK - 273.15)} °C).`,
+  source: `NIST WebBook, critical temperature ${tcK} K, https://webbook.nist.gov/cgi/cbook.cgi?ID=${id}&Mask=4`,
+});
+const N2O_PRESSURISED = underPressure(309.56, 'C10024972');
 
 const H2O2_90 = [{ reactant: 'H2O2(L)', share: 0.9 }, { reactant: 'H2O(L)', share: 0.1 }];
 
@@ -115,12 +123,12 @@ const fuels: Ingredient[] = [
   {
     id: 'c3h8', name: 'Liquid propane', group: 'Everyday', family: 'hydrocarbon', parts: one('C3H8(L)'),
     tip: 'Barbecue gas, which stays liquid under modest pressure.',
-    ...pts(-187.6, -42.1, hsdb('propane')), ...nfpa(2, hsdb('propane')),
+    ...pts(-187.6, -42.1, hsdb('propane')), ...nfpa(2, hsdb('propane')), pressurised: underPressure(369.9, 'C74986'),
   },
   {
     id: 'c2h6', name: 'Liquid ethane', group: 'Everyday', family: 'hydrocarbon', parts: one('C2H6(L)'),
     tip: 'A light hydrocarbon gas from natural gas, studied as a denser alternative to methane.',
-    ...pts(-182.79, -88.6, hsdb('ethane')), ...nfpa(1, hsdb('ethane')),
+    ...pts(-182.79, -88.6, hsdb('ethane')), ...nfpa(1, hsdb('ethane')), pressurised: underPressure(305.3, 'C74840'),
   },
   {
     id: 'ipa', name: 'Isopropyl alcohol', group: 'Everyday', family: 'alcohol', parts: one('C3H8O(L),isopropanol'),
@@ -160,7 +168,7 @@ const fuels: Ingredient[] = [
   {
     id: 'nh3', name: 'Liquid ammonia', group: 'Storable', family: 'amine', parts: one('NH3(L)'),
     tip: 'Ammonia, the fuel of the X-15 rocket plane.',
-    ...pts(-77.7, -33.35, hsdb('ammonia')), ...nfpa(3, hsdb('ammonia')),
+    ...pts(-77.7, -33.35, hsdb('ammonia')), ...nfpa(3, hsdb('ammonia')), pressurised: underPressure(405.4, 'C7664417'),
   },
   {
     id: 'aniline', name: 'Aniline', group: 'Storable', family: 'amine', parts: one('C6H5NH2(L)'),
@@ -238,7 +246,7 @@ const fuels: Ingredient[] = [
   {
     id: 'n2o-mono', name: 'Nitrous oxide alone', group: 'Exotic', family: 'nitrogen-oxide', parts: one('N2O'),
     tip: 'Laughing gas, which can break down on its own and release heat.',
-    ...N2O_POINTS, warning: N2O_WARNING,
+    ...N2O_POINTS, warning: N2O_WARNING, pressurised: N2O_PRESSURISED,
     monopropellant: { text: 'Can break down by itself and so act as a monopropellant.', source: clark('ch. 2') },
   },
   {
@@ -259,7 +267,7 @@ const oxidisers: Ingredient[] = [
   {
     id: 'n2o', name: 'Nitrous oxide', group: 'Everyday', family: 'nitrogen-oxide', parts: one('N2O'),
     tip: 'Laughing gas, the oxidiser of many hobby and hybrid rockets.',
-    ...N2O_POINTS, warning: N2O_WARNING,
+    ...N2O_POINTS, warning: N2O_WARNING, pressurised: N2O_PRESSURISED,
   },
   {
     id: 'htp90', name: 'Hydrogen peroxide 90%', group: 'Everyday', family: 'peroxide', parts: H2O2_90,
