@@ -4,6 +4,9 @@ import notice from './THERMO-NOTICE.txt?raw';
 import licence from './LICENSE-APACHE-2.0.txt?raw';
 import readme from '../../../README.md?raw';
 
+// Files under public/ are served, not imported: Vite refuses an import of them.
+const publicFiles = import.meta.glob<string>('/public/*.txt', { query: '?raw', import: 'default', eager: true });
+
 const byName = (n: string) => SPECIES.find((s) => s.name === n)!;
 
 describe('thermo data', () => {
@@ -54,6 +57,10 @@ describe('the licence of the data', () => {
     expect(notice).toContain('Apache License');
     expect(licence).toMatch(/Apache License\s+Version 2\.0, January 2004/);
     expect(licence).toContain('END OF TERMS AND CONDITIONS');
+  });
+  it('reaches the built site: Vite copies public/ into dist/', () => {
+    expect(publicFiles['/public/THERMO-NOTICE.txt']).toBe(notice);
+    expect(publicFiles['/public/LICENSE-APACHE-2.0.txt']).toBe(licence);
   });
   it('is named in the README', () => {
     expect(readme).toContain('thermo.inp');
