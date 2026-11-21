@@ -201,7 +201,14 @@ The design is in `docs/superpowers/specs/2026-11-20-fuel-chemistry-design.md`.
   efficient ratio, and starts at the most efficient (`pairRange`). Its ends are judged from a cold
   start, where a solve after a reload or a shared link begins; where the far side of 700 K gives no
   answer, the end is the last mixture that settled; and it never goes below 0.01, the finest mixture
-  the solver tells apart.
+  the solver tells apart. Where the most efficient ratio lies at the top of the scan that looks for
+  it, the slider is held at 100 : 1 and opens with the starting mixture at its top end (six pairs).
+  The ends are judged at 70 bar and area ratio 40; at other pressures and nozzles an end can still
+  give no answer. At the starter engine's 100 bar and area ratio 16, 12 pairs do: at the fuel-rich
+  end lithium with white fuming nitric acid and with tetranitromethane, and beryllium with oxygen,
+  with nitrogen tetroxide and with MON-25; at the oxidiser-rich end diborane with FLOX-70, 75%
+  ethanol, Jet-A and propane with IRFNA, Jet-A with nitrogen tetroxide, MMH with white fuming nitric
+  acid and nitromethane with oxygen.
 - **Whether it works** (`verdict.ts`): four new failures shown on screen, and warnings beside the
   pickers (needs an igniter or lights on contact, one propellant freezing the other, attacks
   engine materials, toxic propellant or exhaust, droplets or soot, hydrazine alone). The four
@@ -262,8 +269,12 @@ Each was a choice the plan did not settle. What it costs if it was the wrong cho
    (exit near 60 K) and any hydrogen-rich pair in a big nozzle would read "no answer". If wrong: a
    small error in the last few percent of expansion for cold exits, and condensation below 200 K is
    not modelled.
-9. **Picking a pair must take well under half a second.** Met: the slowest pair measured
-   (aluminium slurry with oxygen) went from about 1 s to about 150 ms.
+9. **Picking a pair must take well under half a second.** Met when written: the slowest pair
+   measured (aluminium slurry with oxygen) went from about 1 s to about 150 ms. Since the slider's
+   ends are judged from a cold start it is slower: over all 480 pairs the median is about 94 ms and
+   the 95th percentile about 210 ms, and eight pairs, all aluminium slurry, take over 300 ms; the
+   slowest, aluminium slurry with IRFNA, takes about 550 ms the first time it is picked, so the page
+   pauses for about half a second. Accepted.
 10. **A solid or liquid product outside its temperature range is dropped and the point solved
     again, and a solve starts warm only from a nearby state.** Warm-started from a distant state,
     aluminium slurry with oxygen had settled at 2,009 K holding a solid far outside its range,
@@ -332,26 +343,50 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
 - **Melting points hold both phases** (decision 2), and where the flow passes the speed of sound
   three times the first crossing is taken (decision 5): checked against a scan of the mass flux for
   beryllium and peroxide at 5 bar, it lands within 0.1% of the greatest flux.
-- **Oxidisers that give off heat breaking down** (nitrous oxide, peroxide, MON-25) are held at fifty
-  times the default mixture and do not flame out at the oxidiser-rich end. At that end they are
-  still hot at equilibrium (kerosene with 90% peroxide at 400 : 1 runs at about 1,090 K).
-- **Perchloryl fluoride still gets the freeze note** with fuels that freeze above about −52 °C: it
-  is kept liquid by pressure like nitrous oxide and propane, but no sourced critical temperature was
-  found for it (NIST lists none), so it is not marked as such.
-- **The cold-start ends cost slider span on a few metal pairs.** Beryllium with 90% peroxide now
-  starts at 0.85 : 1, not 0.115: below that a chamber solve started from scratch does not settle,
-  though one walked down from a neighbouring mixture does. Aluminium slurry with oxygen starts at
-  0.098 (was 0.036), with chlorine trifluoride at 0.197 (was 0.062); beryllium with fluorine at 1.14
-  (was 0.64).
-- **Lithium with oxygen has a band inside its slider with no answer**, about 32 : 1 to 37 : 1 at
-  70 bar and area ratio 40; hydrogen with oxygen at its oxidiser-rich end (140 : 1) gives no answer
-  at area ratio 300.
+- **Oxidisers that give off heat breaking down, or burn hot with little fuel,** are held at fifty
+  times the default mixture and do not flame out at the oxidiser-rich end: nitrous oxide, both
+  peroxides and MON-25, and also tetranitromethane (28 fuels, 2,225–2,378 K there), ozone (28
+  fuels, 2,624–2,887 K), oxygen difluoride (14 fuels, up to 1,355 K) and perchloryl fluoride (16
+  fuels, up to 1,370 K). At that end they are still hot at equilibrium (kerosene with 90% peroxide
+  at 400 : 1 runs at about 1,090 K). About 60 further pairs (with IRFNA, FLOX-70, oxygen
+  difluoride, perchloryl fluoride and some with fluorine) end at the last mixture that settled, at
+  886–1,263 K, neither flamed out nor at the hold.
+- **Perchloryl fluoride and cyanogen still get the freeze note**: perchloryl fluoride with seven
+  fuels that freeze above about −52 °C, cyanogen with 90% peroxide, nitrogen tetroxide and
+  tetranitromethane. Both are kept liquid by pressure at room temperature, like nitrous oxide and
+  propane (cyanogen's critical point is about 127 °C), but neither is marked as such: no sourced
+  critical temperature was found for perchloryl fluoride (NIST lists none), and cyanogen's was not
+  added.
+- **The cold-start ends moved the fuel-rich end of every lithium and beryllium pair.** All 32 now
+  start hot, at 2,400–3,980 K, where a chamber solve started from scratch stops settling, though one
+  walked down from a neighbouring mixture still does. 24 of them start later than before: with
+  lithium, every oxidiser but fluorine, FLOX-70, ozone and oxygen difluoride (nitrogen tetroxide
+  1.0 : 1, was 0.53; tetranitromethane 1.08, was 0.29; 90% peroxide 0.72, was 0.38); with beryllium,
+  every oxidiser but oxygen, nitrogen tetroxide, MON-25 and ozone (90% peroxide 0.85, was 0.115;
+  fluorine 1.14, was 0.64; chlorine trifluoride 1.66, was 0.93). The other eight start a little
+  earlier. Aluminium slurry with oxygen starts at 0.098 (was 0.036), with chlorine trifluoride at
+  0.197 (was 0.062).
+- **Some mixtures inside a slider give no answer**, between neighbours that settle. Lithium with
+  oxygen has a band from about 30.8 : 1 to 37.9 : 1 at 70 bar and area ratio 40 (30.2 to 37.9 at
+  100 bar and 16). Single positions near the oxidiser-rich end do too: ethanol with IRFNA (15.7),
+  ethane with IRFNA (32.1), Aerozine 50 with IRFNA (15.75), aniline with nitrogen tetroxide (48.8),
+  and ethanol, gasoline, propane, ethane and syntin with perchloryl fluoride (128 to 214); these
+  were the same before the final review. Beryllium with oxygen (1.80) and with ozone (1.85) miss
+  one position each at 100 bar and 16. Pentaborane with nitrogen tetroxide at 79.7 : 1, 100 bar
+  and area ratio 16, misses because its exit lands in the 273.122–273.15 K sliver where water's
+  ice and liquid data disagree (see the phase edge cases below); it settled before the coldest
+  solid phases were kept down to 200 K, which moved its exit there. Hydrogen with oxygen at its
+  oxidiser-rich end (140 : 1) gives no answer at area ratio 300.
 - **The fitted gas's gamma still steps at area ratio 3** for an exhaust with droplets (1.13 below,
   1.31 above, aluminium slurry with oxygen), and changes where the fit falls back for a reactor
   fluid (methane at area ratio 10). Isp and thrust do not step: what the one-gamma gas cannot carry
   of the solver's Isp is passed on as one thrust factor. Exit pressure and exit Mach readouts do.
-- **The exhaust-names test sweeps about 330 pairs** at three mixtures and three nozzles and takes
-  about 30 s, the slowest test by far.
+- **The exhaust-names guarantee is a sample for gases.** Every liquid and solid in the data has a
+  name, checked against the data itself. For gases, a test names every gas that sweeps of every
+  pair across its slider (13 mixtures, five engines) have met, 85 of the 427, and a 6 s sweep of
+  about 280 pairs around each one's balanced mixture (from the ingredients' valences, at 0.3 to 1.8
+  times it, in two engines) guards the common ones. A gas met nowhere in those reads as its
+  formula, tidied (AlCl rather than ALCL).
 - **Exits colder than 200 K are frozen flow** (decision 8): condensation below 200 K is not
   modelled, and the last stretch of expansion is a little off.
 - **An over-cold chamber reads "no answer"** rather than flame-out (decision 3). The slider never
@@ -408,7 +443,28 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
 - The slider's ends could sit where only a solve walked in from a neighbouring mixture settled, below
   0.01, or with the hottest mixture off the slider; see the slider entry above.
 - Tests that could not fail were made real, a real unsettled solve is now driven through to the
-  hidden figures, and the reactor-fluid test is named for what it pins.
+  hidden figures, and the reactor-fluid test is named for what it pins. The hold of peroxide at fifty
+  times its best mixture, still hot there, is pinned, and the ends tested for hydrogen and
+  kerosene with oxygen must flame out, not merely fail to settle.
+- A reactor's failure box spoke of relighting beside a button that reads "Restart engine"; the
+  button and, later, the text now say restarting.
+- Keeping the coldest solid down to 200 K made three borane pairs give no answer over bands of
+  oxidiser-rich mixtures (diborane with nitrogen tetroxide at 65–72 : 1, pentaborane with oxygen at
+  51.5–59, with nitrogen tetroxide at 58.25–68.5): boric oxide, metaboric acid and ice, all kept
+  below 300 K, are made of the same two building blocks, so holding all three made the sums
+  singular. A solid or liquid built from those already held now takes the place of the one it uses
+  up first; the three bands settle as before (992, 1,040 and 1,058 K at the points first seen).
+- The fix for steam over its own liquid treated any equilibrium gamma at or below 1 as nonsense and
+  put frozen values in its place; such a gamma is real where a vapour sits over its own liquid
+  (lithium oxide and hydroxide), and the throat moved off the greatest mass flux, giving lithium
+  with peroxide above about 150 bar a characteristic velocity up to 2.6% high. Only a heat capacity
+  absurdly large against the frozen one now counts as nonsense.
+- Four gases were still shown by their data names (aluminium monochloride, beryllium
+  monohydroxide, chlorotrifluoromethane, difluoroboric acid); Li3AlF6 was called cryolithionite,
+  which is another mineral. The 30 s names sweep became the 6 s one above.
+- The detonation line said "one of these propellants" with one propellant picked; lithium beside a
+  propellant stored at ordinary temperature read as if that propellant were kept cold.
+- The data notice and the licence were not part of the built site; they are now copied into it.
 
 ### Small things deferred during review
 
@@ -418,10 +474,11 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
   convergence check that divides by the total amount of gas with no guard if it is zero; dropping
   one phase of a melting pair at the edge of its range; the heat capacity at a melting point being
   a mix of two methods (said only in a code comment); and `equilibrate` being one long function of
-  about 420 lines. One test, for an almost pure oxidiser, has a branch that cannot fail.
+  about 420 lines.
 - **Phase edge cases that end in "no answer", never a wrong figure**: water's ice and liquid swap
   at 273.122 K but its data ranges meet at 273.15 K, so a solve landing exactly in that sliver could
-  go round in circles (none was met in the final review's water sweeps, which now all settle); a pair of phases can form without checking they are next to each other (two forms of
+  go round in circles (none was met in the final review's water sweeps, which now all settle, but one
+  pentaborane exit lands there: see the mixtures with no answer above); a pair of phases can form without checking they are next to each other (two forms of
   beryllium oxide); aluminium nitride's solid and liquid have no melting heat in the data.
 - **The flow solver's guards**: the exit guard has no test; the throat search does not check its
   slower side is at the higher pressure; an area ratio between 1 and 2 starts very close to the
@@ -434,8 +491,9 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
   `pair.ts` overstates how close a warm start must be in `pairRange`.
 - **Shared results are not locked**: kept results, the "no answer" result and the exhaust list on a
   result are the same objects everywhere they are used, so one careless change would alter all.
-- **Tests that are weaker than they look**: the timing limits have about 3.7 times margin and could
-  fail on a loaded machine; the fit test re-derives the simulator's formula instead of calling it;
+- **Tests that are weaker than they look**: the timing limits have about 2 times margin (finding
+  aluminium slurry and oxygen's mixtures takes about 280 ms against a 600 ms limit) and could fail
+  on a loaded machine; the fit test re-derives the simulator's formula instead of calling it;
   the "attacks materials" note is matched on
   its exact wording; the exhaust-names test runs at 100 bar and area ratio 16 rather than the
   defaults; only Aerozine 50's blend shares are checked by value; one of the property-data
