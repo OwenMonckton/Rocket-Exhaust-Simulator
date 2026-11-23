@@ -1,7 +1,7 @@
 # Engine builder, part 3a: cone, dual bell and no nozzle — Design
 
 Date: 2026-11-23
-Status: Draft, awaiting approval
+Status: Approved 2026-11-23
 
 ## Intent
 
