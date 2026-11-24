@@ -1,5 +1,7 @@
 import { pairRange } from './chem/pair';
 import { RANGES, sanitize, simulate } from './engine';
+import { EXHAUSTS } from './exhausts';
+
 import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
@@ -212,6 +214,11 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
 export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
   if (cfg.exhaust === exhaust) return cfg;
   const heatBefore = heatLoad(cfg);
+  if (EXHAUSTS[cfg.exhaust].counts === 'chambers' && EXHAUSTS[exhaust].counts === 'chambers') {
+    // The dimensions, count, pressure and wall mean the same thing for both: only the nozzle
+    // changes. `sanitize` drops an extension the new type cannot take and sets a dual bell's kink.
+    return cooled(sanitize({ ...cfg, exhaust }), heatBefore);
+  }
   if (exhaust !== 'aerospike') {
     // A wide chamber is an unstable one: more, smaller chambers where the fewest would shake
     // themselves apart. Where even the most would, the fewest stand: that is the physics, not the swap.
