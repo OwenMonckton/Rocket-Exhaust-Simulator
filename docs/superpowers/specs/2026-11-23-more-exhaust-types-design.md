@@ -138,9 +138,11 @@ small nozzle's behaviour near the ground and a big nozzle's in space, with no mo
 
   So tests assert a gain of several percent over the same-size bell in low mode and a loss of
   about 1.5 to 2% in high mode.
-- **Thrust drops at the switch**, by about 3.5% in the case above: the moment the jet fills the
-  big bell it is as over-expanded as it will ever be. Real dual bells show the same dip. It
-  recovers as the air thins.
+- **Thrust drops at the switch**, by about 10% (measured during the build: 11.9% for the starter
+  engine's kerosene and oxygen at 60 bar, area ratio 100, kink at area ratio 10). The switch comes
+  near 0.25 bar there, and the moment the jet fills the big bell it is as over-expanded as it will
+  ever be. The table above does not show this, since its rows are not either side of the switch.
+  Real dual bells dip at the switch too. It recovers as the air thins.
 - **A small nozzle never enters low mode.** Low mode needs a full bell big enough to lose its jet
   at that altitude. At 100 bar with area ratio 16 or 40, or 200 bar with area ratio 69, a full
   bell holds its jet at sea level, so a dual bell there runs full from the ground and only pays
