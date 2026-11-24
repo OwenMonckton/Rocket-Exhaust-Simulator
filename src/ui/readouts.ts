@@ -1,9 +1,11 @@
-import type { Limits, SimResult } from '../physics/types';
+import type { ExhaustId, Limits, SimResult } from '../physics/types';
 import type { SimulatedFigures } from '../render/simFigures';
-import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, exhaustLine, limitNote, showsFigures } from './copy';
+import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, expansionText, exhaustLine, limitNote, showsFigures } from './copy';
 
 export interface ReadoutInfo {
   result: SimResult;
+  /** The engine's exhaust type, which the words under the nozzle state depend on */
+  exhaust: ExhaustId;
   /** The unmodified preset at the same altitude and throttle, when the engine has been changed */
   stock: SimResult | null;
   stockName: string | null;
@@ -101,7 +103,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   const dash = '—';
   const gasFigures = ['thrust', 'thrustSub', 'isp', 'ispSub', 'ispBoth', 'ispBothSub', 'flow', 'flowSub', 'temp', 'tempSub', 'press', 'state', 'stateText'];
 
-  return ({ result: r, stock, stockName, simulated: sim, simulatedNote }) => {
+  return ({ result: r, exhaust: exhaustId, stock, stockName, simulated: sim, simulatedNote }) => {
     const exhaust = exhaustLine(r.exhaust);
     set('exhaust', exhaust);
     exhaustRow.hidden = exhaust === '';
@@ -137,7 +139,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     const state = get('state');
     set('state', STATE_COPY[r.state].label);
     state.dataset.state = r.state;
-    set('stateText', STATE_COPY[r.state].text);
+    set('stateText', expansionText(r, exhaustId));
 
     for (const key of Object.keys(meterEls) as (keyof Limits)[]) {
       const v = r.limits[key];

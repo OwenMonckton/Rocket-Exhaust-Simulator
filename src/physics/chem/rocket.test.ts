@@ -37,6 +37,21 @@ describe('rocket: chamber, throat and exit', () => {
     }
   });
 
+  it('takes the throat as the exit at area ratio 1 or less, with no expansion to search for', () => {
+    for (const eps of [1, 0.8]) {
+      const r = rocket(ex8Mix, flame(ex8Mix, 53.3172), eps);
+      expect(r.ok, `eps ${eps}`).toBe(true);
+      expect(r.coldExit).toBe(false);
+      expect(r.exit).toBe(r.throat);
+      expect(r.pExitBar).toBe(r.throat.pBar);
+      // Well short of a nozzle, but more than c*: the gas's pressure at the throat pushes too.
+      const nozzled = rocket(ex8Mix, flame(ex8Mix, 53.3172), 25);
+      expect(r.cStar).toBeCloseTo(nozzled.cStar, 6);
+      expect(r.ispVac).toBeLessThan(0.8 * nozzled.ispVac);
+      expect(r.ispVac).toBeGreaterThan(r.cStar);
+    }
+  });
+
   it('puts the throat where the flow reaches the speed of sound', () => {
     const r = rocket(ex8Mix, flame(ex8Mix, 53.3172), 25);
     const u2 = 2 * (r.chamber.h - r.throat.h);

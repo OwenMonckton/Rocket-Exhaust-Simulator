@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pairRange } from './chem/pair';
+import { defaultInnerExitDia } from './exhausts';
 import { sanitize, simulate } from './engine';
 import { ENERGY_IDS, propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
@@ -125,6 +126,73 @@ describe('changing the exhaust type', () => {
     for (const flight of [ground, space]) {
       const r = simulate(spike, flight);
       for (const v of [r.thrust, r.isp, r.massFlow]) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+});
+
+describe('swapping between the new exhaust types', () => {
+  const chamberTypes = ['bell', 'cone', 'dualBell', 'none'] as const;
+  it('changes only the nozzle between exhausts that count chambers', () => {
+    const from = starterEngine();
+    for (const to of chamberTypes) {
+      const next = withExhaust(from, to);
+      expect(next.exhaust).toBe(to);
+      for (const key of ['chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall', 'chamberPressureBar', 'chambers'] as const) {
+        expect(next[key], `${to} ${key}`).toBe(from[key]);
+      }
+    }
+  });
+  it('brings the nozzle back exactly after no nozzle', () => {
+    const from = starterEngine();
+    expect(withExhaust(withExhaust(from, 'none'), 'bell')).toEqual(from);
+  });
+  it('gives a dual bell a kink when it is first chosen, and keeps one already set', () => {
+    const first = withExhaust(starterEngine(), 'dualBell');
+    expect(first.innerExitDia).toBeCloseTo(defaultInnerExitDia(first.throatDia, first.exitDia), 9);
+    const moved = sanitize({ ...first, innerExitDia: 1.3 * first.throatDia });
+    expect(withExhaust(withExhaust(moved, 'cone'), 'dualBell').innerExitDia).toBeCloseTo(moved.innerExitDia, 9);
+  });
+  it("carries a dual bell's kink in proportion through an aerospike, when the chamber count changes", () => {
+    const rd180 = PRESETS.find((p) => p.id === 'rd-180')!.config;
+    const first = withExhaust(rd180, 'dualBell');
+    const from = sanitize({ ...first, innerExitDia: 1.3 * first.throatDia });
+    const back = withExhaust(withExhaust(from, 'aerospike'), 'dualBell');
+    expect(back.chambers).not.toBe(from.chambers);
+    expect(back.innerExitDia / back.throatDia).toBeCloseTo(from.innerExitDia / from.throatDia, 6);
+  });
+  it('drops an extension on leaving a bell, and stays finite', () => {
+    const rl10 = PRESETS.find((p) => p.id === 'rl10b-2')!.config;
+    for (const to of ['cone', 'dualBell', 'none'] as const) {
+      const next = withExhaust(rl10, to);
+      expect(next.extFixedDia).toBe(0);
+      const r = simulate(next, { altitudeKm: 100, throttle: 1 });
+      expect(Number.isFinite(r.thrust) && Number.isFinite(r.isp)).toBe(true);
+    }
+  });
+  it('keeps total throat area through an aerospike and back, for each chamber type', () => {
+    const area = (c: EngineConfig) => c.chambers * c.throatDia ** 2;
+    for (const type of chamberTypes) {
+      const from = withExhaust(starterEngine(), type);
+      const back = withExhaust(withExhaust(from, 'aerospike'), type);
+      expect(back.exhaust).toBe(type);
+      expect(area(back)).toBeCloseTo(area(from), 6);
+    }
+  });
+  it('keeps a multi-chamber engine as it was between exhausts that count chambers', () => {
+    for (const id of ['rd-180', 'rd-170']) {
+      const preset = PRESETS.find((p) => p.id === id)!;
+      for (const to of ['cone', 'dualBell', 'none'] as const) {
+        const next = withExhaust(preset.config, to);
+        for (const key of ['chambers', 'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall', 'chamberPressureBar'] as const) {
+          expect(next[key], `${id} ${to} ${key}`).toBe(preset.config[key]);
+        }
+      }
+    }
+  });
+  it('does not destroy any example by swapping in a new exhaust', () => {
+    for (const preset of PRESETS) for (const to of ['cone', 'dualBell', 'none'] as const) {
+      if (simulate(preset.config, { altitudeKm: 0, throttle: 1 }).failure) continue;
+      expect(simulate(withExhaust(preset.config, to), { altitudeKm: 0, throttle: 1 }).failure, `${preset.id} → ${to}`).toBeNull();
     }
   });
 });

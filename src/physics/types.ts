@@ -14,7 +14,7 @@ export type PropellantId =
   | 'saltwater';
 
 export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater';
-export type ExhaustId = 'bell' | 'aerospike';
+export type ExhaustId = 'bell' | 'cone' | 'dualBell' | 'none' | 'aerospike';
 
 export type RGB = [number, number, number];
 
@@ -114,6 +114,10 @@ export interface EngineConfig {
    */
   extFixedDia: number;
   extDeploy: number;
+  /** Half-angle of a plain cone, degrees */
+  coneAngleDeg: number;
+  /** Diameter at a dual bell's kink, m; 0 means not set yet */
+  innerExitDia: number;
 }
 
 export interface FlightState {
@@ -122,8 +126,11 @@ export interface FlightState {
   throttle: number;
 }
 
-/** 'compensating': an aerospike below its design altitude, its jet shaped by the air to match it */
-export type ExpansionState = 'ideal' | 'over' | 'under' | 'separated' | 'compensating';
+/**
+ * 'compensating': an aerospike below its design altitude, its jet shaped by the air to match it;
+ * 'held': a dual bell's jet held at the kink on purpose
+ */
+export type ExpansionState = 'ideal' | 'over' | 'under' | 'separated' | 'compensating' | 'held';
 export type Failure =
   | null
   | 'burst'

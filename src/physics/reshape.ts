@@ -1,5 +1,7 @@
 import { pairRange } from './chem/pair';
 import { RANGES, sanitize, simulate } from './engine';
+import { EXHAUSTS } from './exhausts';
+
 import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
 import { ENERGY_SOURCES, propellantsFor } from './parts';
@@ -191,6 +193,8 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
     chamberLen: burnsInChamber ? cfg.chamberLen : cfg.chamberLen * k,
     throatDia: cfg.throatDia * k,
     exitDia: cfg.exitDia * k,
+    // A dual bell's kink keeps its place between the throat and the exit.
+    innerExitDia: cfg.innerExitDia * k,
     // A spike has no bell to extend.
     extFixedDia: exhaust === 'aerospike' ? 0 : cfg.extFixedDia,
     extDeploy: exhaust === 'aerospike' ? 1 : cfg.extDeploy,
@@ -201,16 +205,22 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
 }
 
 /**
- * The same engine with a different exhaust. An aerospike's dimensions describe one of its
- * thrust cells, so going to one divides the engine into cells with the same total throat and
- * exit area, and coming back merges them into one chamber (or more, where one would be bigger
- * than a chamber can be, or so wide that it would be unstable when the cells were not): thrust
- * stays about the same either way. It gets `DEFAULT_CELLS` cells unless that would destroy it: fewer where the throats
- * would be smaller than a throat can be, and fewer where a flame would burn through throats
- * that small (small throats are the hardest to keep cool).
+ * The same engine with a different exhaust. Between a bell, a cone, a dual bell and no nozzle
+ * the dimensions mean the same thing, so only the nozzle changes. An aerospike's dimensions
+ * describe one of its thrust cells, so going to one divides the engine into cells with the same
+ * total throat and exit area, and coming back merges them into one chamber (or more, where one
+ * would be bigger than a chamber can be, or so wide that it would be unstable when the cells
+ * were not): thrust stays about the same either way. It gets `DEFAULT_CELLS` cells unless that
+ * would destroy it: fewer where the throats would be smaller than a throat can be, and fewer
+ * where a flame would burn through throats that small (small throats are the hardest to keep cool).
  */
 export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
   if (cfg.exhaust === exhaust) return cfg;
+  if (EXHAUSTS[cfg.exhaust].counts === 'chambers' && EXHAUSTS[exhaust].counts === 'chambers') {
+    // The dimensions, count, pressure and wall mean the same thing for both: only the nozzle
+    // changes. `sanitize` drops an extension the new type cannot take and sets a dual bell's kink.
+    return sanitize({ ...cfg, exhaust });
+  }
   const heatBefore = heatLoad(cfg);
   if (exhaust !== 'aerospike') {
     // A wide chamber is an unstable one: more, smaller chambers where the fewest would shake
@@ -262,6 +272,8 @@ export function starterEngine(): EngineConfig {
     chambers: 1,
     extFixedDia: 0,
     extDeploy: 1,
+    coneAngleDeg: 15,
+    innerExitDia: 0,
   };
   const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, lStarRefOf(unshaped));
   return sanitize({ ...unshaped, ...shape, wall: round(wallFor(pcBar, shape.chamberDia, 0.5)) });

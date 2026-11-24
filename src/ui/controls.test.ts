@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatMixture, propellantNote, roundMixture } from './controls';
+import { formatMixture, innerExitRange, propellantNote, roundMixture, shapeHidden } from './controls';
 import { getPreset } from '../physics/presets';
 import { sanitize } from '../physics/engine';
+import { starterEngine } from '../physics/reshape';
+import type { ExhaustId } from '../physics/types';
+import type { AppState } from '../state/store';
 
 describe('the mixture slider', () => {
   const range = { ofMin: 0.02, ofMax: 40 };
@@ -37,5 +40,28 @@ describe('the propellant note', () => {
   it('carries the warnings about a reactor fluid, which have no oxidiser picker to sit under', () => {
     expect(propellantNote(reactor('ntr-methane'))).toMatch(/droplets/);
     expect(propellantNote(reactor('ntr-hydrogen'))).not.toMatch(/droplets/);
+  });
+});
+
+describe('the nozzle shape sliders', () => {
+  // The rule the panel itself hides each slider by.
+  const shown = (exhaust: ExhaustId) => {
+    const state = { config: sanitize({ ...starterEngine(), exhaust }), flight: { altitudeKm: 0, throttle: 1 } } as AppState;
+    return (['exitDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia'] as const).filter((id) => !shapeHidden(id)(state));
+  };
+  it('shows each exhaust its own sliders', () => {
+    expect(shown('cone')).toContain('coneAngleDeg');
+    expect(shown('cone')).not.toContain('nozzleLenPct');
+    expect(shown('dualBell')).toEqual(expect.arrayContaining(['exitDia', 'nozzleLenPct', 'innerExitDia']));
+    expect(shown('none')).not.toContain('exitDia');
+    expect(shown('none')).not.toContain('nozzleLenPct');
+    expect(shown('bell')).not.toContain('coneAngleDeg');
+    expect(shown('bell')).not.toContain('innerExitDia');
+  });
+  it('keeps the kink slider between the throat and the exit', () => {
+    const cfg = sanitize({ ...starterEngine(), exhaust: 'dualBell' });
+    const range = innerExitRange(cfg);
+    expect(range.min).toBeCloseTo(1.1 * cfg.throatDia, 9);
+    expect(range.max).toBeCloseTo(0.95 * cfg.exitDia, 9);
   });
 });

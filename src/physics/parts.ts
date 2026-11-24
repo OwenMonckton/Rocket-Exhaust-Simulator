@@ -1,5 +1,5 @@
 import { PROPELLANTS, PROPELLANT_IDS } from './propellants';
-import type { EnergyId, ExhaustId, PropellantId } from './types';
+import type { EnergyId, PropellantId } from './types';
 
 /** Where an engine gets the energy it turns into thrust. */
 export interface EnergySource {
@@ -92,25 +92,7 @@ export function isEnergyId(v: unknown): v is EnergyId {
   return typeof v === 'string' && Object.hasOwn(ENERGY_SOURCES, v);
 }
 
-/** How the engine turns hot gas into a jet. */
-export const EXHAUSTS: Record<ExhaustId, { id: ExhaustId; name: string; tip: string }> = {
-  bell: {
-    id: 'bell',
-    name: 'Bell nozzle',
-    tip: 'The classic curved nozzle. It suits one altitude best: too big near the ground, too small in space.',
-  },
-  aerospike: {
-    id: 'aerospike',
-    name: 'Aerospike',
-    tip: 'A ring of small thrust cells fires along a central spike, and the outside air shapes the jet, so it suits every altitude.',
-  },
-};
-
-export const EXHAUST_IDS = Object.keys(EXHAUSTS) as ExhaustId[];
-
-export function isExhaustId(v: unknown): v is ExhaustId {
-  return typeof v === 'string' && Object.hasOwn(EXHAUSTS, v);
-}
+export { EXHAUSTS, EXHAUST_IDS, isExhaustId } from './exhausts';
 
 /** The propellants an energy source can use, in menu order. */
 export function propellantsFor(energy: EnergyId): PropellantId[] {

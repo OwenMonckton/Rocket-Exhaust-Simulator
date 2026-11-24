@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { simulate } from '../physics/engine';
+import { sanitize, simulate } from '../physics/engine';
+import { starterEngine } from '../physics/reshape';
 import { PRESETS, getPreset } from '../physics/presets';
 import { machFromAreaRatio, pressureRatio } from '../physics/nozzle';
 import { SPIKE_SAMPLES } from './fluidSim';
 import { engineProfile } from './geometry';
-import { VACUUM_FLOOR, plumeParams, spikeSimInputs } from './plumeParams';
+import { VACUUM_FLOOR, engineRestPressure, plumeParams, simInputs, spikeSimInputs } from './plumeParams';
 
 const at = (id: string, altitudeKm: number, patch = {}, fire = 1) => {
   const cfg = { ...getPreset(id)!.config, ...patch };
@@ -139,5 +140,61 @@ describe('aerospike simulation inputs', () => {
     expect(inputs(100).pAmb).toBe(VACUUM_FLOOR);
     // Throttled right back at sea level the cells themselves are over-expanded.
     expect(inputs(0, 0.4).pAmb).toBeGreaterThan(1);
+  });
+});
+
+describe('plume inputs for each nozzle shape', () => {
+  const vac = { altitudeKm: 100, throttle: 1 };
+  const sl = { altitudeKm: 0, throttle: 1 };
+
+  it('lets the plume leave a cone along its half-angle, and straight back with no nozzle', () => {
+    const cone = sanitize({ ...starterEngine(), exhaust: 'cone', coneAngleDeg: 25 });
+    expect(simInputs(cone, simulate(cone, vac), 1).divergence).toBeCloseTo(Math.tan((25 * Math.PI) / 180), 9);
+    const none = sanitize({ ...starterEngine(), exhaust: 'none' });
+    expect(simInputs(none, simulate(none, vac), 1).divergence).toBe(0);
+    expect(simInputs(none, simulate(none, vac), 1).uExit).toBeCloseTo(Math.sqrt(simulate(none, vac).gamma), 6);
+  });
+  it('keeps a bell lip slope exactly as it was', () => {
+    const bell = starterEngine();
+    expect(simInputs(bell, simulate(bell, vac), 1).divergence)
+      .toBe((0.45 * Math.tan((15 * Math.PI) / 180) * 100) / bell.nozzleLenPct);
+  });
+  it('starts a held dual bell plume from the kink, steady', () => {
+    const dual = sanitize({ ...starterEngine(), chamberPressureBar: 60, exitDia: 10 * starterEngine().throatDia, exhaust: 'dualBell' });
+    const r = simulate(dual, sl);
+    const p = plumeParams(dual, r, sl, 1);
+    expect(r.state).toBe('held');
+    expect(p.exitRadiusM).toBeCloseTo(dual.innerExitDia / 2, 6);
+    const torn = simulate({ ...dual, exhaust: 'bell' }, sl);
+    expect(p.turbulence).toBeLessThan(plumeParams({ ...dual, exhaust: 'bell' }, torn, sl, 1).turbulence);
+  });
+});
+
+describe('the still gas in an unlit engine', () => {
+  const exitPressureOf = (cfg: ReturnType<typeof starterEngine>, altitudeKm: number) => {
+    const r = simulate(cfg, { altitudeKm, throttle: 1 });
+    return { r, exit: pressureRatio(machFromAreaRatio(r.expansionRatio, r.gamma), r.gamma) };
+  };
+  it('is as it was for every example engine', () => {
+    for (const preset of PRESETS) for (const km of [0, 100]) {
+      const { r, exit } = exitPressureOf(preset.config, km);
+      expect(engineRestPressure(exit, r.pa, r.pc), preset.id).toBe(Math.min(0.3, Math.max(0.3 * exit, r.pa / r.pc)));
+    }
+  });
+  it('holds little gas with no nozzle, so a big chamber clears it quickly as it lights', () => {
+    // The gas leaves at the throat at about half the chamber pressure; a tenth of that would
+    // fill the chamber with cold gas ten times as dense as the flame's.
+    const none = sanitize({ ...starterEngine(), exhaust: 'none' });
+    for (const km of [0, 100]) {
+      const { r, exit } = exitPressureOf(none, km);
+      expect(exit).toBeGreaterThan(0.5);
+      expect(engineRestPressure(exit, r.pa, r.pc)).toBeLessThanOrEqual(0.03);
+      expect(engineRestPressure(exit, r.pa, r.pc)).toBeGreaterThanOrEqual(r.pa / r.pc);
+    }
+  });
+  it('is still the outside air in an engine at low pressure near the ground', () => {
+    const low = sanitize({ ...starterEngine(), exhaust: 'none', chamberPressureBar: 5 });
+    const { r, exit } = exitPressureOf(low, 0);
+    expect(engineRestPressure(exit, r.pa, r.pc)).toBeCloseTo(r.pa / r.pc, 9);
   });
 });

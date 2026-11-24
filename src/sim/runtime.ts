@@ -1,22 +1,25 @@
 import { createRumble } from '../audio/rumble';
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
+import { EXHAUSTS, jetLeftWall } from '../physics/exhausts';
 import { getPreset } from '../physics/presets';
 import { ENERGY_SOURCES } from '../physics/parts';
 import { resolveGas } from '../physics/gasSource';
-import type { Failure, SimResult } from '../physics/types';
+import type { ExhaustId, Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
-import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { engineRestPressure, fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
 import { engineAfterRebuild, latchesNow } from './rebuild';
 
 export interface FrameInfo {
   result: SimResult;
+  /** The engine's exhaust type */
+  exhaust: ExhaustId;
   stock: SimResult | null;
   stockName: string | null;
   firing: boolean;
@@ -208,13 +211,15 @@ export function createRuntime(
     // grid works out the flow along the spike along with the plume. (With the plume drawn, the
     // aerospike's own view draws the gas on the spike from a formula.)
     const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike;
-    const wholeNozzle = useSim && engineSimOn && !(lightExhaust && result.state === 'separated');
+    // A dual bell's jet held at its kink has left the wall as surely as a torn-off one has.
+    const leftWall = jetLeftWall(result.state);
+    const wholeNozzle = useSim && engineSimOn && !(lightExhaust && leftWall);
     const spikeSim = useSim && profile.spike ? profile.spike : null;
     const ext = profile.extension;
     const fixedFlow = ext ? fixedExitFlow(state.config, result, wholeNozzle) : null;
     const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
     const flowExitX = spikeSim ? spikeSim.lip.x : fromFixed ? fromFixed.ext.seam.x : profile.exitX;
-    const wholeFlow = wholeNozzle && !fromFixed ? wholeNozzleFlow(state.config, result) : null;
+    const wholeFlow = wholeNozzle && !fromFixed ? wholeNozzleFlow(result) : null;
     const plumeRadiusM = spikeSim
       ? spikeSim.lip.r
       : fromFixed
@@ -250,10 +255,12 @@ export function createRuntime(
           )
         : null;
     // An aerospike has no bell for the jet to follow.
-    if (sim && !profile.spike && (wholeNozzle || result.state !== 'separated')) {
+    if (sim && !profile.spike && (wholeNozzle || !leftWall)) {
       // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
-      // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back.
-      const back = Math.min(2 * plumeRadiusM, flowExitX - profile.throatX);
+      // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back: inside the
+      // nozzle, or with no nozzle, along the chamber narrowing to the throat.
+      const fitFrom = EXHAUSTS[state.config.exhaust].hasNozzle ? profile.throatX : 0;
+      const back = Math.min(2 * plumeRadiusM, flowExitX - fitFrom);
       const u = back / plumeRadiusM;
       if (u > 0.05) {
         const radiusBack = radiusAt(profile, flowExitX - back) / plumeRadiusM;
@@ -271,7 +278,7 @@ export function createRuntime(
     // it breaks up on the way and never settles. Ending the engine's grid at the fixed nozzle,
     // as for a sliding extension, gives a clean jet.
     const extensionInEngine =
-      wholeNozzle && !!fromFixed && state.config.extDeploy > 0.995 && result.state !== 'separated';
+      wholeNozzle && !!fromFixed && state.config.extDeploy > 0.995 && !leftWall;
     const engineExitX = extensionInEngine ? profile.exitX : flowExitX;
     let gas: EngineGas | null = null;
     if (engineSimOn) {
@@ -292,10 +299,10 @@ export function createRuntime(
         }
       }
       const burn = solid ? { from: 0, to: burnTo } : undefined;
-      // Where the jet tears off the wall of an over-expanded nozzle, if it does so inside the
-      // stretch of engine being simulated.
+      // Where the jet tears off the wall of an over-expanded nozzle, or a dual bell's kink holds
+      // it, if that is inside the stretch of engine being simulated.
       let separatesAt: number | undefined;
-      if (wholeNozzle && result.state === 'separated') {
+      if (wholeNozzle && leftWall) {
         const jetRadius = result.effectiveExitDia / 2;
         for (let i = 0; i <= ENGINE_NX; i++) {
           const x = (i / ENGINE_NX) * engineExitX;
@@ -323,8 +330,7 @@ export function createRuntime(
           fire,
           length: engineExitX,
           radii,
-          // Never a true vacuum, which the solver cannot hold: a fraction of the exit pressure at least.
-          restPressure: Math.min(0.3, Math.max(0.3 * exitPressure, result.pa / result.pc)),
+          restPressure: engineRestPressure(exitPressure, result.pa, result.pc),
           // Well below anything the exhaust reaches, even down the centreline of a big nozzle
           // where it runs colder than average, so cold still gas can be told apart from it.
           restTemp: Math.min(0.1, 0.2 * exitTemp),
@@ -395,8 +401,8 @@ export function createRuntime(
       const reading = latest && latest.stamp >= SETTLE_FRAMES && latest.stamp <= settledFrames ? latest : null;
       if (fire < 1) {
         simulatedNote = firing ? 'starting up' : 'fire the engine';
-      } else if (result.state === 'separated' && !wholeNozzle) {
-        // On its own the engine's grid knows nothing of the jet tearing off the wall.
+      } else if (leftWall && !wholeNozzle) {
+        // On its own the engine's grid knows nothing of the jet leaving the wall.
         simulatedNote = lightExhaust && useSim ? 'not for this jet' : 'plume is drawn';
       } else if (Math.abs(radii[ENGINE_NX] / (result.flowExitDia / 2) - 1) > 0.01) {
         simulatedNote = 'not for this nozzle';
@@ -440,6 +446,7 @@ export function createRuntime(
       const modified = preset ? isModified(state.config) : false;
       onFrame({
         result,
+        exhaust: state.config.exhaust,
         stock: preset && modified ? simulate(preset.config, state.flight) : null,
         stockName: preset?.name ?? null,
         firing,

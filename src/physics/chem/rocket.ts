@@ -205,7 +205,10 @@ export function rocket(mix: Mixture, chamber: Problem, eps: number, start?: Rock
   let ex = throat;
   let exitOk = false;
   let coldExit = false;
-  if (ok) {
+  if (ok && eps <= 1) {
+    // An exit at area ratio 1 is the throat itself, already found: no expansion to search for.
+    exitOk = true;
+  } else if (ok) {
     const throatFlux = flux(throat);
     let warmest = throat;          // the lowest-pressure station seen that settled at or above the floor
     let lnPrMax = Infinity;        // ln(Pc/P) at the 200 K station, once found: an equilibrium exit lies above it

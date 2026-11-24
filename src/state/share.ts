@@ -10,7 +10,7 @@ export interface AppState {
   flight: FlightState;
 }
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 
 /** What the propellant names in links made before engines had separate parts are called now. */
 const OLD_PROPELLANTS: Record<string, PropellantId> = { nuclear: 'ntr-hydrogen' };
@@ -48,6 +48,8 @@ export function encodeState(s: AppState): string {
     c.chambers,
     c.extFixedDia,
     c.extDeploy,
+    c.coneAngleDeg,
+    c.innerExitDia,
   ];
   return `${VERSION}.${toBase64Url(JSON.stringify(packed))}`;
 }
@@ -56,25 +58,33 @@ const allNumbers = (a: unknown[]): a is number[] => a.every((n) => typeof n === 
 
 /**
  * The parts and numbers of a link, whichever version wrote it. The numbers are always in the
- * current order: nine of the engine, altitude, throttle, chambers, extension size and travel.
+ * current order: nine of the engine, altitude, throttle, chambers, extension size and travel, cone angle and dual bell kink.
  */
 function unpack(
   version: string,
   a: unknown[],
 ): { parts: Pick<EngineConfig, 'energy' | 'exhaust' | 'propellant'>; fuel: unknown; oxidiser: unknown; n: number[] } | null {
+  // v4 adds the cone angle and the dual bell's kink at the end. An exhaust it does not know opens
+  // as a bell rather than refusing the link.
+  if (version === VERSION) {
+    if (a.length !== 22) return null;
+    const [, energy, exhaust, propellant, fuel, oxidiser, ...n] = a;
+    if (!isEnergyId(energy) || typeof exhaust !== 'string' || !isPropellantId(propellant) || !allNumbers(n)) return null;
+    return { parts: { energy, exhaust: isExhaustId(exhaust) ? exhaust : 'bell', propellant }, fuel, oxidiser, n };
+  }
   // v3 adds the fuel and oxidiser after the propellant. An unknown one is not a reason to refuse
   // the link: sanitize gives it the first in its list.
-  if (version === VERSION) {
+  if (version === 'v3') {
     if (a.length !== 20) return null;
     const [, energy, exhaust, propellant, fuel, oxidiser, ...n] = a;
     if (!isEnergyId(energy) || !isExhaustId(exhaust) || !isPropellantId(propellant) || !allNumbers(n)) return null;
-    return { parts: { energy, exhaust, propellant }, fuel, oxidiser, n };
+    return { parts: { energy, exhaust, propellant }, fuel, oxidiser, n: [...n, 15, 0] };
   }
   if (version === 'v2') {
     if (a.length !== 18) return null;
     const [, energy, exhaust, propellant, ...n] = a;
     if (!isEnergyId(energy) || !isExhaustId(exhaust) || !isPropellantId(propellant) || !allNumbers(n)) return null;
-    return { parts: { energy, exhaust, propellant }, fuel: FUEL_IDS[0], oxidiser: OXIDISER_IDS[0], n };
+    return { parts: { energy, exhaust, propellant }, fuel: FUEL_IDS[0], oxidiser: OXIDISER_IDS[0], n: [...n, 15, 0] };
   }
   if (version !== 'v1') return null;
   // Links from before engines had separate parts: the propellant said what kind of engine it
@@ -90,7 +100,7 @@ function unpack(
     parts: { energy: PROPELLANTS[propellant].energy, exhaust, propellant },
     fuel: FUEL_IDS[0],
     oxidiser: OXIDISER_IDS[0],
-    n: [...n.slice(0, 11), n.length > 11 ? n[11] : 1, n.length > 13 ? n[12] : 0, n.length > 13 ? n[13] : 1],
+    n: [...n.slice(0, 11), n.length > 11 ? n[11] : 1, n.length > 13 ? n[12] : 0, n.length > 13 ? n[13] : 1, 15, 0],
   };
 }
 
@@ -124,6 +134,9 @@ export function decodeState(hash: string): AppState | null {
       chambers: n[11],
       extFixedDia: n[12],
       extDeploy: n[13],
+      // Older links carry neither: 15 degrees, and sanitize sets a dual bell's kink.
+      coneAngleDeg: n[14],
+      innerExitDia: n[15],
     });
     return { config, flight: sanitizeFlight({ altitudeKm: n[9], throttle: n[10] }) };
   } catch {

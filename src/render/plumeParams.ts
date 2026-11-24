@@ -1,6 +1,7 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
 import { ENERGY_SOURCES } from '../physics/parts';
+import { jetLeftWall, lipSlope } from '../physics/exhausts';
 import { resolveGas } from '../physics/gasSource';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
 import { SPIKE_SAMPLES, type SimInputs } from './fluidSim';
@@ -86,17 +87,33 @@ export interface FixedExitFlow {
 export function fixedExitFlow(cfg: EngineConfig, r: SimResult, wholeNozzle = false): FixedExitFlow | null {
   if (!(cfg.extFixedDia > 0)) return null;
   const fixedR = cfg.extFixedDia / 2;
-  if (!wholeNozzle && r.state === 'separated' && r.effectiveExitDia / 2 < fixedR * 0.999) {
+  if (!wholeNozzle && jetLeftWall(r.state) && r.effectiveExitDia / 2 < fixedR * 0.999) {
     return { radiusM: r.effectiveExitDia / 2, mach: r.exitMach, pressure: r.pe, separated: true };
   }
   const mach = machFromAreaRatio((cfg.extFixedDia / cfg.throatDia) ** 2, r.gamma);
   return { radiusM: fixedR, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
 }
 
-/** The gas as it would leave a one-piece nozzle if it filled it all the way to the exit. */
-export function wholeNozzleFlow(cfg: EngineConfig, r: SimResult): FixedExitFlow {
+/**
+ * Pressure of the still gas filling the engine's grid before it fires, over chamber pressure:
+ * the outside air, but never a true vacuum, which the solver cannot hold. In vacuum it is a
+ * fraction of the pressure the gas leaves at, and no more than 3% of the chamber's. Without
+ * that limit an engine with no nozzle, whose gas leaves at about half the chamber pressure, began
+ * full of cold gas some ten times as dense as its flame; a big chamber took thousands of frames
+ * to clear it, and the simulated figures were far out all that time. `exitPressure` is over
+ * chamber pressure too.
+ */
+export function engineRestPressure(exitPressure: number, pa: number, pc: number): number {
+  return Math.min(0.3, Math.max(Math.min(0.03, 0.3 * exitPressure), pa / pc));
+}
+
+/**
+ * The gas as it would leave a one-piece nozzle if it filled it all the way to the exit. With no
+ * nozzle that is the throat.
+ */
+export function wholeNozzleFlow(r: SimResult): FixedExitFlow {
   const mach = machFromAreaRatio(r.expansionRatio, r.gamma);
-  return { radiusM: cfg.exitDia / 2, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
+  return { radiusM: r.flowExitDia / 2, mach, pressure: r.pc * pressureRatio(mach, r.gamma), separated: false };
 }
 
 /**
@@ -113,17 +130,17 @@ export function simInputs(
   const g = r.gamma;
   const mach = start ? start.flow.mach : r.exitMach;
   const pressure = start ? start.flow.pressure : r.pe;
-  const separated = start ? start.flow.separated : r.state === 'separated';
+  const separated = start ? start.flow.separated : jetLeftWall(r.state);
   const t0 = 1 + ((g - 1) / 2) * mach * mach;
   const exitTemp = r.tc / t0;
   // The top of the range is a badly over-expanded nozzle at sea level: outside air at a hundred
   // times the pressure the exhaust would leave at.
   const pAmb = r.pa > 0 ? clamp(r.pa / pressure, VACUUM_FLOOR, 150) : VACUUM_FLOOR;
   const gasR = resolveGas(cfg, r.pc / 1e5, r.expansionRatio).gas.R;
-  // Slope of the bell wall at the lip (see engineProfile).
-  // An aerospike's jet leaves its base running straight back: the spike has already turned it.
-  const lipSlope =
-    start?.wallSlope ?? (cfg.exhaust === 'aerospike' ? 0 : (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct);
+  // Slope of the wall at the lip (see engineProfile). An aerospike's jet leaves its base running
+  // straight back, the spike having already turned it, and with no nozzle the gas leaves the
+  // throat straight back too.
+  const wallSlope = start?.wallSlope ?? lipSlope(cfg);
   return {
     gamma: g,
     uExit: mach * Math.sqrt(g),
@@ -134,8 +151,8 @@ export function simInputs(
     rhoAmb: pAmb * Math.min(30, (gasR * exitTemp) / (R_AIR * AIR_TEMP)),
     fire: clamp(fire, 0, 1),
     t0,
-    // A jet that has already torn off the wall leaves straighter and more evenly.
-    divergence: separated ? 0.06 : lipSlope,
+    // A jet that has already left the wall leaves straighter and more evenly.
+    divergence: separated ? 0.06 : wallSlope,
     profile: separated ? 0 : 0.4,
     // Set by the caller from the engine's drawn contour; a straight cone until then.
     wallCurve: 0,
@@ -235,7 +252,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     afterburn: look.afterburnStrength * clamp(0.35 + 0.9 * rich, 0, 1.2) * Math.sqrt(paFrac),
     afterburnColor: look.afterburn,
     particles: look.particles * (rich > 0 ? 1 : 1 + 0.6 * rich),
-    separated: r.state === 'separated',
+    separated: jetLeftWall(r.state),
     skyTop: mix3([0.16, 0.38, 0.74], [0.0, 0.0, 0.015], smooth(0, 45000, altM)),
     skyBottom: mix3([0.56, 0.74, 0.93], [0.008, 0.01, 0.03], smooth(4000, 60000, altM)),
     stars: smooth(25000, 70000, altM),

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cStar, exitVelocity, machFromAreaRatio, pressureRatio } from '../nozzle';
 import { mixtureOf } from './ingredients';
 import { rocket } from './rocket';
+import { R_UNIVERSAL } from './thermo';
 import {
   DROPLET_LOSS, chemCacheSize, clearChemCache, fitGas, pairRange, solveFluid, solvePair, type SolvedGas,
 } from './pair';
@@ -67,6 +68,24 @@ describe('solvePair: the fitted gas', () => {
       expect(gas.gamma, `gamma at ${eps}`).toBeLessThan(1.4);
       expect(relErr(simulator(gas, eps).cStar, gas.cStar), `c* at ${eps}`).toBeLessThan(0.005);
     }
+  });
+
+  it('ends at the throat at area ratio 1, with the solver\'s own throat-plane Isp', () => {
+    // The throat as a full nozzle's solve finds it: speed from the drop in heat content, and the
+    // pressure term per unit mass flow.
+    const mix = mixtureOf('rp1', 'lox', 2.5);
+    const r = rocket(mix, { kind: 'hp', h: mix.h0, pBar: 70 }, 40);
+    expect(r.ok).toBe(true);
+    const u = Math.sqrt(2 * (r.chamber.h - r.throat.h));
+    const throatIsp = u + (r.throat.n * R_UNIVERSAL * r.throat.t) / u;
+    const gas = solvePair('rp1', 'lox', 2.5, 70, 1);
+    expect(gas.ok).toBe(true);
+    expect(relErr(gas.cStar, r.cStar)).toBeLessThan(1e-3);
+    // Through the simulator's maths, thrust scale and all.
+    expect(relErr(simulator(gas, 1).ispVac * gas.ispScale, throatIsp)).toBeLessThan(0.01);
+    const fluid = solveFluid('He', 2360, 30, 1);
+    expect(fluid.ok).toBe(true);
+    expect(fluid.ispVac).toBeLessThan(solveFluid('He', 2360, 30, 100).ispVac);
   });
 
   it('settles peroxide alone in a vacuum nozzle at a round 70 bar, as at 69', () => {

@@ -48,9 +48,9 @@ describe('share links', () => {
   });
   it('writes links that carry the three parts', () => {
     const text = encodeState({ config: getPreset('nerva')!.config, flight: { altitudeKm: 100, throttle: 1 } });
-    expect(text.startsWith('v3.')).toBe(true);
+    expect(text.startsWith('v4.')).toBe(true);
     const packed = JSON.parse(atob(text.slice(3).replace(/-/g, '+').replace(/_/g, '/')));
-    expect(packed).toHaveLength(20);
+    expect(packed).toHaveLength(22);
     expect(packed.slice(0, 4)).toEqual(['nerva', 'reactor', 'bell', 'ntr-hydrogen']);
     expect(packed.slice(4, 6)).toEqual([getPreset('nerva')!.config.fuel, getPreset('nerva')!.config.oxidiser]);
   });
@@ -63,7 +63,7 @@ describe('share links', () => {
   it('reads v1 and v2 links exactly as before, with the tabled pair filled in (review focus 5)', () => {
     // Expected engines are what the links decoded to before Task 10 (share.ts at cb88400).
     const nums = [0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 1, 0, 1];
-    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1 };
+    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1, coneAngleDeg: 15, innerExitDia: 0 };
     const flight = { altitudeKm: 0, throttle: 1 };
     const v2 = decodeState('v2.' + btoa(JSON.stringify([null, 'combustion', 'bell', 'kerolox', ...nums])))!;
     expect(v2).toEqual({ config: { presetId: null, energy: 'combustion', exhaust: 'bell', propellant: 'kerolox', fuel: 'rp1', oxidiser: 'lox', mixtureRatio: 2.36, ...shape }, flight });
@@ -73,7 +73,7 @@ describe('share links', () => {
   it('opens a v3 link with an unknown or malformed fuel or oxidiser, sanitised, and refuses a wrong length (review focus 5)', () => {
     const calc = sanitize({ ...PRESETS[0].config, presetId: null, propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
     const good = encodeState({ config: calc, flight: { altitudeKm: 0, throttle: 1 } });
-    const packed = JSON.parse(atob(good.slice(3).replace(/-/g, '+').replace(/_/g, '/'))) as unknown[];
+    const packed = (JSON.parse(atob(good.slice(3).replace(/-/g, '+').replace(/_/g, '/'))) as unknown[]).slice(0, 20); // the v3 form: without the cone angle and kink
     expect(packed.slice(3, 6)).toEqual(['calculated', 'b5h9', 'of2']);
     const link = (a: unknown[]) => 'v3.' + btoa(JSON.stringify(a));
     const edit = (fuel: unknown, oxidiser: unknown) => {
@@ -119,6 +119,37 @@ describe('share links', () => {
     const r = simulate(s.config, s.flight);
     expect(Number.isFinite(r.thrust)).toBe(true);
   });
+  it('carries a cone angle and a dual bell kink through a link', () => {
+    const cone = sanitize({ ...starterEngine(), exhaust: 'cone', coneAngleDeg: 22 });
+    expect(decodeState(encodeState({ config: cone, flight: { altitudeKm: 12, throttle: 0.8 } }))!.config).toEqual(cone);
+    const dual = sanitize({ ...starterEngine(), exhaust: 'dualBell', innerExitDia: 0.31 });
+    expect(decodeState(encodeState({ config: dual, flight: { altitudeKm: 0, throttle: 1 } }))!.config).toEqual(dual);
+  });
+  it('opens a v3 link as the same engine with the new settings at their defaults', () => {
+    // Build the v3 form by hand: the v4 array without its last two entries.
+    const cfg = PRESETS.find((p) => p.id === 'merlin-1d')!.config;
+    const v4 = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const v3 = 'v3.' + btoa(JSON.stringify(v4.slice(0, 20))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    expect(decodeState(v3)!.config).toEqual(cfg);
+  });
+  it('opens a link naming an exhaust it does not know as a bell, with the rest intact', () => {
+    const cfg = sanitize({ ...starterEngine(), chamberPressureBar: 137 });
+    const packed = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    packed[2] = 'expansion-deflection';
+    const link = 'v4.' + btoa(JSON.stringify(packed)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const opened = decodeState(link)!.config;
+    expect(opened.exhaust).toBe('bell');
+    expect(opened.chamberPressureBar).toBe(137);
+  });
+  it('still refuses a v3 link naming an exhaust it does not know, and a v4 link of v3 length', () => {
+    const cfg = starterEngine();
+    const packed = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const link = (version: string, a: unknown[]) => version + '.' + btoa(JSON.stringify(a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const v3 = packed.slice(0, 20);
+    expect(decodeState(link('v3', v3))!.config.exhaust).toBe('bell');
+    expect(decodeState(link('v3', [...v3.slice(0, 2), 'expansion-deflection', ...v3.slice(3)]))).toBeNull();
+    expect(decodeState(link('v4', v3))).toBeNull();
+  });
 });
 
 describe('store', () => {
@@ -130,6 +161,17 @@ describe('store', () => {
     }
     expect(applyScale(cfg, 2).throatDia).toBeCloseTo(cfg.throatDia * 2, 9);
     expect(applyScale(cfg, 99).scale).toBe(5);
+  });
+  it("scales a dual bell's kink with the rest of the engine, and back again", () => {
+    const store = createStore(defaultState());
+    store.setExhaust('dualBell');
+    const before = store.get().config;
+    expect(before.innerExitDia).toBeGreaterThan(0);
+    store.setScale(2);
+    expect(store.get().config.innerExitDia).toBeCloseTo(before.innerExitDia * 2, 9);
+    store.setScale(1);
+    expect(store.get().config.innerExitDia).toBeCloseTo(before.innerExitDia, 9);
+    expect(store.get().config.throatDia).toBeCloseTo(before.throatDia, 9);
   });
   it('tracks modification against the stock preset', () => {
     const store = createStore(defaultState());
