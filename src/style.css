@@ -1,14 +1,54 @@
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/barlow-condensed-400-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/barlow-condensed-700-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/barlow-400-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Barlow';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/barlow-700-latin.woff2') format('woff2');
+}
+
+/*
+  A hot-fire test console. Three colours have one job each and no other:
+  red is fire and the redline, yellow is armed and attention, green is within limits.
+*/
 :root {
-  --bg: #0e1116;
-  --panel: #161a22;
-  --panel-2: #1d222c;
-  --line: #2a303c;
-  --text: #e6e9ef;
-  --dim: #98a1b2;
-  --accent: #ff8a3d;
-  --ok: #4fc37a;
-  --amber: #f0b23c;
-  --red: #ef5350;
+  --ground: #1f2623;
+  --panel: #29322e;
+  --panel-2: #323d38;
+  --well: #151b18;
+  --line: #44504a;
+  --text: #e9ece6;
+  --dim: #aab5ad;
+  --yellow: #f2c230;
+  --red: #e5372b;
+  /* Red deep enough to carry white lettering on a button. */
+  --red-fill: #c92a1f;
+  --red-text: #ff7468;
+  --green: #5fd08a;
+  --ink: #141a17;
+  --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --body: 'Barlow', 'Segoe UI', sans-serif;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
   color-scheme: dark;
 }
 
@@ -24,153 +64,90 @@ body {
 
 body {
   display: grid;
-  grid-template: auto minmax(0, 1fr) / 330px minmax(0, 1fr);
-  grid-template-areas: 'head head' 'side main';
-  background: var(--bg);
+  grid-template: auto minmax(0, 1fr) / 290px minmax(0, 1fr) 320px;
+  grid-template-areas: 'head head head' 'build main data';
+  background: var(--ground);
   color: var(--text);
-  font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font: 15px/1.4 var(--body);
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
+  caret-color: var(--yellow);
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
 }
 
-header {
-  grid-area: head;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  min-width: 0;
+::selection {
+  background: var(--yellow);
+  color: var(--ink);
 }
 
-h1 {
-  margin: 0 8px 0 0;
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.spacer {
-  flex: 1;
-}
-
-#blurb {
-  color: var(--dim);
-  font-size: 12.5px;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 1;
-}
-
-.preset {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--dim);
-  white-space: nowrap;
-}
-
-select,
-button {
-  font: inherit;
-  color: var(--text);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 10px;
-  white-space: nowrap;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  border-color: #46506a;
-}
-
-button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #1b1004;
-  font-weight: 700;
-}
-
-.actions button.sweep.firing {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-button.primary.firing {
-  background: #2a303c;
-  border-color: var(--accent);
-  color: var(--accent);
+[hidden] {
+  display: none !important;
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
 }
 
-aside {
-  grid-area: side;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-}
-
-#controls {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 14px 10px;
-}
-
-.group h2 {
-  margin: 14px 0 6px;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
+h1,
+h2 {
+  margin: 0;
+  font: 700 13px/1.2 var(--display);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--dim);
 }
 
-.row {
-  display: block;
-  margin-bottom: 9px;
+/* --- Controls shared by every panel --------------------------------------- */
+
+select,
+button,
+summary {
+  font: inherit;
+  color: var(--text);
 }
 
-.row.disabled {
-  opacity: 0.5;
+select,
+button {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 6px 10px;
+  white-space: nowrap;
 }
 
-.row-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.row output {
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.row select {
+select {
   width: 100%;
-  margin-top: 3px;
+  text-overflow: ellipsis;
 }
 
-/* Group headings in a menu (Everyday, Storable, Exotic) sit back behind the choices under them. */
+button {
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+button:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+
+button:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  vertical-align: -2px;
+}
+
 optgroup {
   color: var(--dim);
   background: var(--panel-2);
@@ -180,35 +157,362 @@ optgroup option {
   color: var(--text);
 }
 
-.note {
-  margin: 4px 0 0;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   color: var(--dim);
-  font-size: 12px;
+  font-size: 13px;
 }
 
-input[type='range'] {
-  width: 100%;
-  margin: 3px 0 0;
-  accent-color: var(--accent);
-}
-
-.actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1.3fr;
+/* A fold: a full-width row with a chevron that turns when it opens. */
+details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--dim);
+  border-bottom: 2px solid var(--dim);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.2s var(--ease);
+}
+
+details[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+/* --- Top bar --------------------------------------------------------------- */
+
+header {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+header h1 {
+  width: 258px;
+  flex: none;
+}
+
+.nameplate {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+#engine-name {
+  font: 700 28px/1 var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#blurb {
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1.3;
+  max-width: 58ch;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.menu {
+  position: relative;
+  flex: none;
+}
+
+.menu > summary {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 6px 10px;
+}
+
+.menu-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: 250px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+#sound[aria-pressed='true'] {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+/* --- Engine picker --------------------------------------------------------- */
+
+#picker {
+  position: fixed;
+  top: 58px;
+  left: 16px;
+  right: 16px;
+  z-index: 30;
+  max-width: 1080px;
+  max-height: calc(100vh - 74px);
+  overflow-y: auto;
+  padding: 14px 16px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+#picker-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.engine-card {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-areas: 'art name' 'art blurb';
+  column-gap: 12px;
+  align-content: start;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: normal;
+  background: var(--ground);
+}
+
+.engine-card svg {
+  grid-area: art;
+  width: 96px;
+  height: 41px;
+  align-self: center;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.engine-card svg .blank {
+  stroke: var(--dim);
+}
+
+.engine-name {
+  grid-area: name;
+  font: 700 19px/1.1 var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.engine-blurb {
+  grid-area: blurb;
+  margin-top: 3px;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.engine-card[aria-current='true'] {
+  border-color: var(--yellow);
+  background: var(--panel-2);
+}
+
+/* --- Build panel ----------------------------------------------------------- */
+
+#build {
+  grid-area: build;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+
+#controls {
+  padding: 14px 16px 20px;
+}
+
+.group h2 {
+  margin: 18px 0 8px;
+}
+
+.group:first-child h2 {
+  margin-top: 0;
+}
+
+.row {
+  display: block;
+  margin-bottom: 11px;
+}
+
+.row.disabled {
+  opacity: 0.5;
+}
+
+.row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.row output {
+  text-align: right;
+  font-weight: 700;
+}
+
+/* Each part picker carries the number of its mark on the engine. */
+.group.parts {
+  counter-reset: part;
+}
+
+.group.parts .row:not([hidden]) {
+  counter-increment: part;
+}
+
+.group.parts .name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group.parts .name::before {
+  content: counter(part);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--text);
+  border-radius: 50%;
+  font: 700 13px/1 var(--display);
+}
+
+.group.parts .row:hover .name::before,
+.group.parts .row:focus-within .name::before {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--ink);
+}
+
+.note {
+  margin: 5px 0 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+.note:empty {
+  display: none;
+}
+
+.tune {
+  margin-top: 16px;
   border-top: 1px solid var(--line);
 }
 
-.actions button {
-  padding: 10px;
-  font-size: 15px;
+.tune > summary {
+  padding: 12px 0;
+  font-weight: 700;
 }
 
-.actions button.sweep {
-  padding: 10px 4px;
-  font-size: 13px;
+.tune[open] > summary {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
 }
+
+/* A slider: a thin scale with a flat block for a handle, tall enough to grab. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 20px;
+  margin-top: -8px;
+  background: var(--text);
+  border: 0;
+  border-radius: 2px;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 20px;
+  background: var(--text);
+  border: 0;
+  border-radius: 2px;
+}
+
+input[type='range']:disabled {
+  cursor: default;
+}
+
+/* --- Stage ----------------------------------------------------------------- */
 
 main {
   grid-area: main;
@@ -221,13 +525,15 @@ main {
 #stage {
   position: relative;
   flex: 1 1 0;
-  /* The engine view always keeps most of the height; the readouts scroll if they don't fit. */
-  min-height: 55%;
+  min-height: 0;
   background: #05070a;
   overflow: hidden;
 }
 
-#stage canvas {
+#stage canvas,
+#stand,
+#callouts,
+#ignition {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -235,49 +541,218 @@ main {
   display: block;
 }
 
-#nogl {
+#stand,
+#callouts,
+#ignition {
+  pointer-events: none;
+}
+
+.stand {
+  transition: opacity 0.3s linear;
+}
+
+.stand .earth {
+  fill: #1a201d;
+}
+
+.stand .ground {
+  stroke: #7d8a82;
+  stroke-width: 2;
+}
+
+.stand .wall {
+  fill: var(--ink);
+}
+
+/* Steel with the engine's own weight, drawn behind it. */
+.stand .frame {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 7;
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
+}
+
+.leaders {
+  fill: none;
+  stroke: rgba(233, 236, 230, 0.75);
+  stroke-width: 1;
+}
+
+.callout {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  background: var(--ink);
+  border: 1px solid var(--text);
+  border-radius: 50%;
+  font: 700 14px/1 var(--display);
+}
+
+.callout.lit,
+.callout:hover {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--ink);
+}
+
+/* Ignition: one flash from the nozzle and a short shudder of the picture. */
+#ignition {
+  opacity: 0;
+  background: radial-gradient(
+    60% 70% at var(--exit-x, 38%) var(--exit-y, 50%),
+    rgba(255, 244, 214, 0.85),
+    rgba(255, 170, 80, 0.25) 45%,
+    transparent 70%
+  );
+}
+
+/* The run state and the time since ignition, on the picture itself. */
+#clock {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 6px 10px 7px;
+  background: rgba(21, 27, 24, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font: 700 17px/1 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--yellow);
+  pointer-events: none;
+}
+
+#clock[data-state='firing'] {
+  color: var(--red-text);
+  border-color: var(--red);
+}
+
+#clock[data-state='failed'] {
+  color: var(--dim);
+}
+
+#stage.ignite #ignition {
+  animation: flash 0.7s var(--ease);
+}
+
+/* Everything on the stand shakes together: the picture, the steel and the marks on the engine. */
+#stage.ignite > canvas,
+#stage.ignite > #stand,
+#stage.ignite > #callouts {
+  animation: shudder 0.5s linear;
+}
+
+@keyframes flash {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes shudder {
+  0%,
+  100% {
+    transform: none;
+  }
+  15% {
+    transform: translate(-3px, 1px);
+  }
+  30% {
+    transform: translate(3px, -2px);
+  }
+  45% {
+    transform: translate(-2px, 2px);
+  }
+  60% {
+    transform: translate(2px, -1px);
+  }
+  80% {
+    transform: translate(-1px, 0);
+  }
+}
+
+.stage-view {
   position: absolute;
   top: 12px;
   right: 12px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 5px 5px 10px;
+  background: rgba(21, 27, 24, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.stage-view select {
+  width: auto;
+}
+
+#nogl {
+  position: absolute;
+  top: 60px;
+  right: 12px;
   max-width: 320px;
   padding: 10px 12px;
-  background: rgba(22, 26, 34, 0.92);
-  border: 1px solid var(--amber);
-  border-radius: 8px;
+  background: rgba(21, 27, 24, 0.94);
+  border: 1px solid var(--yellow);
+  border-radius: 3px;
 }
 
 #failure {
   position: absolute;
   left: 50%;
-  bottom: 28px;
+  bottom: 24px;
   transform: translateX(-50%);
   width: min(520px, calc(100% - 32px));
   padding: 16px 18px;
-  background: rgba(22, 26, 34, 0.95);
+  background: rgba(21, 27, 24, 0.96);
   border: 1px solid var(--red);
-  border-radius: 10px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  border-radius: 3px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
 }
 
 #failure h2 {
   margin: 0 0 6px;
-  color: var(--red);
-  font-size: 18px;
+  color: var(--red-text);
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+
+/* Red is Fire's alone, so the way out of a failure is marked in yellow, the colour for attention. */
+#rebuild {
+  border-color: var(--yellow);
+  color: var(--yellow);
+  font-weight: 700;
 }
 
 #failure p {
   margin: 0 0 12px;
+  text-wrap: pretty;
 }
 
+/* Under the clock and the view switch, clear of both. */
 #toast {
   position: absolute;
-  top: 14px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100% - 32px);
   padding: 8px 14px;
-  background: rgba(22, 26, 34, 0.95);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: rgba(21, 27, 24, 0.96);
+  border: 1px solid var(--yellow);
+  border-radius: 3px;
 }
 
 #zoom {
@@ -289,183 +764,735 @@ main {
 }
 
 #zoom button {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  font-size: 18px;
-  line-height: 1;
-  background: rgba(22, 26, 34, 0.85);
+  background: rgba(21, 27, 24, 0.86);
 }
 
-[hidden] {
-  display: none !important;
+/* --- Console row ----------------------------------------------------------- */
+
+/* Fire sits on the picture's centreline; throttle and the sweeps to its left, altitude to its right. */
+#console {
+  --sweeps: 124px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: 'thr fire alt' 'thr fire sweeps';
+  align-items: start;
+  gap: 6px 24px;
+  padding: 12px 18px 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+#flight,
+#flight .group {
+  display: contents;
+}
+
+#flight h2 {
+  display: none;
+}
+
+#flight .row {
+  margin: 0;
+}
+
+#flight .row:has(#throttle) {
+  grid-area: thr;
+}
+
+#flight .row:has(#altitudeKm) {
+  grid-area: alt;
+}
+
+#flight .name {
+  font: 700 13px/1.2 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* A reading in words ("solids cannot throttle") drops under its label instead of breaking up. */
+#flight .row-head {
+  flex-wrap: wrap;
+}
+
+#flight output {
+  white-space: nowrap;
+  font: 700 20px/1 var(--display);
+  letter-spacing: 0.02em;
+}
+
+/* The altitude scale's marks sit under the handle's travel, which stops half a handle short of each end. */
+.ticks {
+  position: relative;
+  display: block;
+  height: 26px;
+  margin-top: 1px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  left: calc(6px + var(--at) * (100% - 12px));
+  padding-top: 9px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.tick::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 7px;
+  background: var(--dim);
+}
+
+.tick:first-child {
+  transform: none;
+  left: 0;
+}
+
+.tick:first-child::before {
+  left: 6px;
+}
+
+
+/* The sweeps drive altitude, so they sit under its scale. */
+.sweeps {
+  grid-area: sweeps;
+  justify-self: start;
+  display: grid;
+  grid-auto-flow: column;
+  gap: 6px;
+}
+
+.sweep {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+}
+
+.sweep svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.sweep .pause,
+.sweep.running .go {
+  display: none;
+}
+
+.sweep.running .pause {
+  display: inline;
+}
+
+.sweep.running {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.firebox {
+  grid-area: fire;
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  justify-items: center;
+  gap: 7px;
+}
+
+#arm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 700 13px/1 var(--display);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--yellow);
+}
+
+#arm::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+#arm[data-state='firing'] {
+  color: var(--red-text);
+}
+
+#arm[data-state='failed'] {
+  color: var(--dim);
+}
+
+button.primary {
+  background: var(--red-fill);
+  border-color: var(--red-fill);
+  color: #fff;
+  font-weight: 700;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #b32218;
+  border-color: #b32218;
+}
+
+/* Wide enough for its longer label, so nothing beside it moves when the engine lights. */
+#fire {
+  width: 216px;
+  min-height: 60px;
+  padding: 10px 12px 11px;
+  font: 700 32px/1 var(--display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: transform 0.12s var(--ease), background-color 0.15s;
+}
+
+#fire:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+#fire.firing {
+  background: var(--well);
+  border-color: var(--red);
+  color: var(--red-text);
+}
+
+/* --- Test data ------------------------------------------------------------- */
+
+#data {
+  grid-area: data;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
 }
 
 #readouts {
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
+  padding: 14px 16px 6px;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--line);
-  border-top: 1px solid var(--line);
+  gap: 16px;
 }
 
-.stat,
-.meters {
-  background: var(--panel);
-  padding: 9px 12px;
+.k {
+  display: block;
+  font: 700 13px/1.2 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.stat {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 
-.stat.wide {
-  grid-column: span 2;
-}
-
-/* The exhaust's make-up runs the full width, under the other figures. */
-.stat.exhaust {
-  grid-column: 1 / -1;
-}
-
-.meters {
-  grid-column: span 3;
-  gap: 5px;
-}
-
-.k {
-  color: var(--dim);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .v {
-  font-size: 26px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  font: 700 104px/0.9 var(--display);
+  letter-spacing: 0.005em;
+  margin-top: 4px;
+  transition: opacity 0.3s;
+}
+
+.v small {
+  margin-left: 0.18em;
+  font-size: 0.34em;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.v.mid {
+  font-size: 34px;
+  line-height: 1.05;
 }
 
 .v.small {
-  font-size: 17px;
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
 }
 
 .d {
   color: var(--dim);
-  font-size: 12px;
-  min-height: 1.4em;
+  font-size: 13px;
+  line-height: 1.35;
+  text-wrap: pretty;
 }
 
-.sim {
-  color: #b9c2d3;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  min-height: 1.4em;
+.d:empty {
+  display: none;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+}
+
+/* What every figure in the column is: a forecast for a cold engine, readings from a lit one. */
+.run {
+  margin: 0;
+  font: 700 15px/1.2 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.run:empty {
+  display: none;
+}
+
+#readouts[data-run='unlit'] .run,
+#readouts[data-run='starting'] .run {
+  color: var(--yellow);
+}
+
+/* Unlit, everything is a forecast and sits back together; it comes up to full strength as the engine does. */
+#readouts[data-run='unlit'] .hero .v,
+#readouts[data-run='unlit'] .pair .v,
+#readouts[data-run='unlit'] .pct,
+#readouts[data-run='unlit'] .fill,
+#readouts[data-run='unlit'] .state {
+  opacity: 0.5;
+}
+
+#readouts[data-run='unlit'] .state {
+  border-style: dashed;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
 }
 
 .state {
-  font-weight: 650;
-  margin-top: 2px;
+  align-self: flex-start;
+  margin: 5px 0 6px;
+  padding: 3px 9px 4px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font: 700 19px/1.1 var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
 }
 
 .state[data-state='ideal'],
 .state[data-state='compensating'] {
-  color: var(--ok);
+  color: var(--green);
 }
 
 .state[data-state='over'],
-.state[data-state='under'] {
-  color: var(--amber);
+.state[data-state='under'],
+.state[data-state='held'] {
+  color: var(--yellow);
 }
 
 .state[data-state='separated'] {
-  color: var(--red);
+  color: var(--red-text);
+}
+
+/* Limit gauges: a scale ticked every tenth, with the last stretch marked as the redline. */
+.gauges {
+  display: grid;
+  gap: 11px;
 }
 
 .meter {
   display: grid;
-  grid-template-columns: 96px 1fr 44px;
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  row-gap: 4px;
+}
+
+.pct {
+  font: 700 20px/1 var(--display);
+  text-align: right;
 }
 
 .bar {
-  height: 9px;
-  background: #0b0d12;
-  border-radius: 5px;
+  grid-column: 1 / -1;
+  position: relative;
+  height: 12px;
+  background: var(--well);
+  border-radius: 2px;
   overflow: hidden;
 }
 
+.bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(233, 236, 230, 0.28) calc(10% - 1px) 10%);
+}
+
+.redline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: calc(var(--redline) * 100%);
+  background: rgba(229, 55, 43, 0.4);
+  border-left: 2px solid var(--red);
+}
+
 .fill {
+  position: relative;
   display: block;
   height: 100%;
   width: 0;
-  background: var(--ok);
+  background: var(--green);
 }
 
 .meter[data-level='amber'] .fill {
-  background: var(--amber);
+  background: var(--yellow);
+}
+
+.meter[data-level='amber'] .pct {
+  color: var(--yellow);
 }
 
 .meter[data-level='red'] .fill {
   background: var(--red);
 }
 
-.pct {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.meter[data-level='red'] .pct {
+  color: var(--red-text);
 }
 
 .notes {
   margin: 0;
-  color: var(--amber);
-  font-size: 12px;
-  min-height: 1.4em;
+  color: var(--yellow);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
-@media (max-width: 1100px) {
-  body {
-    grid-template-columns: clamp(230px, 28vw, 330px) minmax(0, 1fr);
+.notes:empty {
+  display: none;
+}
+
+.more {
+  border-top: 1px solid var(--line);
+}
+
+.more > summary {
+  padding: 11px 0;
+  font-weight: 700;
+}
+
+.more[open] {
+  padding-bottom: 12px;
+}
+
+.more .stat {
+  margin-bottom: 12px;
+}
+
+.sim {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.sim:empty {
+  display: none;
+}
+
+.stat.exhaust .v.small {
+  font: 400 13.5px/1.45 var(--body);
+  letter-spacing: 0;
+}
+
+/* The test log: what happened, stamped with the time since ignition. */
+#log-box {
+  flex: 1 1 120px;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--ground);
+}
+
+#log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+#log li {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 8px;
+  animation: arrive 0.35s var(--ease);
+}
+
+#log time {
+  font: 700 14px/1.4 var(--display);
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+#log li[data-kind='fire'] {
+  font-weight: 700;
+}
+
+#log li[data-kind='warn'] {
+  color: var(--yellow);
+}
+
+#log li[data-kind='fail'] {
+  color: var(--red-text);
+  font-weight: 700;
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
-  /* The control panel is narrow here: the sweep buttons keep just their arrows. */
-  .actions button.sweep .label {
+}
+
+/* --- Tips ------------------------------------------------------------------ */
+
+#tip {
+  position: fixed;
+  z-index: 50;
+  max-width: 300px;
+  padding: 8px 11px 9px;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-wrap: pretty;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #stage.ignite #ignition,
+  #stage.ignite > canvas,
+  #stage.ignite > #stand,
+  #stage.ignite > #callouts,
+  #log li {
+    animation: none;
+  }
+  .stand,
+  button,
+  #fire {
+    transition: none;
+  }
+}
+
+/* --- Narrower desktops ----------------------------------------------------- */
+
+@media (max-width: 1240px) {
+  body {
+    grid-template-columns: 250px minmax(0, 1fr) 280px;
+  }
+  #blurb {
+    -webkit-line-clamp: 1;
+  }
+  /* The middle column is narrow here, so the console takes two rows: altitude beside Fire, and
+     under them the sweeps, which belong to altitude, beside throttle. */
+  #console {
+    --fire: 200px;
+    grid-template-columns: minmax(0, 1fr) var(--fire);
+    grid-template-areas: 'alt fire' 'sweeps thr';
+    gap: 10px 16px;
+    padding-inline: 14px;
+  }
+  /* The sweeps share the altitude column's width between them, so they never reach across to throttle. */
+  .sweeps {
+    justify-self: stretch;
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+  .sweep {
+    justify-content: center;
+    padding-inline: 6px;
+  }
+  .v {
+    font-size: 88px;
+  }
+  #fire {
+    width: var(--fire);
+    font-size: 28px;
+  }
+}
+
+/* The altitude scale is short beside Fire here, so it keeps three marks, not four. */
+@media (max-width: 1040px) {
+  .tick:nth-child(2) {
     display: none;
   }
-  .actions button.sweep {
-    font-size: 15px;
+  #console {
+    --fire: 172px;
+  }
+  /* The picture is narrow here: the view switch drops its words so it clears the clock. */
+  .stage-view span {
+    display: none;
+  }
+  .stage-view {
+    padding: 4px;
+  }
+  #fire {
+    font-size: 25px;
+  }
+}
+
+/* The product name gives way to the engine's here, but stays for a screen reader. */
+@media (min-width: 901px) and (max-width: 1240px) {
+  header h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* --- Phones and narrow windows: the picture and the console stay on screen; the rest scrolls under them. */
+
+@media (max-width: 900px) {
+  html,
+  body {
+    height: auto;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
   }
   header {
     flex-wrap: wrap;
-    row-gap: 6px;
+    gap: 6px;
+    padding: 8px 12px;
+  }
+  header h1 {
+    flex: 1 1 100%;
+    width: auto;
+    order: -2;
+    font-size: 12px;
+  }
+  .nameplate {
+    flex: 1 1 100%;
+    order: -1;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+  #engine-name {
+    font-size: 26px;
   }
   #blurb {
+    -webkit-line-clamp: 2;
+    font-size: 12.5px;
+  }
+  .spacer {
     display: none;
   }
-  #readouts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .stat.wide {
-    grid-column: span 1;
-  }
-  .meters {
-    grid-column: span 3;
-  }
-  .stat,
-  .meters {
-    padding: 6px 10px;
-  }
-  .v {
-    font-size: 20px;
-  }
-  .v.small {
+  header button,
+  .menu > summary {
+    padding: 7px 9px;
     font-size: 14px;
   }
-  .d,
-  .sim {
-    font-size: 11px;
-    min-height: 0;
+  main {
+    order: 1;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  #stage {
+    flex: none;
+    height: 36vh;
+    min-height: 200px;
+  }
+  .stage-view span {
+    display: none;
+  }
+  .stage-view {
+    padding: 4px;
+  }
+  #clock {
+    top: 8px;
+    left: 8px;
+    font-size: 14px;
+  }
+  #console {
+    --fire: 150px;
+    gap: 8px 12px;
+    padding: 8px 12px 10px;
+  }
+  #toast {
+    width: calc(100% - 24px);
+  }
+  #fire {
+    min-height: 50px;
+    font-size: 24px;
+  }
+  #arm {
+    font-size: 12px;
+  }
+  .sweep {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .tick:nth-child(2) {
+    display: none;
+  }
+  #data {
+    order: 2;
+    border-left: 0;
+  }
+  #readouts {
+    overflow: visible;
+  }
+  .v {
+    font-size: 84px;
+  }
+  #log-box {
+    flex: none;
+  }
+  #log {
+    max-height: 180px;
+  }
+  #build {
+    order: 3;
+    overflow: visible;
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+  select,
+  button {
+    padding-block: 9px;
+  }
+  #picker {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    max-height: calc(100vh - 16px);
+  }
+  #picker-list {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   }
 }

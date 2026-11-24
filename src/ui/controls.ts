@@ -1,7 +1,6 @@
 import { RANGES } from '../physics/engine';
 import { mixRange } from '../physics/gasSource';
 import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
-import { PRESETS } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
 import type { EngineConfig, EnergyId, ExhaustId, PropellantId } from '../physics/types';
 import { FUELS, FUEL_IDS, NO_OXIDISER, OXIDISERS, OXIDISER_IDS, type Ingredient } from '../physics/chem/ingredients';
@@ -30,6 +29,24 @@ interface SliderSpec {
   describe?(s: AppState): { label: string; tip: string };
   /** Hide the slider, and take it out of the layout, for engines it does not apply to */
   hidden?(s: AppState): boolean;
+  /**
+   * Spread the track by a power of its position, so the low end of the range gets most of the
+   * travel. Altitude uses it: nearly all the air is in the first tens of its hundred kilometres.
+   */
+  curve?: number;
+  /** Marks under the track, each at a value of the setting */
+  ticks?: { at: number; label: string }[];
+}
+
+/** How far along its track (0 to 1) a curved slider sits at a value. */
+export function curvePosition(v: number, range: { min: number; max: number }, curve: number): number {
+  const f = (v - range.min) / (range.max - range.min);
+  return Math.pow(Math.min(1, Math.max(0, f)), 1 / curve);
+}
+
+/** The value a curved slider stands for at a position along its track (0 to 1). */
+export function curveValue(f: number, range: { min: number; max: number }, curve: number): number {
+  return range.min + (range.max - range.min) * Math.pow(Math.min(1, Math.max(0, f)), curve);
 }
 
 /** The sliders that shape the nozzle, which each exhaust type shows or leaves out. */
@@ -113,9 +130,6 @@ export function formatMixture(v: number, kind: MixKind, noOxidiser: boolean): st
   return kind === 'temperature' ? `${Math.round(v).toLocaleString('en-US')} K` : 'fixed in the grain';
 }
 
-/** Value of the Examples menu entry that starts a blank engine. */
-export const NEW_ENGINE = '__new';
-
 const STEPS = 1000;
 
 export function formatLength(m: number): string {
@@ -131,8 +145,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return node;
 }
 
-/** Builds the left-hand control panel. Returns a function that syncs it to the latest state. */
-export function createControls(root: HTMLElement, store: Store): (s: AppState) => void {
+/**
+ * Builds the controls: the parts and the tuning sliders into the Build panel, and altitude and
+ * throttle into the console under the picture. Returns a function that syncs them to the latest state.
+ */
+export function createControls(root: HTMLElement, flightRoot: HTMLElement, store: Store): (s: AppState) => void {
   const dim = (key: 'chamberDia' | 'chamberLen' | 'throatDia' | 'exitDia', label: string): SliderSpec => ({
     id: key,
     label,
@@ -164,9 +181,10 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       : 0.01;
   };
 
-  const groups: { title: string; selects?: SelectSpec[]; sliders: SliderSpec[] }[] = [
+  const groups: { title: string; place: 'parts' | 'tune' | 'flight'; selects?: SelectSpec[]; sliders: SliderSpec[] }[] = [
     {
       title: 'Parts',
+      place: 'parts',
       selects: [
         {
           id: 'energy',
@@ -225,7 +243,8 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       sliders: [],
     },
     {
-      title: 'Engine',
+      title: 'Size and pressure',
+      place: 'tune',
       sliders: [
         {
           id: 'scale',
@@ -303,7 +322,8 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       ],
     },
     {
-      title: 'Propellant',
+      title: 'Mixture',
+      place: 'tune',
       sliders: [
         {
           id: 'mixtureRatio',
@@ -333,6 +353,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
     },
     {
       title: 'Flight',
+      place: 'flight',
       sliders: [
         {
           id: 'altitudeKm',
@@ -342,6 +363,13 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.flight.altitudeKm,
           set: (v) => store.set({ flight: { altitudeKm: Math.round(v * 10) / 10 } }),
           format: (v) => (v >= 86 ? `${v.toFixed(0)} km · vacuum` : `${v.toFixed(1)} km`),
+          curve: 2,
+          ticks: [
+            { at: 0, label: 'Sea level' },
+            { at: 10, label: '10 km' },
+            { at: 40, label: '40 km' },
+            { at: 86, label: 'Vacuum' },
+          ],
         },
         {
           id: 'throttle',
@@ -361,8 +389,24 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
 
   const syncers: ((s: AppState) => void)[] = [];
 
+  // The sliders that size and tune the engine sit folded away until asked for.
+  const tune = el('details', 'tune');
+  tune.append(el('summary', undefined, 'Tune the engine'));
+  try {
+    tune.open = localStorage.getItem('tune-open') === '1';
+  } catch {
+    // Storage can be blocked; the panel just starts folded.
+  }
+  tune.addEventListener('toggle', () => {
+    try {
+      localStorage.setItem('tune-open', tune.open ? '1' : '0');
+    } catch {
+      // Not remembered, then.
+    }
+  });
+
   for (const group of groups) {
-    const box = el('section', 'group');
+    const box = el('section', `group ${group.place}`);
     box.append(el('h2', undefined, group.title));
     for (const spec of group.selects ?? []) {
       const row = el('label', 'row');
@@ -425,6 +469,16 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       input.max = String(STEPS);
       input.step = '1';
       row.append(head, input);
+      if (spec.ticks && spec.curve) {
+        const marks = el('span', 'ticks');
+        marks.setAttribute('aria-hidden', 'true');
+        for (const t of spec.ticks) {
+          const mark = el('span', 'tick', t.label);
+          mark.style.setProperty('--at', String(curvePosition(t.at, spec.range(store.get()), spec.curve)));
+          marks.append(mark);
+        }
+        row.append(marks);
+      }
       box.append(row);
 
       const isLog = (s: AppState) => (typeof spec.log === 'function' ? spec.log(s) : (spec.log ?? false));
@@ -433,11 +487,13 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
         if (stepOf(s) !== null) return pos;
         const { min, max } = spec.range(s);
         const f = pos / STEPS;
+        if (spec.curve) return curveValue(f, { min, max }, spec.curve);
         return isLog(s) ? min * Math.pow(max / min, f) : min + (max - min) * f;
       };
       const toPos = (v: number, s: AppState) => {
         if (stepOf(s) !== null) return v;
         const { min, max } = spec.range(s);
+        if (spec.curve) return Math.round(curvePosition(v, { min, max }, spec.curve) * STEPS);
         const f = isLog(s) ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
         return Math.round(Math.min(1, Math.max(0, f)) * STEPS);
       };
@@ -470,27 +526,14 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
         row.classList.toggle('disabled', off);
       });
     }
-    root.append(box);
+    if (group.place === 'flight') flightRoot.append(box);
+    else if (group.place === 'tune') tune.append(box);
+    else root.append(box);
   }
+  root.append(tune);
 
   const sync = (s: AppState) => syncers.forEach((fn) => fn(s));
   store.subscribe(sync);
   sync(store.get());
   return sync;
-}
-
-export function fillPresetSelect(select: HTMLSelectElement): void {
-  const fresh = el('option', undefined, 'New engine');
-  fresh.value = NEW_ENGINE;
-  fresh.title = 'Start again from a blank engine.';
-  select.append(fresh);
-  for (const p of PRESETS) {
-    const opt = el('option', undefined, p.name);
-    opt.value = p.id;
-    select.append(opt);
-  }
-  const custom = el('option', undefined, 'Your engine');
-  custom.value = '';
-  custom.hidden = true;
-  select.append(custom);
 }

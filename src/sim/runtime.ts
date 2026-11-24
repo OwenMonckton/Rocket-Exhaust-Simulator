@@ -23,13 +23,38 @@ export interface FrameInfo {
   stock: SimResult | null;
   stockName: string | null;
   firing: boolean;
+  /** How far the engine has run up: 0 unlit, 1 at full power */
+  fire: number;
   /** Altitude sweep in progress: 1 climbing, -1 descending, 0 none */
   sweep: Sweep;
   failure: Failure;
+  /** Where the engine sits in the picture, in CSS pixels, for anything drawn over it */
+  layout: StageLayout;
   /** Thrust, flow and efficiency worked out from the simulated gas; null when there are none to show */
   simulated: SimulatedFigures | null;
   /** Why there are none, in a few words; empty when there are, or when there is nothing to say */
   simulatedNote: string;
+}
+
+/** The engine's place in the picture: x of its injector face, its centreline, and its main stations. */
+export interface StageLayout {
+  /** Pixels per metre */
+  ppm: number;
+  /** x of the injector face */
+  originX: number;
+  centreY: number;
+  /** x of the end of the chamber, the throat and the exit */
+  chamberEndX: number;
+  throatX: number;
+  exitX: number;
+  /** Half the height of everything drawn, and the length ahead of the injector face, px */
+  halfHeight: number;
+  frontSpace: number;
+  /** Radius of the wall at the injector face and at the exit, px */
+  chamberRadius: number;
+  exitRadius: number;
+  /** How many chambers are drawn side by side */
+  chambersDrawn: number;
 }
 
 export interface Runtime {
@@ -450,10 +475,24 @@ export function createRuntime(
         stock: preset && modified ? simulate(preset.config, state.flight) : null,
         stockName: preset?.name ?? null,
         firing,
+        fire,
         sweep,
         failure,
         simulated,
         simulatedNote,
+        layout: {
+          ppm: view.ppm,
+          originX: view.originX,
+          centreY: view.centreY,
+          chamberEndX: view.originX + profile.chamberEndX * view.ppm,
+          throatX: view.originX + profile.throatX * view.ppm,
+          exitX: view.originX + profile.exitX * view.ppm,
+          halfHeight: profile.halfHeight * view.ppm,
+          frontSpace: profile.frontSpace * view.ppm,
+          chamberRadius: profile.points[0].r * view.ppm,
+          exitRadius: profile.points[profile.points.length - 1].r * view.ppm,
+          chambersDrawn: profile.offsets.length,
+        },
       });
     }
     requestAnimationFrame(frame);

@@ -3,73 +3,121 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1f2623" />
     <title>Rocket Engine Simulator</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <header>
       <h1>Rocket Engine Simulator</h1>
-      <label class="preset" title="Load a real engine as a starting point, or start again from a blank one.">
-        <span>Examples</span>
-        <select id="preset"></select>
-      </label>
-      <button id="reset" title="Undo your changes and go back to the example as it really is.">Reset to stock</button>
-      <button id="deploy" hidden>Stow nozzle</button>
-      <span id="blurb"></span>
+      <div class="nameplate">
+        <span id="engine-name"></span>
+        <span id="blurb"></span>
+      </div>
+      <div class="head-actions">
+        <button id="change-engine" aria-haspopup="dialog" aria-expanded="false" aria-controls="picker">Change engine</button>
+        <button id="reset" hidden title="Undo your changes and go back to the example as it really is.">Undo changes</button>
+        <button id="deploy" hidden>Stow nozzle</button>
+      </div>
       <span class="spacer"></span>
-      <label class="preset" title="Simulated: a gas simulation works out the plume itself. Drawn: the plume is shaped by formulas, which is lighter on your graphics card.">
-        <span>Plume</span>
-        <select id="plume-mode">
-          <option value="sim">Simulated</option>
-          <option value="drawn">Drawn</option>
-        </select>
-      </label>
-      <label class="preset" title="Simulated: a gas simulation works out the flow inside the engine, from the combustion chamber to the nozzle exit. Drawn: the gas is painted on from formulas.">
-        <span>Engine gas</span>
-        <select id="engine-gas">
-          <option value="sim">Simulated</option>
-          <option value="drawn">Drawn</option>
-        </select>
-      </label>
-      <label class="preset">
-        <span>Show inside</span>
-        <select id="overlay">
-          <option value="none">Flame</option>
-          <option value="mach">Gas speed</option>
-          <option value="temp">Gas temperature</option>
-        </select>
-      </label>
+      <details class="menu" id="display-menu">
+        <summary>Display</summary>
+        <div class="menu-body">
+          <label class="field" title="Simulated: a gas simulation works out the plume itself. Drawn: the plume is shaped by formulas, which is lighter on your graphics card.">
+            <span>Plume</span>
+            <select id="plume-mode">
+              <option value="sim">Simulated</option>
+              <option value="drawn">Drawn (lighter)</option>
+            </select>
+          </label>
+          <label class="field" title="Simulated: a gas simulation works out the flow inside the engine, from the combustion chamber to the nozzle exit. Drawn: the gas is painted on from formulas.">
+            <span>Gas inside the engine</span>
+            <select id="engine-gas">
+              <option value="sim">Simulated</option>
+              <option value="drawn">Drawn (lighter)</option>
+            </select>
+          </label>
+        </div>
+      </details>
       <button id="sound" aria-pressed="false" title="Turn the engine rumble on or off.">Sound off</button>
       <button id="share" title="Copy a link to this exact engine.">Share</button>
     </header>
-    <aside>
-      <div id="controls"></div>
-      <div class="actions">
-        <button id="ascent" class="sweep"><span class="icon">▲</span><span class="label"> Ascend</span></button>
-        <button id="descent" class="sweep"><span class="icon">▼</span><span class="label"> Descend</span></button>
-        <button id="fire" class="primary">Fire</button>
+
+    <div id="picker" role="dialog" aria-label="Choose an engine" hidden>
+      <div class="picker-head">
+        <h2>Choose an engine</h2>
+        <button id="picker-close">Close</button>
       </div>
+      <div id="picker-list"></div>
+    </div>
+
+    <aside id="build" aria-label="Build">
+      <div id="controls"></div>
     </aside>
+
     <main>
       <div id="stage">
         <canvas id="gl"></canvas>
+        <svg id="stand" aria-hidden="true"></svg>
         <canvas id="overlay-canvas"></canvas>
+        <div id="callouts"></div>
+        <div id="ignition" aria-hidden="true"></div>
+        <div id="clock"></div>
+        <label class="field stage-view">
+          <span>Show inside</span>
+          <select id="overlay" aria-label="Show inside">
+            <option value="none">Flame</option>
+            <option value="mach">Gas speed</option>
+            <option value="temp">Gas temperature</option>
+          </select>
+        </label>
         <div id="nogl" hidden>
           Your browser doesn't support WebGL2, so the plume can't be drawn. The engine and the numbers still work.
         </div>
-        <div id="failure" hidden>
+        <div id="failure" role="alert" hidden>
           <h2></h2>
           <p></p>
-          <button id="rebuild" class="primary">Rebuild engine</button>
+          <button id="rebuild">Rebuild engine</button>
         </div>
-        <div id="toast" hidden></div>
+        <div id="toast" role="status" hidden></div>
         <div id="zoom" title="Zoom out to see more of the plume. The mouse wheel works too.">
-          <button id="zoom-out" aria-label="Zoom out">−</button>
-          <button id="zoom-in" aria-label="Zoom in">+</button>
+          <button id="zoom-out" aria-label="Zoom out">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+          </button>
+          <button id="zoom-in" aria-label="Zoom in">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10" /></svg>
+          </button>
         </div>
       </div>
-      <section id="readouts"></section>
+
+      <section id="console" aria-label="Test console">
+        <div id="flight"></div>
+        <div class="sweeps">
+          <button id="ascent" class="sweep">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="go" d="M8 3l5 9H3z" /><path class="pause" d="M4 3h3v10H4zM9 3h3v10H9z" /></svg>
+            <span class="label">Ascend</span>
+          </button>
+          <button id="descent" class="sweep">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path class="go" d="M8 13l5-9H3z" /><path class="pause" d="M4 3h3v10H4zM9 3h3v10H9z" /></svg>
+            <span class="label">Descend</span>
+          </button>
+        </div>
+        <div class="firebox">
+          <span id="arm" data-state="armed">Armed</span>
+          <button id="fire" class="primary">Fire</button>
+        </div>
+      </section>
     </main>
+
+    <aside id="data" aria-label="Test data">
+      <section id="readouts"></section>
+      <section id="log-box">
+        <h2>Test log</h2>
+        <ol id="log" aria-live="polite"></ol>
+      </section>
+    </aside>
+
+    <div id="tip" role="tooltip" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
