@@ -152,6 +152,14 @@ describe('swapping between the new exhaust types', () => {
     const moved = sanitize({ ...first, innerExitDia: 1.3 * first.throatDia });
     expect(withExhaust(withExhaust(moved, 'cone'), 'dualBell').innerExitDia).toBeCloseTo(moved.innerExitDia, 9);
   });
+  it("carries a dual bell's kink in proportion through an aerospike, when the chamber count changes", () => {
+    const rd180 = PRESETS.find((p) => p.id === 'rd-180')!.config;
+    const first = withExhaust(rd180, 'dualBell');
+    const from = sanitize({ ...first, innerExitDia: 1.3 * first.throatDia });
+    const back = withExhaust(withExhaust(from, 'aerospike'), 'dualBell');
+    expect(back.chambers).not.toBe(from.chambers);
+    expect(back.innerExitDia / back.throatDia).toBeCloseTo(from.innerExitDia / from.throatDia, 6);
+  });
   it('drops an extension on leaving a bell, and stays finite', () => {
     const rl10 = PRESETS.find((p) => p.id === 'rl10b-2')!.config;
     for (const to of ['cone', 'dualBell', 'none'] as const) {

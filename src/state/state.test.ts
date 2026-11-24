@@ -141,6 +141,15 @@ describe('share links', () => {
     expect(opened.exhaust).toBe('bell');
     expect(opened.chamberPressureBar).toBe(137);
   });
+  it('still refuses a v3 link naming an exhaust it does not know, and a v4 link of v3 length', () => {
+    const cfg = starterEngine();
+    const packed = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const link = (version: string, a: unknown[]) => version + '.' + btoa(JSON.stringify(a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const v3 = packed.slice(0, 20);
+    expect(decodeState(link('v3', v3))!.config.exhaust).toBe('bell');
+    expect(decodeState(link('v3', [...v3.slice(0, 2), 'expansion-deflection', ...v3.slice(3)]))).toBeNull();
+    expect(decodeState(link('v4', v3))).toBeNull();
+  });
 });
 
 describe('store', () => {
@@ -152,6 +161,17 @@ describe('store', () => {
     }
     expect(applyScale(cfg, 2).throatDia).toBeCloseTo(cfg.throatDia * 2, 9);
     expect(applyScale(cfg, 99).scale).toBe(5);
+  });
+  it("scales a dual bell's kink with the rest of the engine, and back again", () => {
+    const store = createStore(defaultState());
+    store.setExhaust('dualBell');
+    const before = store.get().config;
+    expect(before.innerExitDia).toBeGreaterThan(0);
+    store.setScale(2);
+    expect(store.get().config.innerExitDia).toBeCloseTo(before.innerExitDia * 2, 9);
+    store.setScale(1);
+    expect(store.get().config.innerExitDia).toBeCloseTo(before.innerExitDia, 9);
+    expect(store.get().config.throatDia).toBeCloseTo(before.throatDia, 9);
   });
   it('tracks modification against the stock preset', () => {
     const store = createStore(defaultState());

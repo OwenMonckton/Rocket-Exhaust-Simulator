@@ -21,7 +21,7 @@ export interface EngineAnim {
   flowExitX: number;
   /** True when the gas inside the engine comes from the gas simulation, drawn underneath this view */
   simGas?: boolean;
-  /** True when the gas simulation is working out a separated jet for itself, so the view is not clipped to where a formula says the jet is */
+  /** True when the gas simulation is working out a jet that has left the wall (torn off, or held at a dual bell's kink) for itself, so the view is not clipped to where a formula says the jet is */
   wholeNozzle?: boolean;
   /** How far a solid motor's grain has burned: 0 fresh, 1 nothing left */
   burnt?: number;

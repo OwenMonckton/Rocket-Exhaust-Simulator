@@ -7,7 +7,7 @@ import type { AppState } from './share';
 
 export type { AppState };
 
-const SCALED: (keyof EngineConfig)[] = ['chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall', 'extFixedDia'];
+const SCALED: (keyof EngineConfig)[] = ['chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall', 'extFixedDia', 'innerExitDia'];
 
 /** Grow or shrink the whole engine: every dimension, and the wall, by the same factor. */
 export function applyScale(cfg: EngineConfig, newScale: number): EngineConfig {
