@@ -63,7 +63,7 @@ describe('share links', () => {
   it('reads v1 and v2 links exactly as before, with the tabled pair filled in (review focus 5)', () => {
     // Expected engines are what the links decoded to before Task 10 (share.ts at cb88400).
     const nums = [0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 1, 0, 1];
-    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1 };
+    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1, coneAngleDeg: 15, innerExitDia: 0 };
     const flight = { altitudeKm: 0, throttle: 1 };
     const v2 = decodeState('v2.' + btoa(JSON.stringify([null, 'combustion', 'bell', 'kerolox', ...nums])))!;
     expect(v2).toEqual({ config: { presetId: null, energy: 'combustion', exhaust: 'bell', propellant: 'kerolox', fuel: 'rp1', oxidiser: 'lox', mixtureRatio: 2.36, ...shape }, flight });

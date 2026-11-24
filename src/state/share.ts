@@ -124,6 +124,9 @@ export function decodeState(hash: string): AppState | null {
       chambers: n[11],
       extFixedDia: n[12],
       extDeploy: n[13],
+      // Not in the link yet: sanitize sets a dual bell's kink.
+      coneAngleDeg: 15,
+      innerExitDia: 0,
     });
     return { config, flight: sanitizeFlight({ altitudeKm: n[9], throttle: n[10] }) };
   } catch {

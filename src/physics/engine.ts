@@ -10,7 +10,8 @@ import {
 } from './nozzle';
 import { FUEL_IDS, OXIDISER_IDS, isFuelId, isOxidiserId } from './chem/ingredients';
 import { mixRange, resolveGas, type GasSource } from './gasSource';
-import { ENERGY_SOURCES, isEnergyId, isExhaustId, propellantsFor } from './parts';
+import { ENERGY_SOURCES, isEnergyId, propellantsFor } from './parts';
+import { EXHAUSTS, defaultInnerExitDia, isExhaustId } from './exhausts';
 import { PROPELLANTS, isPropellantId } from './propellants';
 import type { EngineConfig, ExpansionState, FlightState, SimResult } from './types';
 
@@ -47,6 +48,10 @@ export const RANGES = {
   /** An aerospike's thrust cells, which all feed one spike */
   cells: { min: 1, max: 40, fallback: 20 },
   extFixedDia: { min: 0, max: 25, fallback: 0 },
+  /** Half-angle of a plain cone, degrees */
+  coneAngleDeg: { min: 8, max: 30, fallback: 15 },
+  /** Diameter at a dual bell's kink, m; 0 means not set yet */
+  innerExitDia: { min: 0, max: 25, fallback: 0 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
@@ -74,11 +79,18 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
   const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
-  // An aerospike has no bell to extend.
+  // Only a bell has one to extend.
   const exhaust = isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
-  const aerospike = exhaust === 'aerospike';
+  const type = EXHAUSTS[exhaust];
   let extFixedDia = clampTo(cfg.extFixedDia, RANGES.extFixedDia);
-  if (aerospike || extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
+  if (!type.extension || extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
+  let innerExitDia = clampTo(cfg.innerExitDia, RANGES.innerExitDia);
+  if (exhaust === 'dualBell') {
+    if (!(innerExitDia > 0)) innerExitDia = defaultInnerExitDia(throatDia, exitDia);
+    const lo = 1.1 * throatDia;
+    const hi = 0.95 * exitDia;
+    innerExitDia = lo <= hi ? Math.min(hi, Math.max(lo, innerExitDia)) : (throatDia + exitDia) / 2;
+  }
   return {
     presetId: typeof cfg.presetId === 'string' ? cfg.presetId : null,
     energy,
@@ -97,9 +109,11 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
       ? Math.min(mix.ofMax, Math.max(mix.ofMin, cfg.mixtureRatio))
       : mix.ofDefault,
     scale: clampTo(cfg.scale, RANGES.scale),
-    chambers: Math.round(clampTo(cfg.chambers, aerospike ? RANGES.cells : RANGES.chambers)),
+    chambers: Math.round(clampTo(cfg.chambers, type.counts === 'cells' ? RANGES.cells : RANGES.chambers)),
     extFixedDia,
     extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
+    coneAngleDeg: clampTo(cfg.coneAngleDeg, RANGES.coneAngleDeg),
+    innerExitDia,
   };
 }
 

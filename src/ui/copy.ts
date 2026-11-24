@@ -49,11 +49,16 @@ export const AEROSPIKE_DIMS = {
 };
 
 /** Name and tip of the slider that sets how many chambers, or thrust cells, the engine has. */
+const BELL_COUNT = {
+  label: 'Chambers',
+  tip: 'How many identical chambers share the engine. Thrust and propellant flow rise with each one.',
+};
+
 export const COUNT_COPY = {
-  bell: {
-    label: 'Chambers',
-    tip: 'How many identical chambers share the engine. Thrust and propellant flow rise with each one.',
-  },
+  bell: BELL_COUNT,
+  cone: { ...BELL_COUNT },
+  dualBell: { ...BELL_COUNT },
+  none: { ...BELL_COUNT },
   aerospike: {
     label: 'Thrust cells',
     tip: 'How many small chambers fire along the spike. Thrust and propellant flow rise with each one.',
@@ -84,6 +89,10 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   separated: {
     label: 'Flow separation!',
     text: 'The nozzle is far too big for this altitude. The exhaust has torn away from the nozzle wall, wasting thrust.',
+  },
+  held: {
+    label: 'Held at the kink',
+    text: 'The jet of this dual bell is being held at the kink on purpose, so it only fills the short inner bell and wastes less thrust.',
   },
 };
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from './engine';
 import { PRESETS } from './presets';
-import type { EngineConfig, SimResult } from './types';
+import type { EngineConfig, ExhaustId, SimResult } from './types';
 
 const base: EngineConfig = {
   presetId: null,
@@ -22,6 +22,8 @@ const base: EngineConfig = {
   extFixedDia: 0,
   extDeploy: 1,
   exhaust: 'bell' as const,
+  coneAngleDeg: 15,
+  innerExitDia: 0,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 
@@ -31,6 +33,35 @@ function allFinite(r: SimResult) {
   }
   for (const v of Object.values(r.limits)) expect(Number.isFinite(v)).toBe(true);
 }
+
+describe('sanitize with the new exhausts', () => {
+  it('makes an unknown exhaust a bell', () => {
+    expect(sanitize({ ...base, exhaust: 'warp' as ExhaustId }).exhaust).toBe('bell');
+  });
+  it('keeps a cone angle within 8 to 30 degrees, 15 where it is not a number', () => {
+    expect(sanitize({ ...base, coneAngleDeg: 2 }).coneAngleDeg).toBe(8);
+    expect(sanitize({ ...base, coneAngleDeg: 90 }).coneAngleDeg).toBe(30);
+    expect(sanitize({ ...base, coneAngleDeg: NaN }).coneAngleDeg).toBe(15);
+  });
+  it('keeps a dual bell kink between the throat and the exit, and sets one that is not set', () => {
+    const dual = { ...base, exhaust: 'dualBell' as const, throatDia: 0.2, exitDia: 2 };
+    expect(sanitize({ ...dual, innerExitDia: 0 }).innerExitDia).toBeCloseTo(0.2 * Math.sqrt(10), 9);
+    expect(sanitize({ ...dual, innerExitDia: 0.05 }).innerExitDia).toBeCloseTo(1.1 * 0.2, 9);
+    expect(sanitize({ ...dual, innerExitDia: 9 }).innerExitDia).toBeCloseTo(0.95 * 2, 9);
+  });
+  it('keeps a dual bell kink in order where the exit is barely wider than the throat', () => {
+    const tight = sanitize({ ...base, exhaust: 'dualBell', throatDia: 0.2, exitDia: 0.21, innerExitDia: 0.5 });
+    expect(tight.innerExitDia).toBeGreaterThan(tight.throatDia);
+    expect(tight.innerExitDia).toBeLessThan(tight.exitDia);
+  });
+  it('leaves the kink setting alone on other exhausts, and drops an extension from anything but a bell', () => {
+    expect(sanitize({ ...base, exhaust: 'cone', innerExitDia: 0.7 }).innerExitDia).toBe(0.7);
+    const rl10 = PRESETS.find((p) => p.id === 'rl10b-2')!.config;
+    expect(sanitize({ ...rl10, exhaust: 'cone' }).extFixedDia).toBe(0);
+    expect(sanitize({ ...rl10, exhaust: 'dualBell' }).extFixedDia).toBe(0);
+    expect(sanitize({ ...rl10, exhaust: 'none' }).extFixedDia).toBe(0);
+  });
+});
 
 describe('aerospike', () => {
   it('only exists as a real choice, and never with a nozzle extension', () => {

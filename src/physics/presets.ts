@@ -167,6 +167,8 @@ function build(s: Spec): Preset {
       // Deployable extension: stock engines have it seated.
       extFixedDia: s.epsStowed ? round(throatDia * Math.sqrt(s.epsStowed)) : 0,
       extDeploy: 1,
+      coneAngleDeg: 15,
+      innerExitDia: 0,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };

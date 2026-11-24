@@ -262,6 +262,8 @@ export function starterEngine(): EngineConfig {
     chambers: 1,
     extFixedDia: 0,
     extDeploy: 1,
+    coneAngleDeg: 15,
+    innerExitDia: 0,
   };
   const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, lStarRefOf(unshaped));
   return sanitize({ ...unshaped, ...shape, wall: round(wallFor(pcBar, shape.chamberDia, 0.5)) });
