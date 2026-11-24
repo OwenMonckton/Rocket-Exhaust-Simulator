@@ -48,9 +48,9 @@ describe('share links', () => {
   });
   it('writes links that carry the three parts', () => {
     const text = encodeState({ config: getPreset('nerva')!.config, flight: { altitudeKm: 100, throttle: 1 } });
-    expect(text.startsWith('v3.')).toBe(true);
+    expect(text.startsWith('v4.')).toBe(true);
     const packed = JSON.parse(atob(text.slice(3).replace(/-/g, '+').replace(/_/g, '/')));
-    expect(packed).toHaveLength(20);
+    expect(packed).toHaveLength(22);
     expect(packed.slice(0, 4)).toEqual(['nerva', 'reactor', 'bell', 'ntr-hydrogen']);
     expect(packed.slice(4, 6)).toEqual([getPreset('nerva')!.config.fuel, getPreset('nerva')!.config.oxidiser]);
   });
@@ -73,7 +73,7 @@ describe('share links', () => {
   it('opens a v3 link with an unknown or malformed fuel or oxidiser, sanitised, and refuses a wrong length (review focus 5)', () => {
     const calc = sanitize({ ...PRESETS[0].config, presetId: null, propellant: 'calculated', fuel: 'b5h9', oxidiser: 'of2', mixtureRatio: 3.1 });
     const good = encodeState({ config: calc, flight: { altitudeKm: 0, throttle: 1 } });
-    const packed = JSON.parse(atob(good.slice(3).replace(/-/g, '+').replace(/_/g, '/'))) as unknown[];
+    const packed = (JSON.parse(atob(good.slice(3).replace(/-/g, '+').replace(/_/g, '/'))) as unknown[]).slice(0, 20); // the v3 form: without the cone angle and kink
     expect(packed.slice(3, 6)).toEqual(['calculated', 'b5h9', 'of2']);
     const link = (a: unknown[]) => 'v3.' + btoa(JSON.stringify(a));
     const edit = (fuel: unknown, oxidiser: unknown) => {
@@ -118,6 +118,28 @@ describe('share links', () => {
     expect(s.flight.throttle).toBe(0.4);
     const r = simulate(s.config, s.flight);
     expect(Number.isFinite(r.thrust)).toBe(true);
+  });
+  it('carries a cone angle and a dual bell kink through a link', () => {
+    const cone = sanitize({ ...starterEngine(), exhaust: 'cone', coneAngleDeg: 22 });
+    expect(decodeState(encodeState({ config: cone, flight: { altitudeKm: 12, throttle: 0.8 } }))!.config).toEqual(cone);
+    const dual = sanitize({ ...starterEngine(), exhaust: 'dualBell', innerExitDia: 0.31 });
+    expect(decodeState(encodeState({ config: dual, flight: { altitudeKm: 0, throttle: 1 } }))!.config).toEqual(dual);
+  });
+  it('opens a v3 link as the same engine with the new settings at their defaults', () => {
+    // Build the v3 form by hand: the v4 array without its last two entries.
+    const cfg = PRESETS.find((p) => p.id === 'merlin-1d')!.config;
+    const v4 = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const v3 = 'v3.' + btoa(JSON.stringify(v4.slice(0, 20))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    expect(decodeState(v3)!.config).toEqual(cfg);
+  });
+  it('opens a link naming an exhaust it does not know as a bell, with the rest intact', () => {
+    const cfg = sanitize({ ...starterEngine(), chamberPressureBar: 137 });
+    const packed = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    packed[2] = 'expansion-deflection';
+    const link = 'v4.' + btoa(JSON.stringify(packed)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const opened = decodeState(link)!.config;
+    expect(opened.exhaust).toBe('bell');
+    expect(opened.chamberPressureBar).toBe(137);
   });
 });
 
