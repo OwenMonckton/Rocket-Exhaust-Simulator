@@ -9,7 +9,7 @@ import { STATE_COPY, TIPS, failureCopy } from './ui/copy';
 import { NEW_ENGINE, createPicker } from './ui/picker';
 import { createReadouts } from './ui/readouts';
 import { createStand } from './ui/stand';
-import { createTestLog } from './ui/testlog';
+import { createTestLog, stamp } from './ui/testlog';
 import { createTips } from './ui/tips';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -111,6 +111,7 @@ partsBox.addEventListener('focusout', () => stand.highlight(null));
 const fireBtn = $<HTMLButtonElement>('fire');
 const arm = $('arm');
 const stage = $('stage');
+const clock = $('clock');
 const failureBox = $('failure');
 const rebuildBtn = $<HTMLButtonElement>('rebuild');
 
@@ -171,6 +172,12 @@ const runtime = createRuntime(store, stage, $<HTMLCanvasElement>('gl'), $<HTMLCa
   record(info);
   const ids = partIds();
   stand.update(info.layout, store.get().flight.altitudeKm, ids);
+  // The ignition flash comes from the nozzle exit, wherever this engine's is.
+  stage.style.setProperty('--exit-x', `${info.layout.exitX.toFixed(0)}px`);
+  stage.style.setProperty('--exit-y', `${info.layout.centreY.toFixed(0)}px`);
+  const clockText = info.failure ? 'Test ended' : info.firing ? `Hot-fire ${stamp(log.elapsed())}` : 'Standby';
+  if (clock.textContent !== clockText) clock.textContent = clockText;
+  clock.dataset.state = info.failure ? 'failed' : info.firing ? 'firing' : 'standby';
   for (const id of ids) {
     const name = document.getElementById(id)?.closest('.row')?.querySelector('.name')?.textContent ?? id;
     stand.label(id, `${name}: go to its picker`);
@@ -316,3 +323,6 @@ $('share').addEventListener('click', async () => {
 });
 
 announceEngine();
+
+// For screenshots while developing: open the page with ?fire to have the engine already lit.
+if (import.meta.env.DEV && new URLSearchParams(location.search).has('fire')) runtime.toggleFire();

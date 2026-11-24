@@ -50,10 +50,11 @@ function delta(now: number, stock: number): string {
 }
 
 const html = `
+  <p class="run" data-r="run" aria-live="polite"></p>
   <div class="gauges" data-r="meters"></div>
   <div class="hero" title="The push the engine produces right now.">
-    <span class="k">Thrust <span class="tag" data-r="thrustTag"></span></span>
-    <span class="v" data-r="thrust"></span><span class="d" data-r="thrustSub"></span>
+    <span class="k">Thrust</span>
+    <span class="v"><span data-r="thrust"></span><small data-r="thrustUnit"></small></span><span class="d" data-r="thrustSub"></span>
   </div>
   <div class="pair">
     <div class="stat" title="Specific impulse: how much push you get per kilogram of propellant each second. Higher is more efficient.">
@@ -139,14 +140,18 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
       for (const name of gasFigures) set(name, name.endsWith('Sub') || name === 'stateText' ? '' : dash);
       delete get('state').dataset.state;
       for (const name of ['thrustSim', 'ispSim', 'flowSim']) set(name, '');
-      set('thrustTag', '');
+      set('thrustUnit', '');
+      set('run', '');
       set('notes', limitNote(r));
       return;
     }
 
     // While the engine runs up or down, the thrust shown is the share of full thrust it has reached.
-    set('thrust', fmtThrust(fire > 0 && fire < 1 ? r.thrust * fire : r.thrust));
-    set('thrustTag', fire <= 0 ? 'predicted' : fire < 1 ? 'running up' : '');
+    const [thrustNumber, thrustUnit] = fmtThrust(fire > 0 && fire < 1 ? r.thrust * fire : r.thrust).split(' ');
+    set('thrust', thrustNumber);
+    set('thrustUnit', thrustUnit);
+    // One line says what every figure below it is: a forecast for a cold engine, or readings from a lit one.
+    set('run', fire <= 0 ? 'Forecast: the engine is unlit' : fire < 1 ? 'Running up' : 'Live readings');
     const tonnes = r.thrust / 9806.65;
     const lift = tonnes >= 10 ? `${tonnes.toFixed(0)} tonnes of push` : `${tonnes.toFixed(1)} tonnes of push`;
     set('thrustSub', stock ? delta(r.thrust, stock.thrust) : lift);

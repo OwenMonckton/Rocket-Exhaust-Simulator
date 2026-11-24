@@ -89,9 +89,9 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
       stand.style.opacity = String(share);
       stand.style.transform = `translateY(${((1 - share) * 60).toFixed(1)}px)`;
       const chamberEdge = l.chambersDrawn > 1 ? l.halfHeight : Math.min(l.chamberRadius, l.halfHeight);
-      // The engine is held well clear of the ground, which stays a strip along the foot of the picture.
-      const groundY = Math.max(l.centreY + l.halfHeight + 30, h - Math.max(44, h * 0.09));
-      const key = [w, h, l.originX, l.chamberEndX, l.throatX, l.centreY, l.halfHeight, chamberEdge].map((v) => v.toFixed(1)).join(',');
+      // The engine is held clear of the ground, which is a solid strip along the foot of the picture.
+      const groundY = Math.max(l.centreY + l.halfHeight + 40, h - Math.max(60, h * 0.17));
+      const key = [w, h, l.originX, l.chamberEndX, l.throatX, l.centreY, l.halfHeight, l.frontSpace, chamberEdge].map((v) => v.toFixed(1)).join(',');
       if (key !== lastKey) {
         lastKey = key;
         earth.setAttribute('x', '0');
@@ -99,21 +99,29 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
         earth.setAttribute('width', String(w));
         earth.setAttribute('height', String(Math.max(0, h - groundY)));
         ground.setAttribute('d', `M0 ${groundY}H${w}`);
-        // A bench under the engine: a beam on two braced legs, with saddles up to the chamber.
+        // A tower under the engine: a deck on two splayed legs, tied and cross-braced in two bays,
+        // with saddles up to the chamber. Its base is at least half as wide as it is tall.
         const len = l.chamberEndX - l.originX;
-        const beamY = l.centreY + l.halfHeight + 12;
-        const x1 = l.originX - 4;
-        const x2 = Math.max(x1 + 40, l.throatX);
-        const splay = Math.min(26, (groundY - beamY) * 0.12);
-        const saddle = (x: number) => `M${x - 7} ${l.centreY + chamberEdge}H${x + 7}M${x} ${l.centreY + chamberEdge}V${beamY}`;
+        const deckY = l.centreY + l.halfHeight + 14;
+        const drop = groundY - deckY;
+        const x1 = l.originX - 14;
+        const x2 = Math.max(l.throatX, x1 + drop * 0.5);
+        const splay = drop * 0.14;
+        const midY = deckY + drop / 2;
+        const saddle = (x: number) => `M${x} ${l.centreY + chamberEdge - 2}V${deckY}`;
+        // What takes the push: a strut from the injector head back to a buttress at the picture's edge.
+        const headX = l.originX - l.frontSpace;
+        const buttressTop = l.centreY - Math.max(chamberEdge, 20) - 26;
         frame.setAttribute(
           'd',
-          `M${x1 - 10} ${beamY}H${x2 + 10}` +
-            `M${x1} ${beamY}L${x1 - splay} ${groundY}M${x2} ${beamY}L${x2 + splay} ${groundY}` +
-            `M${x1} ${beamY}L${x2 + splay} ${groundY}M${x2} ${beamY}L${x1 - splay} ${groundY}` +
-            `M${x1 - splay - 12} ${groundY}H${x2 + splay + 12}` +
+          `M${x1 - 16} ${deckY}H${x2 + 16}` +
+            `M${x1} ${deckY}L${x1 - splay} ${groundY}M${x2} ${deckY}L${x2 + splay} ${groundY}` +
+            `M${x1 - splay / 2} ${midY}H${x2 + splay / 2}` +
+            `M${x1} ${deckY}L${x2 + splay / 2} ${midY}L${x1 - splay} ${groundY}` +
+            `M${x2} ${deckY}L${x1 - splay / 2} ${midY}L${x2 + splay} ${groundY}` +
             saddle(l.originX + len * 0.25) +
-            saddle(l.originX + len * 0.8),
+            saddle(l.originX + len * 0.8) +
+            `M${headX} ${l.centreY}H4M4 ${buttressTop}V${groundY}M4 ${buttressTop + 8}L${Math.min(headX - 6, 34)} ${l.centreY}`,
         );
       }
 

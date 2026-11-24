@@ -552,20 +552,21 @@ main {
 }
 
 .stand .earth {
-  fill: rgba(21, 27, 24, 0.5);
+  fill: #1a201d;
 }
 
 .stand .ground {
-  stroke: var(--ink);
+  stroke: #7d8a82;
   stroke-width: 2;
 }
 
+/* Steel with the engine's own weight, drawn behind it. */
 .stand .frame {
   fill: none;
   stroke: var(--ink);
-  stroke-width: 3;
-  stroke-linejoin: round;
-  stroke-linecap: square;
+  stroke-width: 7;
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
 }
 
 .leaders {
@@ -600,14 +601,47 @@ main {
 /* Ignition: one flash from the nozzle and a short shudder of the picture. */
 #ignition {
   opacity: 0;
-  background: radial-gradient(60% 70% at 38% 50%, rgba(255, 244, 214, 0.85), rgba(255, 170, 80, 0.25) 45%, transparent 70%);
+  background: radial-gradient(
+    60% 70% at var(--exit-x, 38%) var(--exit-y, 50%),
+    rgba(255, 244, 214, 0.85),
+    rgba(255, 170, 80, 0.25) 45%,
+    transparent 70%
+  );
+}
+
+/* The run state and the time since ignition, on the picture itself. */
+#clock {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 6px 10px 7px;
+  background: rgba(21, 27, 24, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font: 700 17px/1 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--yellow);
+  pointer-events: none;
+}
+
+#clock[data-state='firing'] {
+  color: var(--red-text);
+  border-color: var(--red);
+}
+
+#clock[data-state='failed'] {
+  color: var(--dim);
 }
 
 #stage.ignite #ignition {
   animation: flash 0.7s var(--ease);
 }
 
-#stage.ignite canvas {
+/* Everything on the stand shakes together: the picture, the steel and the marks on the engine. */
+#stage.ignite > canvas,
+#stage.ignite > #stand,
+#stage.ignite > #callouts {
   animation: shudder 0.5s linear;
 }
 
@@ -697,9 +731,10 @@ main {
   text-wrap: pretty;
 }
 
+/* Under the clock and the view switch, clear of both. */
 #toast {
   position: absolute;
-  top: 12px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
@@ -726,12 +761,14 @@ main {
 
 /* --- Console row ----------------------------------------------------------- */
 
+/* Fire sits on the picture's centreline; throttle and the sweeps to its left, altitude to its right. */
 #console {
+  --sweeps: 124px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.7fr) auto;
-  grid-template-areas: 'thr fire alt sweeps';
-  align-items: center;
-  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas: 'thr fire alt';
+  align-items: start;
+  gap: 24px;
   padding: 12px 18px 14px;
   background: var(--panel);
   border-top: 1px solid var(--line);
@@ -752,6 +789,7 @@ main {
 
 #flight .row:has(#throttle) {
   grid-area: thr;
+  margin-right: calc(var(--sweeps) + 16px);
 }
 
 #flight .row:has(#altitudeKm) {
@@ -765,7 +803,13 @@ main {
   color: var(--dim);
 }
 
+/* A reading in words ("solids cannot throttle") drops under its label instead of breaking up. */
+#flight .row-head {
+  flex-wrap: wrap;
+}
+
 #flight output {
+  white-space: nowrap;
   font: 700 20px/1 var(--display);
   letter-spacing: 0.02em;
 }
@@ -810,7 +854,9 @@ main {
 
 
 .sweeps {
-  grid-area: sweeps;
+  grid-area: thr;
+  justify-self: end;
+  width: var(--sweeps);
   display: grid;
   gap: 6px;
 }
@@ -843,9 +889,11 @@ main {
 
 .firebox {
   grid-area: fire;
+  align-self: stretch;
   display: grid;
+  grid-template-rows: auto 1fr;
   justify-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 #arm {
@@ -886,10 +934,12 @@ button.primary:hover:not(:disabled) {
   border-color: #b32218;
 }
 
+/* Wide enough for its longer label, so nothing beside it moves when the engine lights. */
 #fire {
-  min-width: 168px;
-  padding: 12px 22px 13px;
-  font: 700 30px/1 var(--display);
+  width: 216px;
+  min-height: 60px;
+  padding: 10px 12px 11px;
+  font: 700 32px/1 var(--display);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   transition: transform 0.12s var(--ease), background-color 0.15s;
@@ -940,10 +990,17 @@ button.primary:hover:not(:disabled) {
 }
 
 .v {
-  font: 700 76px/0.92 var(--display);
+  font: 700 104px/0.9 var(--display);
   letter-spacing: 0.005em;
   margin-top: 4px;
   transition: opacity 0.3s;
+}
+
+.v small {
+  margin-left: 0.18em;
+  font-size: 0.34em;
+  letter-spacing: 0.06em;
+  color: var(--dim);
 }
 
 .v.mid {
@@ -973,15 +1030,34 @@ button.primary:hover:not(:disabled) {
   flex-direction: column;
 }
 
-.tag {
-  margin-left: 6px;
+/* What every figure in the column is: a forecast for a cold engine, readings from a lit one. */
+.run {
+  margin: 0;
+  font: 700 15px/1.2 var(--display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.run:empty {
+  display: none;
+}
+
+#readouts[data-run='unlit'] .run,
+#readouts[data-run='starting'] .run {
   color: var(--yellow);
 }
 
-/* Unlit, the figures are a forecast and sit back; they come up to full strength as the engine does. */
+/* Unlit, everything is a forecast and sits back together; it comes up to full strength as the engine does. */
 #readouts[data-run='unlit'] .hero .v,
-#readouts[data-run='unlit'] .pair .v {
-  opacity: 0.55;
+#readouts[data-run='unlit'] .pair .v,
+#readouts[data-run='unlit'] .pct,
+#readouts[data-run='unlit'] .fill,
+#readouts[data-run='unlit'] .state {
+  opacity: 0.5;
+}
+
+#readouts[data-run='unlit'] .state {
+  border-style: dashed;
 }
 
 .pair {
@@ -1219,40 +1295,51 @@ button.primary:hover:not(:disabled) {
   body {
     grid-template-columns: 250px minmax(0, 1fr) 280px;
   }
-  header h1 {
-    display: none;
-  }
   #blurb {
     -webkit-line-clamp: 1;
   }
-  /* The middle column is narrow here, so the console takes two rows: altitude beside Fire, throttle beside the sweeps. */
+  /* The middle column is narrow here, so the console takes two rows: altitude beside Fire, and
+     under them the sweeps, which belong to altitude, beside throttle. */
   #console {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: 'alt fire' 'thr sweeps';
+    --fire: 200px;
+    grid-template-columns: minmax(0, 1fr) var(--fire);
+    grid-template-areas: 'alt fire' 'sweeps thr';
     gap: 10px 16px;
     padding-inline: 14px;
   }
+  #flight .row:has(#throttle) {
+    margin-right: 0;
+  }
   .sweeps {
+    grid-area: sweeps;
+    justify-self: start;
+    width: auto;
     grid-auto-flow: column;
   }
   .v {
-    font-size: 64px;
+    font-size: 88px;
   }
   #fire {
-    min-width: 150px;
-    font-size: 26px;
+    width: var(--fire);
+    font-size: 28px;
   }
 }
 
-@media (max-width: 1000px) and (min-width: 761px) {
-  #blurb {
-    display: none;
+/* The product name gives way to the engine's here, but stays for a screen reader. */
+@media (min-width: 901px) and (max-width: 1240px) {
+  header h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 
-/* --- Phone: the picture and the console stay on screen; the rest scrolls under them. */
+/* --- Phones and narrow windows: the picture and the console stay on screen; the rest scrolls under them. */
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   html,
   body {
     height: auto;
@@ -1264,25 +1351,36 @@ button.primary:hover:not(:disabled) {
   }
   header {
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     padding: 8px 12px;
+  }
+  header h1 {
+    flex: 1 1 100%;
+    width: auto;
+    order: -2;
+    font-size: 12px;
   }
   .nameplate {
     flex: 1 1 100%;
     order: -1;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 4px;
   }
   #engine-name {
-    font-size: 24px;
+    font-size: 26px;
   }
   #blurb {
-    display: none;
+    -webkit-line-clamp: 2;
+    font-size: 12.5px;
   }
   .spacer {
     display: none;
   }
   header button,
   .menu > summary {
-    padding: 8px 10px;
+    padding: 7px 9px;
+    font-size: 14px;
   }
   main {
     order: 1;
@@ -1292,8 +1390,8 @@ button.primary:hover:not(:disabled) {
   }
   #stage {
     flex: none;
-    height: 38vh;
-    min-height: 210px;
+    height: 36vh;
+    min-height: 200px;
   }
   .stage-view span {
     display: none;
@@ -1301,27 +1399,29 @@ button.primary:hover:not(:disabled) {
   .stage-view {
     padding: 4px;
   }
+  #clock {
+    top: 8px;
+    left: 8px;
+    font-size: 14px;
+  }
   #console {
+    --fire: 150px;
     gap: 8px 12px;
     padding: 8px 12px 10px;
   }
   #toast {
-    top: 52px;
     width: calc(100% - 24px);
   }
   #fire {
-    min-width: 112px;
-    padding: 10px 12px;
+    min-height: 50px;
     font-size: 24px;
   }
   #arm {
     font-size: 12px;
   }
-  .sweep .label {
-    display: none;
-  }
   .sweep {
-    padding: 9px 14px;
+    padding: 8px 10px;
+    font-size: 14px;
   }
   .tick:nth-child(2) {
     display: none;
@@ -1334,7 +1434,7 @@ button.primary:hover:not(:disabled) {
     overflow: visible;
   }
   .v {
-    font-size: 60px;
+    font-size: 84px;
   }
   #log-box {
     flex: none;
@@ -1359,6 +1459,6 @@ button.primary:hover:not(:disabled) {
     max-height: calc(100vh - 16px);
   }
   #picker-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   }
 }

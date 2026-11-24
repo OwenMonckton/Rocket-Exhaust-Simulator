@@ -14,6 +14,8 @@ export interface TestLog {
   add(text: string, kind?: LogKind): void;
   /** Start the clock: the engine has just lit */
   ignite(): void;
+  /** Seconds since the last ignition, or null before the first */
+  elapsed(): number | null;
   /** Clear the log and stop the clock, for a new engine on the stand */
   reset(): void;
 }
@@ -39,6 +41,7 @@ export function createTestLog(list: HTMLElement, now: () => number = () => perfo
     ignite() {
       t0 = now();
     },
+    elapsed: () => (t0 === null ? null : (now() - t0) / 1000),
     reset() {
       t0 = null;
       list.replaceChildren();
