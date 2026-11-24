@@ -235,6 +235,17 @@ describe('copy for the new exhausts', () => {
     expect(r.state).toBe('separated');
     expect(expansionText(r, 'dualBell')).toBe(STATE_COPY.separated.text);
   });
+  it('does not talk about the nozzle of an engine with no nozzle', () => {
+    const cfg = { ...starterEngine(), exhaust: 'none' as const };
+    const r = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    expect(r.state).toBe('under');
+    for (const state of ['under', 'ideal', 'over'] as const) {
+      const text = expansionText({ ...r, state }, 'none');
+      expect(text, state).toMatch(/no nozzle/i);
+      expect(text, state).not.toMatch(/(the|this) nozzle/i);
+    }
+    expect(TIPS.exhaust).not.toMatch(/as powerful/i);
+  });
   it('names what the count slider counts for every exhaust', () => {
     for (const id of EXHAUST_IDS) expect(COUNT_COPY[EXHAUSTS[id].counts].label.length).toBeGreaterThan(0);
   });

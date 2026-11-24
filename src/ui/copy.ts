@@ -10,10 +10,10 @@ export const TIPS = {
   exitDia: 'Width of the nozzle exit. Bigger suits thin air and vacuum; smaller suits sea level.',
   nozzleLenPct: 'How long the bell is. Longer bells point the exhaust straighter for slightly better efficiency.',
   coneAngleDeg: "How steeply the cone's wall opens out. A wide cone is short and light, but the jet leaves it spread sideways, which wastes thrust. A narrow cone points the jet straighter, but it has to be longer and heavier.",
-  innerExitDia: "Width of the nozzle at the kink, where the short inner bell opens into the outer bell. It sets how big the inner bell is while the jet is held there: nearer the right size for the ground, less thrust is wasted low down.",
+  innerExitDia: 'Width of the nozzle at the kink, where the short inner bell opens into the outer one. Near the ground only the inner bell works, so size it for the ground: the closer it is to the right size there, the less thrust is wasted low down.',
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
   energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
-  exhaust: 'How the hot gas is turned into a jet. Changing it keeps the engine about as powerful.',
+  exhaust: 'How the hot gas is turned into a jet. Changing it keeps the same total throat size, so as much propellant flows through.',
   propellant: 'What the engine pushes out of the nozzle. Each has its own efficiency, temperature and plume colour.',
   fuel: 'What burns in the chamber. Changing it works the flame out afresh from the chemistry and sets the mixture ratio to suit.',
   oxidiser: 'What the fuel burns with. Changing it works the flame out afresh from the chemistry and sets the mixture ratio to suit.',
@@ -94,8 +94,19 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   },
 };
 
-/** The line under the "Nozzle exit vs outside air" state. A dual bell whose jet still has hold of the wall says it fills the outer bell. */
+/** What the gas does as it leaves an engine with no nozzle, which can be in only these three states. */
+const NO_NOZZLE_TEXT: Partial<Record<ExpansionState, string>> = {
+  under: 'There is no nozzle, so the gas leaves the throat at well above the outside pressure and balloons outward.',
+  ideal: 'There is no nozzle, but the chamber pressure is low enough that the gas leaves the throat at about the outside pressure.',
+  over: 'There is no nozzle, but the chamber pressure is so low that the gas leaves the throat below the outside pressure, and the air pinches it inward.',
+};
+
+/**
+ * The line under the "Nozzle exit vs outside air" state. A dual bell whose jet still has hold of
+ * the wall says it fills the outer bell; an engine with no nozzle has its own words.
+ */
 export function expansionText(result: SimResult, exhaust: ExhaustId): string {
+  if (exhaust === 'none' && NO_NOZZLE_TEXT[result.state]) return NO_NOZZLE_TEXT[result.state]!;
   const text = STATE_COPY[result.state].text;
   return exhaust === 'dualBell' && !jetLeftWall(result.state) ? `${text} The jet fills the outer bell.` : text;
 }
