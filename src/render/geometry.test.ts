@@ -207,6 +207,21 @@ describe('engine profile', () => {
       expect(2 * prof.maxRadius * v.ppm).toBeLessThanOrEqual(0.55 * 600 + 1e-6);
     }
   });
+  it('ends an engine with no nozzle at its throat', () => {
+    const p = engineProfile(sanitize({ ...starterEngine(), exhaust: 'none' }));
+    expect(p.exitX).toBe(p.throatX);
+    expect(p.points.at(-1)!.r).toBeCloseTo(starterEngine().throatDia / 2, 9);
+    expect(p.extension).toBeNull();
+    expect(p.kink).toBeNull();
+  });
+  it('marks a dual bell kink in engine coordinates', () => {
+    const cfg = sanitize({ ...starterEngine(), exhaust: 'dualBell' });
+    const p = engineProfile(cfg);
+    expect(p.kink!.r).toBeCloseTo(cfg.innerExitDia / 2, 9);
+    expect(p.kink!.x).toBeGreaterThan(p.throatX);
+    expect(p.kink!.x).toBeLessThan(p.exitX);
+    expect(radiusAt(p, p.kink!.x)).toBeCloseTo(p.kink!.r, 6);
+  });
 });
 
 describe('thrust cell count (review focus)', () => {

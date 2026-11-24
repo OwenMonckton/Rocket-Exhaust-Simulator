@@ -1,5 +1,6 @@
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { gasFor } from '../physics/engine';
+import { EXHAUSTS, divergingWall } from '../physics/exhausts';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -32,6 +33,8 @@ export interface EngineProfile {
    * the spike's base, `throatX` the lip and `exitX` the base.
    */
   spike: SpikeGeometry | null;
+  /** Where a dual bell's wall kinks; null for every other exhaust */
+  kink: ProfilePoint | null;
 }
 
 export interface SpikePoint extends ProfilePoint {
@@ -101,7 +104,7 @@ export interface View {
 
 const DEG = Math.PI / 180;
 
-/** Inner wall contour: cylinder, smooth converging section, parabolic bell. */
+/** Inner wall contour: cylinder, smooth converging section, then the exhaust's diverging wall. */
 export function engineProfile(cfg: EngineConfig): EngineProfile {
   if (cfg.exhaust === 'aerospike') return aerospikeProfile(cfg);
   const rc = cfg.chamberDia / 2;
@@ -120,56 +123,30 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   }
   const throatX = cfg.chamberLen + convLen;
 
-  // The bell: steep just after the throat, shallow at the exit.
-  const bellLen = (cfg.nozzleLenPct / 100) * ((re - rt) / Math.tan(15 * DEG));
-  // Slope of the wall where the bell proper begins, and at the lip.
-  const startSlope = (0.72 * (re - rt)) / (0.379 * bellLen);
-  const exitSlope = (0.28 * (re - rt)) / (0.621 * bellLen);
-  // The wall cannot turn from the throat straight onto that slope: a sharp corner there is not
-  // how nozzles are made, and the gas solver marks it with a layer of spoiled gas down the whole
-  // wall. It turns along a short arc instead, of the radius real bell nozzles use (0.382 throat
-  // radii), made smaller where the bell is too short to fit one.
-  const turn = Math.atan(startSlope);
-  const arcR = Math.min(0.382 * rt, (0.25 * bellLen) / Math.sin(turn), (0.25 * (re - rt)) / (1 - Math.cos(turn)));
-  const N_ARC = 8;
-  for (let i = 1; i <= N_ARC; i++) {
-    const a = (turn * i) / N_ARC;
-    points.push({ x: throatX + arcR * Math.sin(a), r: rt + arcR * (1 - Math.cos(a)) });
-  }
-  // From the end of the arc, a quadratic Bezier: it leaves along the arc's slope and arrives at
-  // the lip along the exit slope, so its middle point is where those two lines cross.
-  const ax = arcR * Math.sin(turn);
-  const ar = rt + arcR * (1 - Math.cos(turn));
-  const p1x = (re - exitSlope * bellLen - ar + startSlope * ax) / (startSlope - exitSlope);
-  const p1r = ar + startSlope * (p1x - ax);
-  const N_BELL = 28;
-  for (let i = 1; i <= N_BELL; i++) {
-    const t = i / N_BELL;
-    const u = 1 - t;
-    points.push({
-      x: throatX + u * u * ax + 2 * u * t * p1x + t * t * bellLen,
-      r: u * u * ar + 2 * u * t * p1r + t * t * re,
-    });
-  }
-  // Guard against any floating-point wobble in the final point.
-  points[points.length - 1] = { x: throatX + bellLen, r: re };
+  // The diverging wall, if there is one: a bell, a cone or a dual bell.
+  const wall = divergingWall(cfg);
+  for (const p of wall.points) points.push({ x: throatX + p.x, r: p.r });
+  const exitX = throatX + wall.length;
+  const kink = wall.kink ? { x: throatX + wall.kink.x, r: wall.kink.r } : null;
+  // With no nozzle the engine ends at its throat.
+  const lipR = EXHAUSTS[cfg.exhaust].hasNozzle ? re : rt;
 
   // Chambers of a multi-chamber engine sit just far enough apart for their nozzles to clear.
   const multi = cfg.chambers > 1;
-  const pitch = 1.18 * 2 * Math.max(rc, re);
+  const pitch = 1.18 * 2 * Math.max(rc, lipR);
 
   // Deployable extension: split the bell where the fixed nozzle ends. Stowed, the extension
   // sits forward by its own length, wrapped around the engine.
   let extension: NozzleExtension | null = null;
   const fixedR = cfg.extFixedDia / 2;
-  if (fixedR > rt && fixedR < re) {
+  if (EXHAUSTS[cfg.exhaust].extension && fixedR > rt && fixedR < re) {
     const i = points.findIndex((p) => p.x > throatX && p.r >= fixedR);
     if (i > 0) {
       const a = points[i - 1];
       const b = points[i];
       const f = (fixedR - a.r) / Math.max(1e-12, b.r - a.r);
       const seam = { x: a.x + (b.x - a.x) * f, r: fixedR };
-      const length = throatX + bellLen - seam.x;
+      const length = exitX - seam.x;
       extension = {
         seam,
         fixedPoints: [...points.slice(0, i), seam],
@@ -187,13 +164,14 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
     extension,
     chamberEndX: cfg.chamberLen,
     throatX,
-    exitX: throatX + bellLen,
-    length: throatX + bellLen,
-    maxRadius: Math.max(rc, re),
+    exitX,
+    length: exitX,
+    maxRadius: Math.max(rc, lipR),
     offsets: multi ? [-pitch / 2, pitch / 2] : [0],
-    halfHeight: Math.max(rc, re) + (multi ? pitch / 2 : 0),
+    halfHeight: Math.max(rc, lipR) + (multi ? pitch / 2 : 0),
     frontSpace: Math.max(multi ? 0.75 * pitch : 0, stowedOverhang),
     spike: null,
+    kink,
   };
 }
 
@@ -315,6 +293,7 @@ function aerospikeProfile(cfg: EngineConfig): EngineProfile {
     halfHeight: Math.max(lipR, top),
     frontSpace: 0,
     extension: null,
+    kink: null,
     spike: {
       lip,
       contour: moved,
