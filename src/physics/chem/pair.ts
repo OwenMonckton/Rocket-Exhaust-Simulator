@@ -159,7 +159,7 @@ function cached(key: string, chain: string, at: At, mix: () => Mixture, chamber:
  * `pcBar`, `eps` to 3 significant figures, and cached.
  */
 export function solvePair(fuel: string, oxidiser: string, of: number, pcBar: number, eps: number): SolvedGas {
-  if (!usable(of) || !usable(pcBar) || pcBar === 0 || !Number.isFinite(eps) || !(eps > 1)) return NOT_SETTLED;
+  if (!usable(of) || !usable(pcBar) || pcBar === 0 || !Number.isFinite(eps) || !(eps >= 1)) return NOT_SETTLED;
   const o = oxidiser === NO_OXIDISER ? 0 : round2(of);
   const p = sig3(pcBar);
   const e = sig3(eps);
@@ -173,7 +173,7 @@ export function solvePair(fuel: string, oxidiser: string, of: number, pcBar: num
  * expanded to area ratio `eps`, as in a nuclear or electrically heated engine. Cached as solvePair is.
  */
 export function solveFluid(reactant: string, tK: number, pcBar: number, eps: number): SolvedGas {
-  if (!usable(tK) || tK === 0 || !usable(pcBar) || pcBar === 0 || !Number.isFinite(eps) || !(eps > 1)) return NOT_SETTLED;
+  if (!usable(tK) || tK === 0 || !usable(pcBar) || pcBar === 0 || !Number.isFinite(eps) || !(eps >= 1)) return NOT_SETTLED;
   const t = Math.round(tK);
   const p = sig3(pcBar);
   const e = sig3(eps);

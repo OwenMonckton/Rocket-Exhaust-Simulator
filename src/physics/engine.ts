@@ -28,6 +28,12 @@ const SEPARATION_K = 0.62;
  * XRS-2200's sea-level Isp, where it leaves the spike about 4.5 % short of a perfect match.
  */
 const AEROSPIKE_COMPENSATION = 0.7;
+/** A bell's nozzle efficiency at its longest: what a cone or an engine with no nozzle loses to everything but the angle. */
+const BEST_NOZZLE_EFF = 0.99;
+/** A dual bell running full keeps this share of a bell's momentum thrust: the kink leaves an imperfect shape. */
+const DUAL_BELL_FULL_EFF = 0.985;
+/** In a dual bell held at its kink, the pressure on the outer bell's wall is this share below the outside air's. */
+const DUAL_BELL_WALL_SUCTION = 0.05;
 
 export interface Range {
   min: number;
@@ -126,6 +132,8 @@ export function sanitizeFlight(f: FlightState): FlightState {
 
 /** Exit diameter of the nozzle the gas is expanding through, allowing for a part-deployed extension. */
 export function flowExitDiameter(cfg: EngineConfig): number {
+  // With no nozzle the gas leaves at the throat.
+  if (EXHAUSTS[cfg.exhaust]?.hasNozzle === false) return cfg.throatDia;
   if (!(cfg.extFixedDia > 0)) return cfg.exitDia;
   const t = Math.min(1, Math.max(0, (cfg.extDeploy - 0.9) / 0.1));
   const seated = t * t * (3 - 2 * t);
@@ -195,13 +203,22 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   // Thrust depends on chamber pressure and throat area, not on how efficiently
   // that pressure was produced, so the momentum term uses the ideal flow.
   const idealFlow = (pc * at) / cStarIdeal;
-  const nozzleEff = 0.965 + (0.025 * (cfg.nozzleLenPct - 60)) / 40;
+  // The share of the momentum thrust a nozzle keeps. A bell's grows with its length. Gas leaving a
+  // cone fans out, and only the part of its speed pointing straight back pushes; with no nozzle
+  // there is no wall to lose anything to, so both take a bell's best for everything else.
+  let nozzleEff = 0.965 + (0.025 * (cfg.nozzleLenPct - 60)) / 40;
+  if (cfg.exhaust === 'cone') nozzleEff = BEST_NOZZLE_EFF * (1 + Math.cos((cfg.coneAngleDeg * Math.PI) / 180)) / 2;
+  else if (cfg.exhaust === 'none') nozzleEff = BEST_NOZZLE_EFF;
+  const hasNozzle = EXHAUSTS[cfg.exhaust].hasNozzle;
   // A solved gas's vacuum thrust is scaled to the solver's own Isp (exactly 1, and so no change at
   // all, for a tabled gas): the exit momentum and exit pressure terms, not the ambient pressure.
   const ispScale = gasSource.ispScale;
 
   const exitMach = machFromAreaRatio(eps, g);
   const pe = pc * pressureRatio(exitMach, g);
+  // A dual bell's kink, where its jet is held in low mode.
+  const kinkArea = (Math.PI / 4) * cfg.innerExitDia ** 2;
+  const kinkMach = cfg.exhaust === 'dualBell' ? machFromAreaRatio((cfg.innerExitDia / cfg.throatDia) ** 2, g) : 1;
 
   const thrustAt = (pa: number) => {
     let mach = exitMach;
@@ -209,10 +226,10 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     let area = ae;
     let state: ExpansionState;
     const sepRatio = (m: number) => SEPARATION_K * Math.pow(1.88 * m - 1, -0.64);
-    // First, what a bell of this size would do.
+    // First, what a bell of this size would do. With no nozzle there is no wall to tear off.
     if (pa <= 0) {
       state = 'under';
-    } else if (pe < sepRatio(exitMach) * pa) {
+    } else if (hasNozzle && pe < sepRatio(exitMach) * pa) {
       state = 'separated';
       let lo = 1;
       let hi = exitMach;
@@ -228,8 +245,25 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       const r = pe / pa;
       state = Math.abs(r - 1) <= 0.1 ? 'ideal' : r < 1 ? 'over' : 'under';
     }
+    let eff = nozzleEff;
+    let suction = 0;
+    if (cfg.exhaust === 'dualBell') {
+      if (state !== 'separated') {
+        // High mode: the jet fills the big bell.
+        eff = nozzleEff * DUAL_BELL_FULL_EFF;
+      } else if (mach >= kinkMach) {
+        // Low mode: a full bell would lose its jet past the kink, so it lets go cleanly at the kink
+        // and the engine runs as the inner bell. The big bell's wall stands in air the jet drags
+        // along, a little below the outside pressure.
+        state = 'held';
+        mach = kinkMach;
+        pExit = pc * pressureRatio(kinkMach, g);
+        area = kinkArea;
+        suction = DUAL_BELL_WALL_SUCTION * pa * (ae - kinkArea);
+      }
+    }
     let ve = exitVelocity(mach, g, gas.R, gas.tc);
-    let thrust = ispScale * nozzleEff * idealFlow * ve + (ispScale * pExit - pa) * area;
+    let thrust = ispScale * eff * idealFlow * ve + (ispScale * pExit - pa) * area - suction;
     if (cfg.exhaust === 'aerospike' && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
       // aerospike's jet, so below its design altitude the air squeezes the jet in until it leaves
@@ -245,7 +279,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       const matched = ispScale * nozzleEff * idealFlow * ve + (ispScale - 1) * pa * area;
       thrust += AEROSPIKE_COMPENSATION * Math.max(0, matched - thrust);
     }
-    return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve };
+    return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve, eff };
   };
 
   const pa = ambientPressure(flight.altitudeKm * 1000);
@@ -272,7 +306,7 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     cStarEff,
     lStar,
     combustionEff,
-    nozzleEff,
+    nozzleEff: now.eff,
     state: now.state,
     rough,
     shudder,
