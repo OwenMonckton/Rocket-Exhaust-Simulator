@@ -217,7 +217,7 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
   if (EXHAUSTS[cfg.exhaust].counts === 'chambers' && EXHAUSTS[exhaust].counts === 'chambers') {
     // The dimensions, count, pressure and wall mean the same thing for both: only the nozzle
     // changes. `sanitize` drops an extension the new type cannot take and sets a dual bell's kink.
-    return cooled(sanitize({ ...cfg, exhaust }), heatBefore);
+    return sanitize({ ...cfg, exhaust });
   }
   if (exhaust !== 'aerospike') {
     // A wide chamber is an unstable one: more, smaller chambers where the fewest would shake

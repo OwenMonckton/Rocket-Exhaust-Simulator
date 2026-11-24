@@ -170,6 +170,17 @@ describe('swapping between the new exhaust types', () => {
       expect(area(back)).toBeCloseTo(area(from), 6);
     }
   });
+  it('keeps a multi-chamber engine as it was between exhausts that count chambers', () => {
+    for (const id of ['rd-180', 'rd-170']) {
+      const preset = PRESETS.find((p) => p.id === id)!;
+      for (const to of ['cone', 'dualBell', 'none'] as const) {
+        const next = withExhaust(preset.config, to);
+        for (const key of ['chambers', 'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'wall', 'chamberPressureBar'] as const) {
+          expect(next[key], `${id} ${to} ${key}`).toBe(preset.config[key]);
+        }
+      }
+    }
+  });
   it('does not destroy any example by swapping in a new exhaust', () => {
     for (const preset of PRESETS) for (const to of ['cone', 'dualBell', 'none'] as const) {
       if (simulate(preset.config, { altitudeKm: 0, throttle: 1 }).failure) continue;
