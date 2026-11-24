@@ -147,12 +147,13 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     }
 
     // While the engine runs up or down, the thrust shown is the share of full thrust it has reached.
-    const [thrustNumber, thrustUnit] = fmtThrust(fire > 0 && fire < 1 ? r.thrust * fire : r.thrust).split(' ');
+    const thrustNow = fire > 0 && fire < 1 ? r.thrust * fire : r.thrust;
+    const [thrustNumber, thrustUnit] = fmtThrust(thrustNow).split(' ');
     set('thrust', thrustNumber);
     set('thrustUnit', thrustUnit);
     // One line says what every figure below it is: a forecast for a cold engine, or readings from a lit one.
     set('run', fire <= 0 ? 'Forecast: the engine is unlit' : fire < 1 ? 'Running up' : 'Live readings');
-    const tonnes = r.thrust / 9806.65;
+    const tonnes = thrustNow / 9806.65;
     const lift = tonnes >= 10 ? `${tonnes.toFixed(0)} tonnes of push` : `${tonnes.toFixed(1)} tonnes of push`;
     set('thrustSub', stock ? delta(r.thrust, stock.thrust) : lift);
     set('isp', `${r.isp.toFixed(0)} s`);

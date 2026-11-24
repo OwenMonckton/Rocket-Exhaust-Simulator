@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "radial-halo",
+        "value": "*",
+        "files": [
+          "index.html"
+        ],
+        "createdAt": "2026-11-24T16:02:36.846Z",
+        "reason": "builder and finish reviewer: the gradient is the one-shot ignition flash at the nozzle exit, invisible at rest and named in the direction contract's motion grammar, not a background glow"
+      }
+    ]
+  }
+}

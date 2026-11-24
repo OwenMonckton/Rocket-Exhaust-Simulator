@@ -560,6 +560,10 @@ main {
   stroke-width: 2;
 }
 
+.stand .wall {
+  fill: var(--ink);
+}
+
 /* Steel with the engine's own weight, drawn behind it. */
 .stand .frame {
   fill: none;
@@ -726,6 +730,13 @@ main {
   letter-spacing: 0.04em;
 }
 
+/* Red is Fire's alone, so the way out of a failure is marked in yellow, the colour for attention. */
+#rebuild {
+  border-color: var(--yellow);
+  color: var(--yellow);
+  font-weight: 700;
+}
+
 #failure p {
   margin: 0 0 12px;
   text-wrap: pretty;
@@ -766,9 +777,9 @@ main {
   --sweeps: 124px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  grid-template-areas: 'thr fire alt';
+  grid-template-areas: 'thr fire alt' 'thr fire sweeps';
   align-items: start;
-  gap: 24px;
+  gap: 6px 24px;
   padding: 12px 18px 14px;
   background: var(--panel);
   border-top: 1px solid var(--line);
@@ -789,7 +800,6 @@ main {
 
 #flight .row:has(#throttle) {
   grid-area: thr;
-  margin-right: calc(var(--sweeps) + 16px);
 }
 
 #flight .row:has(#altitudeKm) {
@@ -853,11 +863,12 @@ main {
 }
 
 
+/* The sweeps drive altitude, so they sit under its scale. */
 .sweeps {
-  grid-area: thr;
-  justify-self: end;
-  width: var(--sweeps);
+  grid-area: sweeps;
+  justify-self: start;
   display: grid;
+  grid-auto-flow: column;
   gap: 6px;
 }
 
@@ -1278,7 +1289,9 @@ button.primary:hover:not(:disabled) {
 
 @media (prefers-reduced-motion: reduce) {
   #stage.ignite #ignition,
-  #stage.ignite canvas,
+  #stage.ignite > canvas,
+  #stage.ignite > #stand,
+  #stage.ignite > #callouts,
   #log li {
     animation: none;
   }
@@ -1307,14 +1320,15 @@ button.primary:hover:not(:disabled) {
     gap: 10px 16px;
     padding-inline: 14px;
   }
-  #flight .row:has(#throttle) {
-    margin-right: 0;
-  }
+  /* The sweeps share the altitude column's width between them, so they never reach across to throttle. */
   .sweeps {
-    grid-area: sweeps;
-    justify-self: start;
-    width: auto;
-    grid-auto-flow: column;
+    justify-self: stretch;
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+  .sweep {
+    justify-content: center;
+    padding-inline: 6px;
   }
   .v {
     font-size: 88px;
@@ -1322,6 +1336,19 @@ button.primary:hover:not(:disabled) {
   #fire {
     width: var(--fire);
     font-size: 28px;
+  }
+}
+
+/* The altitude scale is short beside Fire here, so it keeps three marks, not four. */
+@media (max-width: 1040px) {
+  .tick:nth-child(2) {
+    display: none;
+  }
+  #console {
+    --fire: 172px;
+  }
+  #fire {
+    font-size: 25px;
   }
 }
 

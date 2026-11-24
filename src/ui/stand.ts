@@ -58,6 +58,9 @@ export function calloutsFor(ids: string[], l: StageLayout): Callout[] {
 /** How far ahead of the engine the marks for its feeds stand, px. */
 const FEED_GAP = 40;
 
+/** Width of the thrust wall at the picture's left edge, px. */
+const WALL = 16;
+
 const NS = 'http://www.w3.org/2000/svg';
 
 /**
@@ -73,7 +76,9 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
   earth.setAttribute('class', 'earth');
   const frame = document.createElementNS(NS, 'path');
   frame.setAttribute('class', 'frame');
-  stand.append(earth, ground, frame);
+  const wall = document.createElementNS(NS, 'rect');
+  wall.setAttribute('class', 'wall');
+  stand.append(earth, ground, wall, frame);
   const leaders = document.createElementNS(NS, 'path');
   leaders.setAttribute('class', 'leaders');
   svg.append(stand, leaders);
@@ -104,14 +109,19 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
         const len = l.chamberEndX - l.originX;
         const deckY = l.centreY + l.halfHeight + 14;
         const drop = groundY - deckY;
-        const x1 = l.originX - 14;
-        const x2 = Math.max(l.throatX, x1 + drop * 0.5);
         const splay = drop * 0.14;
+        // The whole tower stays in the picture, clear of the wall, however hard the engine sits to the left.
+        const x1 = Math.max(l.originX - 14, WALL + 8 + splay);
+        const x2 = Math.max(l.throatX, x1 + drop * 0.5);
         const midY = deckY + drop / 2;
         const saddle = (x: number) => `M${x} ${l.centreY + chamberEdge - 2}V${deckY}`;
-        // What takes the push: a strut from the injector head back to a buttress at the picture's edge.
+        // What takes the push: a strut from the injector head back to a thrust wall at the picture's edge.
         const headX = l.originX - l.frontSpace;
-        const buttressTop = l.centreY - Math.max(chamberEdge, 20) - 26;
+        const wallTop = l.centreY - Math.max(chamberEdge, 20) - 30;
+        wall.setAttribute('x', '0');
+        wall.setAttribute('y', String(wallTop));
+        wall.setAttribute('width', String(WALL));
+        wall.setAttribute('height', String(Math.max(0, groundY - wallTop)));
         frame.setAttribute(
           'd',
           `M${x1 - 16} ${deckY}H${x2 + 16}` +
@@ -121,7 +131,7 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
             `M${x2} ${deckY}L${x1 - splay / 2} ${midY}L${x2 + splay} ${groundY}` +
             saddle(l.originX + len * 0.25) +
             saddle(l.originX + len * 0.8) +
-            `M${headX} ${l.centreY}H4M4 ${buttressTop}V${groundY}M4 ${buttressTop + 8}L${Math.min(headX - 6, 34)} ${l.centreY}`,
+            (headX > WALL ? `M${headX} ${l.centreY}H${WALL}` : ''),
         );
       }
 

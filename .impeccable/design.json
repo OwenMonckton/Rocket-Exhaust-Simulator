@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-24T00:00:00Z",
+  "title": "Design System: Rocket Engine Simulator",
+  "extensions": {
+    "colorMeta": {
+      "red": {
+        "role": "primary",
+        "displayName": "Fire Red",
+        "tonalRamp": ["oklch(18% 0.06 28)", "oklch(29% 0.11 28)", "oklch(40% 0.16 28)", "oklch(51% 0.2 28)", "oklch(61% 0.21 28)", "oklch(72% 0.15 28)", "oklch(84% 0.08 28)", "oklch(94% 0.03 28)"]
+      },
+      "red-fill": {
+        "role": "primary",
+        "displayName": "Fire Button Red",
+        "tonalRamp": ["oklch(17% 0.06 28)", "oklch(27% 0.1 28)", "oklch(37% 0.14 28)", "oklch(46% 0.17 28)", "oklch(54% 0.19 28)", "oklch(68% 0.15 28)", "oklch(82% 0.08 28)", "oklch(94% 0.03 28)"]
+      },
+      "red-text": {
+        "role": "primary",
+        "displayName": "Red Lettering",
+        "tonalRamp": ["oklch(18% 0.05 25)", "oklch(30% 0.1 25)", "oklch(42% 0.14 25)", "oklch(54% 0.17 25)", "oklch(64% 0.18 25)", "oklch(72% 0.17 25)", "oklch(85% 0.08 25)", "oklch(95% 0.03 25)"]
+      },
+      "yellow": {
+        "role": "secondary",
+        "displayName": "Safety Yellow",
+        "tonalRamp": ["oklch(18% 0.04 90)", "oklch(30% 0.07 90)", "oklch(43% 0.1 90)", "oklch(56% 0.13 90)", "oklch(69% 0.15 90)", "oklch(83% 0.16 90)", "oklch(90% 0.1 90)", "oklch(96% 0.04 90)"]
+      },
+      "green": {
+        "role": "tertiary",
+        "displayName": "Within-Limits Green",
+        "tonalRamp": ["oklch(18% 0.04 155)", "oklch(29% 0.07 155)", "oklch(41% 0.1 155)", "oklch(53% 0.13 155)", "oklch(65% 0.15 155)", "oklch(77% 0.15 155)", "oklch(88% 0.08 155)", "oklch(96% 0.03 155)"]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Console Ground",
+        "tonalRamp": ["oklch(15% 0.01 165)", "oklch(26% 0.012 165)", "oklch(37% 0.014 165)", "oklch(49% 0.014 165)", "oklch(61% 0.013 165)", "oklch(73% 0.012 165)", "oklch(85% 0.008 165)", "oklch(95% 0.004 165)"]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "tonalRamp": ["oklch(15% 0.01 165)", "oklch(31% 0.014 165)", "oklch(42% 0.015 165)", "oklch(53% 0.015 165)", "oklch(64% 0.013 165)", "oklch(75% 0.012 165)", "oklch(86% 0.008 165)", "oklch(95% 0.004 165)"]
+      },
+      "panel-2": {
+        "role": "neutral",
+        "displayName": "Raised Panel",
+        "tonalRamp": ["oklch(15% 0.01 165)", "oklch(25% 0.013 165)", "oklch(35% 0.016 165)", "oklch(46% 0.016 165)", "oklch(58% 0.015 165)", "oklch(71% 0.013 165)", "oklch(84% 0.009 165)", "oklch(95% 0.004 165)"]
+      },
+      "well": {
+        "role": "neutral",
+        "displayName": "Well",
+        "tonalRamp": ["oklch(15% 0.008 165)", "oklch(21% 0.01 165)", "oklch(33% 0.012 165)", "oklch(46% 0.013 165)", "oklch(59% 0.012 165)", "oklch(72% 0.011 165)", "oklch(85% 0.008 165)", "oklch(95% 0.004 165)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": ["oklch(15% 0.008 165)", "oklch(20% 0.01 165)", "oklch(32% 0.012 165)", "oklch(45% 0.013 165)", "oklch(58% 0.012 165)", "oklch(72% 0.011 165)", "oklch(85% 0.008 165)", "oklch(95% 0.004 165)"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "tonalRamp": ["oklch(15% 0.01 165)", "oklch(27% 0.014 165)", "oklch(42% 0.017 165)", "oklch(53% 0.017 165)", "oklch(64% 0.015 165)", "oklch(75% 0.012 165)", "oklch(86% 0.008 165)", "oklch(95% 0.004 165)"]
+      },
+      "text": {
+        "role": "neutral",
+        "displayName": "Off-White",
+        "tonalRamp": ["oklch(15% 0.006 125)", "oklch(28% 0.008 125)", "oklch(41% 0.009 125)", "oklch(54% 0.009 125)", "oklch(67% 0.009 125)", "oklch(80% 0.008 125)", "oklch(93% 0.007 125)", "oklch(97% 0.004 125)"]
+      },
+      "dim": {
+        "role": "neutral",
+        "displayName": "Dim",
+        "tonalRamp": ["oklch(15% 0.008 155)", "oklch(27% 0.012 155)", "oklch(39% 0.015 155)", "oklch(51% 0.016 155)", "oklch(63% 0.016 155)", "oklch(75% 0.015 155)", "oklch(87% 0.009 155)", "oklch(95% 0.004 155)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The thrust figure only. 88px below 1240px wide, 84px on a phone." },
+      "headline": { "displayName": "Headline", "purpose": "The engine's name in the top bar, in capitals. Efficiency (34px) and the Fire button's word (32px) sit in the same range." },
+      "title": { "displayName": "Title", "purpose": "Mid-sized figures and names: throttle and altitude readings, gauge percentages, nozzle state, engine names in the picker (19 to 21px)." },
+      "body": { "displayName": "Body", "purpose": "Control names, dropdown text, buttons and sentences. Tabular figures on." },
+      "note": { "displayName": "Note", "purpose": "The Dim line of explanation under a part picker or a figure. The log and tooltips use 13.5px." },
+      "label": { "displayName": "Label", "purpose": "Uppercase Dim name of a reading, a control or a panel. Always names the thing beneath or beside it." }
+    },
+    "shadows": [
+      { "name": "pop-over", "value": "0 12px 28px rgba(0, 0, 0, 0.45)", "purpose": "The Display menu." },
+      { "name": "dialog", "value": "0 18px 44px rgba(0, 0, 0, 0.55)", "purpose": "The engine picker." },
+      { "name": "notice", "value": "0 14px 40px rgba(0, 0, 0, 0.6)", "purpose": "The failure notice over the picture." },
+      { "name": "tooltip", "value": "0 10px 24px rgba(0, 0, 0, 0.5)", "purpose": "The hover tip." }
+    ],
+    "motion": [
+      { "name": "ease", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "The one easing curve (--ease): fast start, long settle. Chevron turn, Fire press, flash, log lines." },
+      { "name": "control-state", "value": "0.15s", "purpose": "Border and fill change on a button's hover." },
+      { "name": "fire-press", "value": "translateY(2px) over 0.12s", "purpose": "The Fire button nudges down while pressed." },
+      { "name": "ignition-flash", "value": "opacity 0.9 to 0 over 0.7s", "purpose": "A warm radial flash from the nozzle exit when the engine lights. Off for reduced motion." },
+      { "name": "ignition-shudder", "value": "up to 3px for 0.5s, linear", "purpose": "The picture, the stand and the callouts shake together at ignition. Off for reduced motion." },
+      { "name": "log-arrive", "value": "4px rise and fade over 0.35s", "purpose": "A new test log line arriving. Off for reduced motion." },
+      { "name": "forecast-fade", "value": "opacity 0.3s", "purpose": "Readings coming up from half strength as the engine lights." }
+    ],
+    "breakpoints": [
+      { "name": "narrow-desktop", "value": "1240px" },
+      { "name": "short-altitude-scale", "value": "1040px" },
+      { "name": "phone", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The ordinary control button. Hover brightens the border; switched on, border and lettering turn yellow.",
+      "html": "<div class=\"ds-btn-row\"><button class=\"ds-btn\">Change engine</button><button class=\"ds-btn ds-btn-on\" aria-pressed=\"true\">Sound on</button><button class=\"ds-btn\" disabled>Share</button></div>",
+      "css": ".ds-btn-row { display: flex; gap: 8px; } .ds-btn { font: 15px/1.4 var(--body); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 6px 10px; white-space: nowrap; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; } .ds-btn:hover:not(:disabled) { border-color: var(--dim); } .ds-btn:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; } .ds-btn:disabled { opacity: 0.45; cursor: default; } .ds-btn-on { border-color: var(--yellow); color: var(--yellow); }"
+    },
+    {
+      "name": "Fire Button (armed)",
+      "kind": "button",
+      "refersTo": "button-fire",
+      "description": "The one red button, with its Armed label above. Sits on the picture's centreline.",
+      "html": "<div class=\"ds-firebox\"><span class=\"ds-arm\">Armed</span><button class=\"ds-fire\">Fire</button></div>",
+      "css": ".ds-firebox { display: grid; justify-items: center; gap: 7px; width: 216px; } .ds-arm { display: flex; align-items: center; gap: 7px; font: 700 13px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--yellow); } .ds-arm::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; } .ds-fire { width: 216px; min-height: 60px; padding: 10px 12px 11px; background: var(--red-fill); border: 1px solid var(--red-fill); border-radius: 3px; color: #fff; font: 700 32px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: transform 0.12s var(--ease), background-color 0.15s; } .ds-fire:hover { background: #b32218; border-color: #b32218; } .ds-fire:active { transform: translateY(2px); } .ds-fire:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }"
+    },
+    {
+      "name": "Fire Button (firing)",
+      "kind": "button",
+      "refersTo": "button-fire-firing",
+      "description": "While the engine runs the button inverts and reads Shut down.",
+      "html": "<div class=\"ds-firebox-f\"><span class=\"ds-arm-f\">Firing</span><button class=\"ds-fire-f\">Shut down</button></div>",
+      "css": ".ds-firebox-f { display: grid; justify-items: center; gap: 7px; width: 216px; } .ds-arm-f { display: flex; align-items: center; gap: 7px; font: 700 13px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; color: var(--red-text); } .ds-arm-f::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; } .ds-fire-f { width: 216px; min-height: 60px; padding: 10px 12px 11px; background: var(--well); border: 1px solid var(--red); border-radius: 3px; color: var(--red-text); font: 700 32px/1 var(--display); letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: transform 0.12s var(--ease), background-color 0.15s; } .ds-fire-f:active { transform: translateY(2px); } .ds-fire-f:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }"
+    },
+    {
+      "name": "Numbered Part Picker",
+      "kind": "input",
+      "refersTo": "select",
+      "description": "A part picker in the Build column: a numbered ring that matches the mark on the engine, a dropdown and a one-line note.",
+      "html": "<label class=\"ds-part\"><span class=\"ds-part-name\"><span class=\"ds-part-no\">2</span>Exhaust</span><select class=\"ds-select\"><option>Bell nozzle</option><option>Aerospike</option></select><span class=\"ds-part-note\">The classic curved nozzle. It suits one altitude best.</span></label>",
+      "css": ".ds-part { display: block; width: 258px; font: 15px/1.4 var(--body); color: var(--text); } .ds-part-name { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; } .ds-part-no { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--text); border-radius: 50%; font: 700 13px/1 var(--display); } .ds-part:hover .ds-part-no, .ds-part:focus-within .ds-part-no { background: var(--yellow); border-color: var(--yellow); color: var(--ink); } .ds-select { width: 100%; font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; padding: 6px 10px; } .ds-select:hover { border-color: var(--dim); } .ds-select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; } .ds-part-note { display: block; margin-top: 5px; color: var(--dim); font-size: 12.5px; line-height: 1.35; }"
+    },
+    {
+      "name": "Callout",
+      "kind": "custom",
+      "refersTo": "callout",
+      "description": "The numbered mark on the engine. Hover or focus turns it solid yellow; clicking goes to its picker.",
+      "html": "<div class=\"ds-callouts\"><button class=\"ds-callout\">1</button><button class=\"ds-callout ds-callout-lit\">2</button></div>",
+      "css": ".ds-callouts { display: flex; gap: 12px; padding: 8px; } .ds-callout { width: 24px; height: 24px; padding: 0; display: grid; place-items: center; background: var(--ink); color: var(--text); border: 1px solid var(--text); border-radius: 50%; font: 700 14px/1 var(--display); cursor: pointer; } .ds-callout:hover, .ds-callout-lit { background: var(--yellow); border-color: var(--yellow); color: var(--ink); } .ds-callout:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }"
+    },
+    {
+      "name": "Slider",
+      "kind": "input",
+      "description": "A thin scale with a flat block for a handle. Name and bold current value sit above.",
+      "html": "<label class=\"ds-slider\"><span class=\"ds-slider-head\"><span class=\"ds-slider-name\">Throttle</span><output class=\"ds-slider-out\">100 %</output></span><input class=\"ds-range\" type=\"range\" min=\"0\" max=\"100\" value=\"100\"></label>",
+      "css": ".ds-slider { display: block; width: 258px; color: var(--text); } .ds-slider-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 3px; } .ds-slider-name { font: 700 13px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); } .ds-slider-out { font: 700 20px/1 var(--display); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; } .ds-range { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 24px; margin: 0; background: transparent; cursor: pointer; } .ds-range::-webkit-slider-runnable-track { height: 4px; background: var(--line); border-radius: 2px; } .ds-range::-moz-range-track { height: 4px; background: var(--line); border-radius: 2px; } .ds-range::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 20px; margin-top: -8px; background: var(--text); border: 0; border-radius: 2px; } .ds-range::-moz-range-thumb { width: 12px; height: 20px; background: var(--text); border: 0; border-radius: 2px; } .ds-range:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }"
+    },
+    {
+      "name": "Redline Gauges",
+      "kind": "custom",
+      "refersTo": "gauge-bar",
+      "description": "A limit gauge ticked every tenth, with the redline from 85%. Green within limits, yellow in the redline, red past the limit.",
+      "html": "<div class=\"ds-gauges\"><div class=\"ds-meter\"><span class=\"ds-k\">Wall stress</span><span class=\"ds-pct\">60%</span><span class=\"ds-bar\"><span class=\"ds-redline\"></span><span class=\"ds-fill\" style=\"width:60%\"></span></span></div><div class=\"ds-meter ds-meter-amber\"><span class=\"ds-k\">Heat load</span><span class=\"ds-pct\">91%</span><span class=\"ds-bar\"><span class=\"ds-redline\"></span><span class=\"ds-fill\" style=\"width:91%\"></span></span></div><div class=\"ds-meter ds-meter-red\"><span class=\"ds-k\">Instability</span><span class=\"ds-pct\">104%</span><span class=\"ds-bar\"><span class=\"ds-redline\"></span><span class=\"ds-fill\" style=\"width:100%\"></span></span></div></div>",
+      "css": ".ds-gauges { display: grid; gap: 11px; width: 288px; color: var(--text); font-variant-numeric: tabular-nums; } .ds-meter { display: grid; grid-template-columns: 1fr auto; align-items: baseline; row-gap: 4px; } .ds-k { font: 700 13px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); } .ds-pct { font: 700 20px/1 var(--display); text-align: right; } .ds-bar { grid-column: 1 / -1; position: relative; height: 12px; background: var(--well); border-radius: 2px; overflow: hidden; } .ds-bar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(233, 236, 230, 0.28) calc(10% - 1px) 10%); } .ds-redline { position: absolute; top: 0; bottom: 0; right: 0; left: 85%; background: rgba(229, 55, 43, 0.4); border-left: 2px solid var(--red); } .ds-fill { position: relative; display: block; height: 100%; background: var(--green); } .ds-meter-amber .ds-fill { background: var(--yellow); } .ds-meter-amber .ds-pct { color: var(--yellow); } .ds-meter-red .ds-fill { background: var(--red); } .ds-meter-red .ds-pct { color: var(--red-text); }"
+    },
+    {
+      "name": "Thrust Reading",
+      "kind": "custom",
+      "description": "The run-state line and the largest figure on the screen: label, figure with a dim unit, and a plain line beneath.",
+      "html": "<div class=\"ds-hero\"><p class=\"ds-run\">Live readings</p><span class=\"ds-hero-k\">Thrust</span><span class=\"ds-hero-v\">845<small>kN</small></span><span class=\"ds-hero-d\">86 tonnes of push</span></div>",
+      "css": ".ds-hero { display: flex; flex-direction: column; width: 288px; color: var(--text); font-variant-numeric: tabular-nums; } .ds-run { margin: 0 0 16px; font: 700 15px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; } .ds-hero-k { font: 700 13px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); } .ds-hero-v { font: 700 104px/0.9 var(--display); letter-spacing: 0.005em; margin-top: 4px; } .ds-hero-v small { margin-left: 0.18em; font-size: 0.34em; letter-spacing: 0.06em; color: var(--dim); } .ds-hero-d { font: 13px/1.35 var(--body); color: var(--dim); }"
+    },
+    {
+      "name": "Nozzle State Chip",
+      "kind": "chip",
+      "refersTo": "state-chip",
+      "description": "An outlined uppercase word whose colour is its meaning. Dashed and half strength while it is only a forecast.",
+      "html": "<div class=\"ds-states\"><span class=\"ds-state ds-state-ok\">Ideal</span><span class=\"ds-state ds-state-attn\">Over-expanded</span><span class=\"ds-state ds-state-over\">Separated</span><span class=\"ds-state ds-state-attn ds-state-forecast\">Over-expanded</span></div>",
+      "css": ".ds-states { display: flex; flex-wrap: wrap; gap: 8px; } .ds-state { padding: 3px 9px 4px; border: 1px solid currentColor; border-radius: 3px; font: 700 19px/1.1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); } .ds-state-ok { color: var(--green); } .ds-state-attn { color: var(--yellow); } .ds-state-over { color: var(--red-text); } .ds-state-forecast { opacity: 0.5; border-style: dashed; }"
+    },
+    {
+      "name": "Run Clock",
+      "kind": "custom",
+      "description": "The run state and time since ignition, as a solid label on the picture.",
+      "html": "<div class=\"ds-clocks\"><span class=\"ds-clock\">Standby</span><span class=\"ds-clock ds-clock-firing\">Hot-fire T+00:07</span><span class=\"ds-clock ds-clock-ended\">Test ended</span></div>",
+      "css": ".ds-clocks { display: flex; flex-wrap: wrap; gap: 8px; } .ds-clock { padding: 6px 10px 7px; background: rgba(21, 27, 24, 0.86); border: 1px solid var(--line); border-radius: 3px; font: 700 17px/1 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--yellow); font-variant-numeric: tabular-nums; } .ds-clock-firing { color: var(--red-text); border-color: var(--red); } .ds-clock-ended { color: var(--dim); }"
+    },
+    {
+      "name": "Test Log",
+      "kind": "custom",
+      "description": "What happened, stamped with the time since ignition. Ignition bold, warnings yellow, failures red.",
+      "html": "<section class=\"ds-log-box\"><h2 class=\"ds-log-h\">Test log</h2><ol class=\"ds-log\"><li><time>STANDBY</time><span>Merlin 1D on the stand. Ready to fire.</span></li><li class=\"ds-log-fire\"><time>T+00:00</time><span>Ignition.</span></li><li class=\"ds-log-fire\"><time>T+00:03</time><span>Full power: 845 kN.</span></li><li class=\"ds-log-warn\"><time>T+00:03</time><span>Nozzle: over-expanded.</span></li><li class=\"ds-log-fail\"><time>T+00:41</time><span>Chamber burst.</span></li></ol></section>",
+      "css": ".ds-log-box { width: 320px; padding: 12px 16px 14px; background: var(--ground); border-top: 1px solid var(--line); color: var(--text); } .ds-log-h { margin: 0; font: 700 13px/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); } .ds-log { margin: 8px 0 0; padding: 0; list-style: none; font: 13.5px/1.45 var(--body); } .ds-log li { display: grid; grid-template-columns: 68px minmax(0, 1fr); gap: 8px; } .ds-log time { font: 700 14px/1.4 var(--display); letter-spacing: 0.06em; color: var(--dim); font-variant-numeric: tabular-nums; } .ds-log-fire { font-weight: 700; } .ds-log-warn { color: var(--yellow); } .ds-log-fail { color: var(--red-text); font-weight: 700; }"
+    },
+    {
+      "name": "Engine Card",
+      "kind": "card",
+      "refersTo": "engine-card",
+      "description": "A choice in the engine picker. The current engine has a yellow border and a lighter fill.",
+      "html": "<div class=\"ds-cards\"><button class=\"ds-card\"><span class=\"ds-card-name\">RS-25</span><span class=\"ds-card-blurb\">Space Shuttle main engine. Hydrogen and oxygen, very efficient.</span></button><button class=\"ds-card ds-card-current\" aria-current=\"true\"><span class=\"ds-card-name\">Merlin 1D</span><span class=\"ds-card-blurb\">SpaceX Falcon 9 first-stage engine. A simple, sturdy kerolox workhorse.</span></button></div>",
+      "css": ".ds-cards { display: grid; grid-template-columns: repeat(2, 230px); gap: 8px; } .ds-card { display: grid; align-content: start; padding: 10px 12px; text-align: left; background: var(--ground); color: var(--text); border: 1px solid var(--line); border-radius: 3px; cursor: pointer; transition: border-color 0.15s, background-color 0.15s; } .ds-card:hover { border-color: var(--dim); } .ds-card:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; } .ds-card-current, .ds-card-current:hover { border-color: var(--yellow); background: var(--panel-2); } .ds-card-name { font: 700 19px/1.1 var(--display); letter-spacing: 0.03em; text-transform: uppercase; } .ds-card-blurb { margin-top: 3px; color: var(--dim); font: 12.5px/1.3 var(--body); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Test-Stand Control Room",
+    "overview": "The whole screen is one hot-fire test. The picture in the middle is the view of the engine on its stand, the column on the left is where the engine is built, the row under the picture is the console you fire it from, and the column on the right is the test data. Nothing is a \"settings sidebar\" or a \"stat tile\": every control changes the engine or the test, and every number is a reading from the physics.\n\nThe look is a working console, not a film prop. Surfaces are flat grey-green panels with thin dividing lines. There are no bezels, screws, glass, textures or toggle levers, and the controls are ordinary web controls (dropdowns, sliders, buttons, fold-open sections) so they behave the way everyone already expects. The character comes from the condensed engineering lettering, the very large thrust figure, the redline gauges and the timestamped test log.\n\nColour is kept for meaning. Almost everything is grey-green and off-white; red, yellow and green each have one job and appear nowhere else.",
+    "keyCharacteristics": [
+      "One screen, three columns and a console row; on a desktop nothing scrolls as a page.",
+      "Three signal colours with one job each: red for fire and the redline, yellow for armed, attention and selection, green for within limits.",
+      "Flat panels, thin lines, small corners. No decoration.",
+      "Condensed bold capitals for figures and labels; a plain sans for sentences. Digits never jiggle as they change.",
+      "Numbered marks on the engine match numbered part pickers in the Build column.",
+      "Every reading says whether it is a forecast (engine cold) or live (engine lit)."
+    ],
+    "rules": [
+      { "name": "The One Job Rule", "body": "Red means fire or past the redline. Yellow means armed, look here, or selected. Green means within limits. If a new element does not mean one of those things, it is grey-green or off-white.", "section": "colors" },
+      { "name": "The Three Reds Rule", "body": "Red has three shades because it has three surfaces: `red-fill` under white lettering, `red-text` for red lettering on dark, `red` for lines and gauge fills. Do not use `red` for small text or as a button fill.", "section": "colors" },
+      { "name": "The Two Voices Rule", "body": "Figures, labels and names are Barlow Condensed 700 in capitals. Sentences are Barlow in ordinary case. Never write a sentence in condensed capitals, and never set a figure in the body face.", "section": "typography" },
+      { "name": "The Steady Digits Rule", "body": "Tabular figures are on for the whole page, so a number that changes many times a second does not shift sideways. Any element that shows a changing number must keep them on.", "section": "typography" },
+      { "name": "The Flat Panel Rule", "body": "If it is part of the console, it has no shadow. A soft dark shadow is only for something that opens over the console and closes again.", "section": "elevation" },
+      { "name": "The Solid Label Rule", "body": "Labels on the picture (clock, view switch, zoom, notices) are the Well colour at 86 to 96% strength with a 1px border. They are nearly solid, never frosted or blurred.", "section": "elevation" },
+      { "name": "The Same Number Rule", "body": "A number on the engine and a number in the Build column always mean the same part. Numbers are counted from the pickers that are showing, so they never skip.", "section": "components" },
+      { "name": "The Forecast Rule", "body": "While the engine is unlit, every figure, gauge fill and the nozzle chip are shown at half strength and the chip's border is dashed. They come up to full strength as the engine lights, and the thrust figure counts up with it.", "section": "components" }
+    ],
+    "dos": [
+      "Do follow the One Job Rule: red for fire and the redline, yellow for armed, attention and selection, green for within limits.",
+      "Do keep surfaces flat: a solid grey-green fill, a 1px Line border where needed, 3px corners.",
+      "Do set every figure, label and name in Barlow Condensed 700 capitals, and every sentence in Barlow.",
+      "Do keep tabular figures on wherever a number changes.",
+      "Do give every reading a Dim uppercase label that names it, and a plain-English line beneath when the figure needs explaining.",
+      "Do use the browser's own controls (select, range, button, details) and restyle them lightly.",
+      "Do show state with the border and lettering colour, not with a new fill.",
+      "Do say whether figures are a forecast or live, and show forecasts at half strength.",
+      "Do switch off the flash, the shake and any sliding for reduced motion.",
+      "Do use the colour variables on `:root` in `src/style.css` rather than typing a colour in."
+    ],
+    "donts": [
+      "Don't use red, yellow or green as decoration, for a brand accent, or for an ordinary button.",
+      "Don't add bezels, screws, glass, brushed-metal textures, glows or toggle levers. It is a console, not a prop.",
+      "Don't put shadows on anything that is part of the console; shadows are for things that open over it.",
+      "Don't blur or frost anything. Labels on the picture are nearly solid.",
+      "Don't round corners beyond 3px, apart from the round numbered callouts and the status dot.",
+      "Don't separate things with cards or boxes inside a panel; use a label, spacing and a 1px line.",
+      "Don't add a third typeface or a third weight.",
+      "Don't use an uppercase label as decoration above a heading. A label names a reading, a control or a panel, and nothing else.",
+      "Don't show a figure that is not from the physics, or hide whether it was simulated or calculated."
+    ]
+  }
+}
