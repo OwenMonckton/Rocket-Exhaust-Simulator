@@ -1347,6 +1347,13 @@ button.primary:hover:not(:disabled) {
   #console {
     --fire: 172px;
   }
+  /* The picture is narrow here: the view switch drops its words so it clears the clock. */
+  .stage-view span {
+    display: none;
+  }
+  .stage-view {
+    padding: 4px;
+  }
   #fire {
     font-size: 25px;
   }
