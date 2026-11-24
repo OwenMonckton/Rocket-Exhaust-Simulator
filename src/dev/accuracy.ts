@@ -210,7 +210,7 @@ export function joined(presetId: string, altitudeKm = 0, across = 10, settle = 3
   const { engine, plume } = context();
   const c = makeCase(presetId, altitudeKm);
   const profile = engineProfile(c.cfg);
-  const flow = wholeNozzleFlow(c.cfg, c.result);
+  const flow = wholeNozzleFlow(c.result);
   const sim = simInputs(c.cfg, c.result, 1, { flow });
   // The curve of the bell just inside its lip, as the app fits it.
   const back = Math.min(2 * flow.radiusM, profile.exitX - profile.throatX);

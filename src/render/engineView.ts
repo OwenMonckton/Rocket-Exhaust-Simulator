@@ -1,5 +1,6 @@
 import { areaRatio, machFromAreaRatio, subsonicMachFromAreaRatio } from '../physics/nozzle';
 import { staticLook } from '../physics/gasSource';
+import { jetLeftWall } from '../physics/exhausts';
 import { destroys } from '../physics/limits';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { drawAerospike } from './aerospikeView';
@@ -227,12 +228,13 @@ export function drawEngine(
   ctx.fill();
 
   // Where the gas goes: the whole passage, less a solid motor's grain and the part of the
-  // nozzle a separated jet has pulled away from.
+  // nozzle the jet has left: torn off and ragged, or held steady at a dual bell's kink.
   const jet = (x: number, r: number) => {
     let out = r;
     if (isSolid) out = Math.min(out, grainBore(cfg, x, anim.burnt ?? 0));
-    if (result.state === 'separated' && !anim.wholeNozzle && x > profile.throatX && r > result.effectiveExitDia / 2) {
-      out = (result.effectiveExitDia / 2) * (1 + 0.05 * Math.sin(x * 40 + anim.timeS * 30));
+    if (jetLeftWall(result.state) && !anim.wholeNozzle && x > profile.throatX && r > result.effectiveExitDia / 2) {
+      const ragged = result.state === 'separated' ? 0.05 * Math.sin(x * 40 + anim.timeS * 30) : 0;
+      out = (result.effectiveExitDia / 2) * (1 + ragged);
     }
     return out;
   };
@@ -340,7 +342,7 @@ export function drawEngine(
         if (isSaltwater) {
           // Unreacted fuel is teal in the pipe. Past the pipe's mouth it turns into exhaust
           // as it reacts, over the first half of the bell.
-          const along = (x - profile.throatX) / (profile.exitX - profile.throatX);
+          const along = (x - profile.throatX) / Math.max(1e-9, profile.exitX - profile.throatX);
           const reacted = Math.min(1, Math.max(0, along / 0.7));
           c = lerp3(SALT_WATER, lerp3(look.core, look.mid, 0.3), reacted * reacted * (3 - 2 * reacted));
           // Nothing glows in the pipe itself: the fuel and its tubes are already drawn there.
