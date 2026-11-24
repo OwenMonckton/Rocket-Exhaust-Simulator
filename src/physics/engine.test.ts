@@ -281,6 +281,11 @@ describe('thrust for each exhaust type', () => {
     expect(d.thrust / b.thrust).toBeGreaterThan(0.975);
     expect(d.thrust / b.thrust).toBeLessThan(0.99);
   });
+  it("takes 1.5% off a bell's nozzle efficiency in high mode, and nothing in low mode", () => {
+    const bellEff = 0.965 + (0.025 * (dual.nozzleLenPct - 60)) / 40;
+    expect(simulate(dual, vac).nozzleEff).toBeCloseTo(bellEff * 0.985, 12);
+    expect(simulate(dual, sl).nozzleEff).toBeCloseTo(bellEff, 12);
+  });
   it('dips in thrust as a dual bell jet snaps out to fill the bell', () => {
     let last = simulate(dual, sl);
     let dip = 0;

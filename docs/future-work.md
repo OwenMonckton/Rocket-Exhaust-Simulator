@@ -125,7 +125,11 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
 3. **More exhaust types**, split in two:
    - **3a (built):** plain cone, dual bell and no nozzle. See "Exhaust types piece (part 3a)"
      below.
-   - **3b (to do):** expansion-deflection.
+   - **3b (to do):** expansion-deflection. A new type is not only a record in `EXHAUSTS`: it also
+     needs a case in the two switches in `src/physics/exhausts.ts` (`divergingWall` and
+     `lipSlope`, which will not compile without one), and its thrust rule goes in the thrust block
+     of `simulate` in `src/physics/engine.ts`, where the cone's, the dual bell's and no nozzle's are
+     still chosen by the exhaust's id (`cfg.exhaust === ...`) rather than read from the record.
 4. **Plume colour from what is in the exhaust**, replacing hand-picked colours.
 5. **Electric thrusters** (ion, Hall effect), which need their own view.
 
@@ -687,7 +691,7 @@ Each was a choice the plan did not settle. What it costs if it was the wrong cho
    nearer a limit than it was; the cone and no nozzle change no limit, so this has not been seen.
 5. **`wholeNozzleFlow` takes its radius from the gas's own exit diameter**, not the nozzle's. With
    no nozzle that is the throat; before, the plume was handed the unused exit diameter. No cost.
-6. **The still gas in an unlit engine is held to at most 3% of chamber pressure** (found in this
+6. **The still gas in an unlit engine is held to at most 3% of chamber pressure in thin air** (found in this
    check; `engineRestPressure` in `src/render/plumeParams.ts`). The gas simulation cannot start from
    a true vacuum, so in thin air the engine begins full of cold gas at 30% of the pressure its gas
    will leave at. With no nozzle that pressure is about half the chamber's, so the engine began full
@@ -696,9 +700,11 @@ Each was a choice the plan did not settle. What it costs if it was the wrong cho
    (seen in the browser: two minutes after lighting at 12 frames a second, thrust within 1% but Isp
    still 27–44% low and flow 36–79% high). With the limit the same engine's simulated figures came within
    3% of the readouts about 75 seconds after lighting at 12 frames a second (about 900 frames), at
-   sea level and in vacuum. Every example and every ordinary bell is unchanged (a test checks the
-   examples): the limit only bites where the gas leaves at more than a tenth of the chamber pressure
-   (area ratios below about 2). If wrong: none seen in the 24 cases; the limit is still far above
+   sea level and in vacuum. Near the ground the outside air is the floor, as before, and can be more
+   than 3%. Every example is unchanged (a test checks them at sea level and at 100 km), and so is
+   any nozzle whose gas leaves at less than a tenth of the chamber pressure: the limit only bites
+   above that, at area ratios below about 2, so a very short bell starts with less still gas in it
+   too. If wrong: none seen in the 24 cases; the limit is still far above
    what the solver needs, which is something above a true vacuum.
 7. **The measuring tool waits for the graphics card every five frames.** Run flat out, hundreds of
    frames of work piled up before anything was read back, and on a slow card the browser took that
@@ -716,7 +722,10 @@ one-dimensional nozzle theory for the same idealised gas: so this shows the equa
 correctly, not that they describe a real engine.
 
 **No case ran away.** In none of the 24 did a cell of either grid hold something that is not a
-number, and every case was steady 410 frames after lighting. The starter engine's dual bell runs
+number. Each was read from 410 frames after lighting, four times 50 frames apart; by then every
+case but one had settled. The reactor with no nozzle was still clearing the cold gas it began with,
+even after decision 6: in the browser its simulated figures took about 900 frames to come within
+3% of the readouts. The starter engine's dual bell runs
 full from the ground (area ratio 16 is too small for low mode), so all of these are high mode; the
 held jet was checked in the browser (below).
 
@@ -817,7 +826,10 @@ km the simulated thrust had settled 2% under the readout. No console errors.
   ground is only what the model already gave it.
 - **The dual bell's constants are proposals, not fitted to a real engine**: 5% suction on the outer
   wall in low mode, 1.5% loss in high mode, the outer bell's steeper start (1.4 times its average
-  slope) and its exit slope (0.6 times), and the inner bell's default size.
+  slope) and its exit slope (0.6 times), and the inner bell's default size. The steeper start makes
+  a sharp kink: the wall turns outward there by about 16 degrees at 80% nozzle length (from about 9
+  degrees to 25), about 20 at 60% and about 13 at full length, whatever the area ratios. The
+  total pressure lost from the kink to the exit (5.5 to 8.8%, above) follows from it.
 - **A dual bell with a huge outer bell is held near the ground at very little thrust, and the
   simulated thrust reads 0 kN there.** At area ratio 1,060 (kink at about 33) and 60 bar the
   readout gives 89 kN at sea level against 350 kN just below the switch at 26 km: the 5% suction
@@ -825,8 +837,7 @@ km the simulated thrust had settled 2% under the readout. No console errors.
   simulation goes further. It measures thrust across the mouth of the outer bell, where the still air
   round the narrow jet sits a little below the outside pressure; over that much area the deficit
   outweighs the jet, and the figure, which is never allowed below zero, reads 0 (flow reads +4.7%,
-  so the jet itself is there). A plain bell torn off at the same size is said to read the same; that
-  was not checked. Whether a real dual bell this large would lose so much to suction is not known:
+  so the jet itself is there). A plain bell torn off at the same size was not checked. Whether a real dual bell this large would lose so much to suction is not known:
   the 5% is a proposal (above).
 - **The cross-hatch drawn in a very deep plume** (no nozzle at sea level, and any very
   under-expanded jet): more depth samples, or an offset pattern that moves less visibly, would hide
@@ -850,19 +861,9 @@ km the simulated thrust had settled 2% under the readout. No console errors.
   - `src/physics/chem/pair.ts`: the last settled result (`lastOk`) can be an area-ratio-1 result,
     which then warm-starts a solve at an area ratio of 1.1 to 1.5. That is fragile, though a failure
     falls back to a cold start. Suggested fix: do not keep it when the area ratio is 1.
-  - No test drives the area-ratio-1 branch of `rocket.ts` directly, and none pins `nozzleEff`,
-    including the 0.985 for a dual bell in high mode.
   - `src/physics/exhausts.ts`: the cone works out the throat arc's radius again instead of reusing
     `arcRadius`, and the dual bell's `lipSlope` repeats the outer bell's slope sum that
     `divergingWall` does.
-  - `src/physics/reshape.ts`: `withExhaust` works out `heatLoad` before the early return for two
-    chamber-counting exhausts and never uses it there; its comment still describes only the
-    aerospike.
-  - `src/state/state.test.ts`: no test that `v2` and `v3` links naming an unknown exhaust are still
-    refused, or that a `v4` link of 20 entries is.
-  - `src/ui/copy.ts`: the hover text for "Inner bell exit" reads awkwardly ("nearer the right size for
-    the ground, less thrust is wasted low down").
-  - `src/render/engineView.ts`: the comment on `wholeNozzle` still speaks of a separated jet only.
   - `PlumeParams.separated` in `src/render/plumeParams.ts` is set but nothing reads it.
   - No unit test pins the steady, unwobbled clip of a held jet in the engine view, or the wall-curve
     fit for no nozzle.
