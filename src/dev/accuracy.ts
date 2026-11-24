@@ -10,19 +10,25 @@
 //   const acc = await import('/src/dev/accuracy.ts');
 //   console.table(acc.engineTable());
 //   console.table(acc.joinTable());
+//   console.table(acc.exhaustTable());   // each energy source with each new exhaust type, lit from cold
+//   console.table(acc.lightUp(acc.built('reactor', 'none')));   // frame by frame as it lights
+//
+// Anywhere it takes an engine, it takes an example engine's id or a whole configuration (see `built`).
 //
 // docs/future-work.md records what it measured.
 
 import { simulate } from '../physics/engine';
+import { EXHAUSTS, jetLeftWall } from '../physics/exhausts';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { getPreset } from '../physics/presets';
-import type { EngineConfig, SimResult } from '../physics/types';
+import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
+import type { EnergyId, EngineConfig, ExhaustId, SimResult } from '../physics/types';
 import { ENGINE_NX, ENGINE_NY, createEngineSim, type EngineSim, type EngineSimInputs } from '../render/engineSim';
 import { SIM_NX, SIM_NY, createFluidSim, type FluidSim } from '../render/fluidSim';
 import { stepGas } from '../render/gasSim';
-import { engineProfile, radiusAt } from '../render/geometry';
+import { GRAIN_END, engineProfile, grainBore, radiusAt } from '../render/geometry';
 import { gridLength } from '../render/plume';
-import { simInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { engineRestPressure, simInputs, wholeNozzleFlow } from '../render/plumeParams';
 
 interface Context {
   gl: WebGL2RenderingContext;
@@ -47,6 +53,21 @@ function context(): Context {
   return (shared = { gl, engine, plume, fbo: gl.createFramebuffer()! });
 }
 
+/**
+ * Wait for the graphics card every few frames. The app gives it a frame at a time; run flat out,
+ * hundreds of frames of work pile up before anything is read back, and on a slow card the
+ * browser takes that for a hung card and resets it (every cell then reads as zero).
+ */
+function pace(frame: number) {
+  if (frame % 5 === 4) context().gl.finish();
+}
+
+/** The context for a new run: a fresh one if the graphics card was reset during the last. */
+function begin(): Context {
+  if (shared?.gl.isContextLost()) shared = null;
+  return context();
+}
+
 /** A solver's gas state, four numbers a cell: density, momentum (x, r), energy. */
 function read(texture: WebGLTexture, width: number, height: number): Float32Array {
   const { gl, fbo } = context();
@@ -59,7 +80,17 @@ function read(texture: WebGLTexture, width: number, height: number): Float32Arra
   return out;
 }
 
+/** An example engine's id, or a whole configuration with a name to report it by. */
+type EngineSpec = string | { name: string; cfg: EngineConfig };
+
+/** The engine the app opens on, given an energy source and an exhaust the way the menus give them. */
+export function built(energy: EnergyId, exhaust: ExhaustId, change: Partial<EngineConfig> = {}): { name: string; cfg: EngineConfig } {
+  const cfg = withExhaust(withEnergy({ ...starterEngine(), ...change }, energy), exhaust);
+  return { name: `${energy} ${exhaust}`, cfg };
+}
+
 interface Case {
+  name: string;
   cfg: EngineConfig;
   result: SimResult;
   inputs: EngineSimInputs;
@@ -71,19 +102,39 @@ interface Case {
 }
 
 /** An engine at an altitude, set up for the engine grid the way the app sets it up. */
-function makeCase(presetId: string, altitudeKm: number): Case {
-  const preset = getPreset(presetId);
-  if (!preset) throw new Error(`No preset called ${presetId}`);
-  const cfg = preset.config;
+function makeCase(spec: EngineSpec, altitudeKm: number): Case {
+  let name: string;
+  let cfg: EngineConfig;
+  if (typeof spec === 'string') {
+    const preset = getPreset(spec);
+    if (!preset) throw new Error(`No preset called ${spec}`);
+    name = spec;
+    cfg = preset.config;
+  } else {
+    ({ name, cfg } = spec);
+  }
   const result = simulate(cfg, { altitudeKm, throttle: 1 });
   const profile = engineProfile(cfg);
   const g = result.gamma;
+  // A solid motor's gas runs down the bore of a freshly cast grain and comes off its surface, as
+  // in the app (runtime.ts).
+  const solid = cfg.energy === 'solid';
+  const at = (i: number) => (i / ENGINE_NX) * profile.exitX;
   const radii = new Float32Array(ENGINE_NX + 1);
-  for (let i = 0; i <= ENGINE_NX; i++) radii[i] = radiusAt(profile, (i / ENGINE_NX) * profile.exitX);
+  for (let i = 0; i <= ENGINE_NX; i++) {
+    radii[i] = solid ? Math.min(radiusAt(profile, at(i)), grainBore(cfg, at(i))) : radiusAt(profile, at(i));
+  }
+  let burnTo = 0;
+  if (solid) {
+    for (let i = 0; at(i) < cfg.chamberLen * GRAIN_END; i++) {
+      if (grainBore(cfg, at(i + 0.5)) < 0.999 * (cfg.chamberDia / 2)) burnTo = i + 1;
+    }
+  }
   const exitMach = machFromAreaRatio(result.expansionRatio, g);
   const exitTemp = 1 / (1 + ((g - 1) / 2) * exitMach * exitMach);
   const exitPressure = Math.pow(exitTemp, g / (g - 1));
   return {
+    name,
     cfg,
     result,
     g,
@@ -95,9 +146,10 @@ function makeCase(presetId: string, altitudeKm: number): Case {
       fire: 1,
       length: profile.exitX,
       radii,
-      restPressure: Math.min(0.3, Math.max(0.3 * exitPressure, result.pa / result.pc)),
+      restPressure: engineRestPressure(exitPressure, result.pa, result.pc),
       restTemp: Math.min(0.1, 0.2 * exitTemp),
       exitPressure,
+      burn: solid ? { from: 0, to: burnTo } : undefined,
     },
   };
 }
@@ -158,44 +210,172 @@ const pct = (v: number) => +(100 * v).toFixed(2);
  * The engine grid on its own, run to a steady state and compared with one-dimensional theory.
  * Every figure is a percentage unless it says otherwise.
  */
-export function engineAlone(presetId: string, altitudeKm = 0, frames = 500) {
-  const { engine } = context();
-  const c = makeCase(presetId, altitudeKm);
+export function engineAlone(spec: EngineSpec, altitudeKm = 0, frames = 500) {
+  const { engine } = begin();
+  const c = makeCase(spec, altitudeKm);
   engine.reset();
-  for (let n = 0; n < frames; n++) engine.step(c.inputs);
+  for (let n = 0; n < frames; n++) {
+    engine.step(c.inputs);
+    pace(n);
+  }
   const state = read(engine.texture, ENGINE_NX, ENGINE_NY);
 
   const g = c.g;
   const columns = Array.from({ length: ENGINE_NX }, (_, i) => engineColumn(c, state, i));
   const exit = columns[ENGINE_NX - 1];
-  const flows = columns.map((k) => k.flow);
+  // Along a solid motor's grain the flow grows as the bore gives off gas; it is measured past it.
+  const flows = columns.slice(c.inputs.burn?.to ?? 0).map((k) => k.flow);
   const meanFlow = flows.reduce((a, b) => a + b, 0) / flows.length;
-  let throat = 0;
-  for (let i = 1; i <= ENGINE_NX; i++) if (c.inputs.radii[i] < c.inputs.radii[throat]) throat = i;
+  // The narrowest point past a solid motor's grain, whose bore can be narrower still.
+  let throat = c.inputs.burn?.to ?? 0;
+  for (let i = throat + 1; i <= ENGINE_NX; i++) if (c.inputs.radii[i] < c.inputs.radii[throat]) throat = i;
 
-  // One-dimensional theory, in the grid's units.
+  // One-dimensional theory, in the grid's units. With no nozzle the gas leaves at the throat.
+  const exitArea = Math.PI * (c.result.flowExitDia / 2) ** 2;
   const throatArea = Math.PI * (c.cfg.throatDia / 2) ** 2;
   const idealFlow = throatArea * Math.sqrt(g) * Math.pow(2 / (g + 1), (g + 1) / (2 * (g - 1)));
   const exitSpeed = c.exitMach * Math.sqrt(g * c.exitTemp);
-  const idealThrust = idealFlow * exitSpeed + c.exitPressure * Math.PI * (c.cfg.exitDia / 2) ** 2;
+  const idealThrust = idealFlow * exitSpeed + c.exitPressure * exitArea;
   // What the readouts show, which come from the formula model.
   const formulaThrust = c.result.thrust / c.cfg.chambers / c.result.pc;
-  const thrustHere = exit.thrustVac - (c.result.pa / c.result.pc) * Math.PI * (c.cfg.exitDia / 2) ** 2;
+  const thrustHere = exit.thrustVac - (c.result.pa / c.result.pc) * exitArea;
+  // A dual bell's kink: the share of the gas's total pressure lost across its sharp corner,
+  // from two columns before it to four after, and from there to the exit (the corner sends a
+  // shock down the outer bell).
+  const kink = engineProfile(c.cfg).kink;
+  let kinkLoss: number | string = '';
+  let kinkToExit: number | string = '';
+  if (kink) {
+    const k = Math.round((kink.x / c.inputs.length) * ENGINE_NX);
+    const before = columns[Math.max(0, k - 2)].totalPressure;
+    const after = columns[Math.min(ENGINE_NX - 1, k + 4)].totalPressure;
+    kinkLoss = pct(1 - after / before);
+    kinkToExit = pct(1 - exit.totalPressure / before);
+  }
 
   return {
-    engine: `${presetId} at ${altitudeKm} km`,
+    engine: `${c.name} at ${altitudeKm} km`,
+    state: c.result.state,
     'flow vs ideal': pct(meanFlow / idealFlow),
     'flow varies along engine': pct((Math.max(...flows) - Math.min(...flows)) / meanFlow),
     'sonic point, columns past throat': columns.findIndex((k) => k.mach >= 1) - throat,
+    'throat Mach': +columns[Math.min(throat, ENGINE_NX - 1)].mach.toFixed(3),
     'exit Mach vs theory': pct(exit.mach / c.exitMach),
     'exit Mach axis / wall': `${exit.machAxis.toFixed(2)} / ${exit.machWall.toFixed(2)}`,
     'exit pressure vs theory': pct(exit.pressure / c.exitPressure),
     'Isp vs ideal': pct(exit.thrustVac / idealThrust / (meanFlow / idealFlow)),
-    'thrust vs readout': c.result.state === 'separated' ? 'separated' : pct(thrustHere / formulaThrust),
+    // The engine's grid on its own knows nothing of a jet that has left the wall.
+    'thrust vs readout': jetLeftWall(c.result.state) ? c.result.state : pct(thrustHere / formulaThrust),
     'worst total enthalpy error': pct(Math.max(...columns.map((k) => k.worstEnthalpy))),
     'worst entropy rise': pct(Math.max(...columns.map((k) => k.worstEntropy))),
     'total pressure kept at exit': pct(exit.totalPressure),
+    'total pressure lost at kink': kinkLoss,
+    'total pressure lost, kink to exit': kinkToExit,
   };
+}
+
+/** An engine set up for both grids joined, as the app sets them up. */
+function joinedCase(spec: EngineSpec, altitudeKm: number, across: number) {
+  const c = makeCase(spec, altitudeKm);
+  const profile = engineProfile(c.cfg);
+  const flow = wholeNozzleFlow(c.result);
+  const sim = simInputs(c.cfg, c.result, 1, { flow });
+  // The curve of the bell just inside its lip, as the app fits it: with no nozzle, along the
+  // chamber narrowing to the throat.
+  const fitFrom = EXHAUSTS[c.cfg.exhaust].hasNozzle ? profile.throatX : 0;
+  const back = Math.min(2 * flow.radiusM, profile.exitX - fitFrom);
+  const u = back / flow.radiusM;
+  if (u > 0.05) {
+    const radiusBack = radiusAt(profile, profile.exitX - back) / flow.radiusM;
+    sim.wallCurve = Math.min(0.2, Math.max(-0.5, (radiusBack - 1 + sim.divergence * u) / (u * u)));
+  }
+  const length = gridLength(across * 1.05);
+  const upstream = Math.min(2, 0.15 * length);
+  const cell = (length + upstream) / SIM_NX;
+  const plumeStep = { inputs: sim, span: cell * SIM_NX, upstream, wall: null };
+  // Where a jet that has left the wall leaves it, as the app tells the engine's grid. (The app
+  // runs a very light exhaust's separated jet another way; see runtime.ts.)
+  if (jetLeftWall(c.result.state)) {
+    const jetRadius = c.result.effectiveExitDia / 2;
+    for (let i = 0; i < ENGINE_NX; i++) {
+      if ((i / ENGINE_NX) * profile.exitX > profile.throatX && c.inputs.radii[i] >= jetRadius) {
+        c.inputs.separatesAt = i;
+        break;
+      }
+    }
+  }
+  const engineStep = { inputs: c.inputs, link: { mach: flow.mach, unitRadius: flow.radiusM, exitX: 0, exitRadius: 1 } };
+  return { c, flow, sim, cell, upstream, plumeStep, engineStep };
+}
+
+/** One frame of both grids, `frame` frames after lighting up from cold over `ramp` frames (0: already running). */
+function joinedFrame(j: ReturnType<typeof joinedCase>, frame: number, ramp: number) {
+  const { engine, plume } = context();
+  const fire = frame < ramp ? (frame + 1) / ramp : 1;
+  if (fire < 1) {
+    stepGas(plume, engine, { ...j.plumeStep, inputs: { ...j.sim, fire } }, { ...j.engineStep, inputs: { ...j.c.inputs, fire } });
+  } else {
+    stepGas(plume, engine, j.plumeStep, j.engineStep);
+  }
+  pace(frame);
+}
+
+/**
+ * Cells of each grid holding nonsense: a solver that has gone unstable somewhere. In the engine's
+ * grid that includes gas squeezed past ten times the chamber's density, which a solver running
+ * away reaches first; but the cold gas left in an unlit engine can be squeezed that far for a while
+ * as it lights (seen with no nozzle), so cells that are not numbers at all are counted apart.
+ */
+function wildCells(g: number) {
+  const { engine, plume } = context();
+  const state = read(engine.texture, ENGINE_NX, ENGINE_NY);
+  let engineWild = 0;
+  let notNumbers = 0;
+  // The first and last columns of the engine's grid holding any.
+  let from = -1;
+  let to = -1;
+  for (let n = 0; n < ENGINE_NX * ENGINE_NY; n++) {
+    const rho = state[n * 4];
+    if (!(rho > 0 && rho < 10) || !(Math.abs(state[n * 4 + 3]) < 100)) {
+      engineWild++;
+      if (!Number.isFinite(rho) || !Number.isFinite(state[n * 4 + 3])) notNumbers++;
+      const i = n % ENGINE_NX;
+      if (from < 0 || i < from) from = i;
+      to = Math.max(to, i);
+    }
+  }
+  // In the plume grid, a density or pressure that is not a sensible positive number.
+  const U = read(plume.texture, SIM_NX, SIM_NY);
+  let plumeWild = 0;
+  for (let n = 0; n < SIM_NX * SIM_NY; n++) {
+    const rho = U[n * 4];
+    const ux = U[n * 4 + 1] / rho;
+    const vr = U[n * 4 + 2] / rho;
+    const p = (g - 1) * (U[n * 4 + 3] - 0.5 * rho * (ux * ux + vr * vr));
+    if (!(rho > 0 && rho < 1e6) || !(p > 0 && p < 1e6)) plumeWild++;
+  }
+  return { engineWild, notNumbers, plumeWild, columns: engineWild ? `${from}-${to} of ${ENGINE_NX}` : '' };
+}
+
+/**
+ * Both grids lit from cold, as in `joined`, with the cells gone wild counted every `every` frames,
+ * and the Mach number on the centreline and at the wall where the gas leaves the engine's grid.
+ */
+export function lightUp(spec: EngineSpec, altitudeKm = 0, frames = 600, ramp = 60, every = 25) {
+  const { engine, plume } = begin();
+  const j = joinedCase(spec, altitudeKm, 10);
+  engine.reset();
+  plume.reset();
+  const rows: (string | number)[][] = [];
+  for (let n = 0; n < frames; n++) {
+    joinedFrame(j, n, ramp);
+    if ((n + 1) % every === 0) {
+      const { engineWild, notNumbers, plumeWild, columns } = wildCells(j.c.g);
+      const exit = engineColumn(j.c, read(engine.texture, ENGINE_NX, ENGINE_NY), ENGINE_NX - 1);
+      rows.push([n + 1, engineWild, notNumbers, plumeWild, columns, `${exit.machAxis.toFixed(2)} / ${exit.machWall.toFixed(2)}`]);
+    }
+  }
+  return rows;
 }
 
 /**
@@ -206,33 +386,15 @@ export function engineAlone(presetId: string, altitudeKm = 0, frames = 500) {
  * how many frames the engine takes to light up from cold first, as it does in the app (60);
  * left at 0 it starts already running, from the one-dimensional solution.
  */
-export function joined(presetId: string, altitudeKm = 0, across = 10, settle = 350, samples = 4, ramp = 0) {
-  const { engine, plume } = context();
-  const c = makeCase(presetId, altitudeKm);
-  const profile = engineProfile(c.cfg);
-  const flow = wholeNozzleFlow(c.result);
-  const sim = simInputs(c.cfg, c.result, 1, { flow });
-  // The curve of the bell just inside its lip, as the app fits it.
-  const back = Math.min(2 * flow.radiusM, profile.exitX - profile.throatX);
-  const u = back / flow.radiusM;
-  if (u > 0.05) {
-    const radiusBack = radiusAt(profile, profile.exitX - back) / flow.radiusM;
-    sim.wallCurve = Math.min(0.2, Math.max(-0.5, (radiusBack - 1 + sim.divergence * u) / (u * u)));
-  }
-  const length = gridLength(across * 1.05);
-  const upstream = Math.min(2, 0.15 * length);
-  const cell = (length + upstream) / SIM_NX;
-  const plumeStep = { inputs: sim, span: cell * SIM_NX, upstream, wall: null };
-  const engineStep = { inputs: c.inputs, link: { mach: flow.mach, unitRadius: flow.radiusM, exitX: 0, exitRadius: 1 } };
+export function joined(spec: EngineSpec, altitudeKm = 0, across = 10, settle = 350, samples = 4, ramp = 0) {
+  const { engine, plume } = begin();
+  const j = joinedCase(spec, altitudeKm, across);
+  const { c, flow, sim, cell, upstream, plumeStep, engineStep } = j;
 
   engine.reset();
   plume.reset();
-  // `ramp` frames of lighting up from cold, as the app does, before running at full power.
-  for (let n = 0; n < ramp; n++) {
-    const fire = (n + 1) / ramp;
-    stepGas(plume, engine, { ...plumeStep, inputs: { ...sim, fire } }, { ...engineStep, inputs: { ...c.inputs, fire } });
-  }
-  for (let n = 0; n < settle; n++) stepGas(plume, engine, plumeStep, engineStep);
+  // `ramp` frames of lighting up from cold, as the app does, then `settle` at full power.
+  for (let n = 0; n < ramp + settle; n++) joinedFrame(j, n, ramp);
 
   const g = c.g;
   const stations = [0.1, 1, 2, 4];
@@ -240,7 +402,10 @@ export function joined(presetId: string, altitudeKm = 0, across = 10, settle = 3
   const thrust = stations.map(() => 0);
   // The plume never quite settles, so average a few moments.
   for (let k = 0; k < samples; k++) {
-    for (let n = 0; n < 50; n++) stepGas(plume, engine, plumeStep, engineStep);
+    for (let n = 0; n < 50; n++) {
+      stepGas(plume, engine, plumeStep, engineStep);
+      pace(n);
+    }
     const exit = engineColumn(c, read(engine.texture, ENGINE_NX, ENGINE_NY), ENGINE_NX - 1);
     // The engine grid's figures, turned into the plume grid's units (exit state, exit radii).
     const density = c.exitPressure / c.exitTemp;
@@ -269,20 +434,37 @@ export function joined(presetId: string, altitudeKm = 0, across = 10, settle = 3
     });
   }
   const row: Record<string, string | number> = {
-    engine: `${presetId} at ${altitudeKm} km`,
+    engine: `${c.name} at ${altitudeKm} km`,
+    state: c.result.state,
     'cells across exit radius': +(1 / cell).toFixed(1),
   };
   stations.forEach((x, s) => (row[`exhaust at ${x}`] = pct(exhaust[s])));
   stations.forEach((x, s) => (row[`thrust at ${x}`] = pct(thrust[s])));
-  // Cells of the engine grid holding nonsense: a solver that has gone unstable somewhere.
-  const state = read(engine.texture, ENGINE_NX, ENGINE_NY);
-  let wild = 0;
-  for (let n = 0; n < ENGINE_NX * ENGINE_NY; n++) {
-    const rho = state[n * 4];
-    if (!(rho > 0 && rho < 10) || !(Math.abs(state[n * 4 + 3]) < 100)) wild++;
-  }
-  row['engine cells gone wild'] = wild;
+  const { engineWild, notNumbers, plumeWild } = wildCells(g);
+  row['engine cells gone wild'] = engineWild;
+  row['engine cells not numbers'] = notNumbers;
+  row['plume cells gone wild'] = plumeWild;
+  // A graphics card that took too long over a frame is reset, and everything read back after
+  // that is zeros: every cell "gone wild". The next run starts on a fresh context.
+  if (context().gl.isContextLost()) row['context lost'] = 'yes';
   return row;
+}
+
+const ENERGIES: EnergyId[] = ['combustion', 'solid', 'reactor', 'saltwater'];
+const NEW_EXHAUSTS: ExhaustId[] = ['cone', 'dualBell', 'none'];
+
+/**
+ * Each energy source with each of the cone, the dual bell and no nozzle, on the engine the app
+ * opens on, at sea level and in vacuum: the engine's grid on its own against one-dimensional
+ * theory, then both grids joined and lit from cold over 60 frames, as in the app.
+ */
+export function exhaustTable(energies = ENERGIES, exhausts = NEW_EXHAUSTS) {
+  const rows: Record<string, string | number>[] = [];
+  for (const energy of energies) for (const exhaust of exhausts) for (const km of [0, 100]) {
+    const spec = built(energy, exhaust);
+    rows.push({ ...engineAlone(spec, km), ...joined(spec, km, 10, 350, 4, 60) });
+  }
+  return rows;
 }
 
 /** The engine grid against theory, for a spread of engines. */
