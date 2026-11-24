@@ -3,7 +3,7 @@ import { mixRange } from '../physics/gasSource';
 import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
 import { PRESETS } from '../physics/presets';
 import { PROPELLANTS } from '../physics/propellants';
-import type { EnergyId, ExhaustId, PropellantId } from '../physics/types';
+import type { EngineConfig, EnergyId, ExhaustId, PropellantId } from '../physics/types';
 import { FUELS, FUEL_IDS, NO_OXIDISER, OXIDISERS, OXIDISER_IDS, type Ingredient } from '../physics/chem/ingredients';
 import { simulate } from '../physics/engine';
 import type { AppState, Store } from '../state/store';
@@ -28,6 +28,23 @@ interface SliderSpec {
   disabled?(s: AppState): boolean;
   /** Label and tooltip that depend on the engine (overrides `label` and `tip`) */
   describe?(s: AppState): { label: string; tip: string };
+  /** Hide the slider, and take it out of the layout, for engines it does not apply to */
+  hidden?(s: AppState): boolean;
+}
+
+/** The sliders that shape the nozzle, which each exhaust type shows or leaves out. */
+const SHAPE_SLIDERS = ['exitDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia'] as const;
+type ShapeSlider = (typeof SHAPE_SLIDERS)[number];
+
+/** The shape sliders this engine's exhaust type shows, in panel order. */
+export function shapeSlidersShown(config: EngineConfig): ShapeSlider[] {
+  return SHAPE_SLIDERS.filter((id) => EXHAUSTS[config.exhaust].sliders[id]);
+}
+
+/** Where the dual bell's kink may sit: between the throat and the exit, as `sanitize` keeps it. */
+export function innerExitRange(config: EngineConfig): { min: number; max: number } {
+  const min = 1.1 * config.throatDia;
+  return { min, max: Math.max(0.95 * config.exitDia, min * (1 + 1e-6)) };
 }
 
 /** A menu that picks one of the engine's parts. */
@@ -129,6 +146,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
         : formatLength(v);
     },
     describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
+    hidden: key === 'exitDia' ? (s) => !EXHAUSTS[s.config.exhaust].sliders.exitDia : undefined,
   });
 
   /**
@@ -218,14 +236,14 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
         },
         {
           id: 'chambers',
-          label: COUNT_COPY.bell.label,
-          tip: COUNT_COPY.bell.tip,
+          label: COUNT_COPY.chambers.label,
+          tip: COUNT_COPY.chambers.tip,
           step: () => 1,
-          range: (s) => (s.config.exhaust === 'aerospike' ? RANGES.cells : RANGES.chambers),
+          range: (s) => (EXHAUSTS[s.config.exhaust].counts === 'cells' ? RANGES.cells : RANGES.chambers),
           get: (s) => s.config.chambers,
           set: (v) => store.set({ config: { chambers: Math.round(v) } }),
           format: (v) => String(Math.round(v)),
-          describe: (s) => COUNT_COPY[s.config.exhaust],
+          describe: (s) => COUNT_COPY[EXHAUSTS[s.config.exhaust].counts],
         },
         dim('chamberDia', 'Chamber diameter'),
         dim('chamberLen', 'Chamber length'),
@@ -245,6 +263,29 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
             s.config.exhaust === 'aerospike'
               ? AEROSPIKE_DIMS.nozzleLenPct
               : { label: 'Nozzle length', tip: TIPS.nozzleLenPct },
+          hidden: (s) => !EXHAUSTS[s.config.exhaust].sliders.nozzleLenPct,
+        },
+        {
+          id: 'coneAngleDeg',
+          label: 'Cone half-angle',
+          tip: TIPS.coneAngleDeg,
+          step: () => 1,
+          range: () => RANGES.coneAngleDeg,
+          get: (s) => s.config.coneAngleDeg,
+          set: (v) => store.set({ config: { coneAngleDeg: Math.round(v) } }),
+          format: (v) => `${Math.round(v)}°`,
+          hidden: (s) => !EXHAUSTS[s.config.exhaust].sliders.coneAngleDeg,
+        },
+        {
+          id: 'innerExitDia',
+          label: 'Inner bell exit',
+          tip: TIPS.innerExitDia,
+          log: true,
+          range: (s) => innerExitRange(s.config),
+          get: (s) => s.config.innerExitDia,
+          set: (v) => store.set({ config: { innerExitDia: v } }),
+          format: (v, s) => `${formatLength(v)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`,
+          hidden: (s) => !EXHAUSTS[s.config.exhaust].sliders.innerExitDia,
         },
         {
           id: 'chamberPressureBar',
@@ -399,6 +440,9 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
       };
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));
       syncers.push((s) => {
+        const hide = spec.hidden?.(s) ?? false;
+        row.hidden = hide;
+        if (hide) return;
         const v = spec.get(s);
         if (spec.step) {
           // The slider's own ends and step are the setting's, which change with the engine's parts;

@@ -4,7 +4,7 @@ import { simulate } from '../physics/engine';
 import { getPreset } from '../physics/presets';
 import { ENERGY_SOURCES } from '../physics/parts';
 import { resolveGas } from '../physics/gasSource';
-import type { Failure, SimResult } from '../physics/types';
+import type { ExhaustId, Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
@@ -17,6 +17,8 @@ import { engineAfterRebuild, latchesNow } from './rebuild';
 
 export interface FrameInfo {
   result: SimResult;
+  /** The engine's exhaust type */
+  exhaust: ExhaustId;
   stock: SimResult | null;
   stockName: string | null;
   firing: boolean;
@@ -440,6 +442,7 @@ export function createRuntime(
       const modified = preset ? isModified(state.config) : false;
       onFrame({
         result,
+        exhaust: state.config.exhaust,
         stock: preset && modified ? simulate(preset.config, state.flight) : null,
         stockName: preset?.name ?? null,
         firing,

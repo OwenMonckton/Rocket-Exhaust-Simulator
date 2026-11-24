@@ -6,7 +6,8 @@ import { FUEL_IDS, FUELS, NO_OXIDISER, OXIDISER_IDS, OXIDISERS, reactantOf } fro
 import { SPECIES } from '../physics/chem/thermo';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
-import { SPECIES_NAMES, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
+import { EXHAUSTS, EXHAUST_IDS } from '../physics/exhausts';
+import { COUNT_COPY, SPECIES_NAMES, STATE_COPY, TIPS, expansionText, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
 
 // Every gas met by sweeps of every pair across its slider (13 mixtures, five engines) and of every
 // fuel with a spread of oxidisers around its best and balanced mixtures; BeOH from a review's sweep.
@@ -209,5 +210,25 @@ describe('unsolved wording', () => {
       expect(copy.text).toMatch(/temperature/);
     }
     expect(failureCopy('unsolved', 'combustion').text).toMatch(/mixture ratio/);
+  });
+});
+
+describe('copy for the new exhausts', () => {
+  it('has a tip for each new slider and words for a held jet', () => {
+    expect(TIPS.coneAngleDeg.length).toBeGreaterThan(20);
+    expect(TIPS.innerExitDia.length).toBeGreaterThan(20);
+    expect(STATE_COPY.held.label.length).toBeGreaterThan(0);
+    expect(STATE_COPY.held.text).toMatch(/kink/i);
+  });
+  it('says which mode a dual bell is in', () => {
+    const big = { ...starterEngine(), chamberPressureBar: 60, exitDia: 10 * starterEngine().throatDia, exhaust: 'dualBell' as const };
+    const low = simulate(big, { altitudeKm: 0, throttle: 1 });
+    const high = simulate(big, { altitudeKm: 100, throttle: 1 });
+    expect(expansionText(low, 'dualBell')).toBe(STATE_COPY.held.text);
+    expect(expansionText(high, 'dualBell')).toMatch(/outer bell/i);
+    expect(expansionText(simulate(starterEngine(), { altitudeKm: 0, throttle: 1 }), 'bell')).not.toMatch(/outer bell/i);
+  });
+  it('names what the count slider counts for every exhaust', () => {
+    for (const id of EXHAUST_IDS) expect(COUNT_COPY[EXHAUSTS[id].counts].label.length).toBeGreaterThan(0);
   });
 });

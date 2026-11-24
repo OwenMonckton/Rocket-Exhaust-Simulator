@@ -1,5 +1,5 @@
 import { ENERGY_SOURCES } from '../physics/parts';
-import type { EnergyId, ExpansionState, Failure, SimResult } from '../physics/types';
+import type { EnergyId, ExhaustId, ExpansionState, Failure, SimResult } from '../physics/types';
 
 export const TIPS = {
   scale: 'Grows or shrinks the whole engine in proportion, walls included. Thrust grows with the square of size.',
@@ -8,6 +8,8 @@ export const TIPS = {
   throatDia: 'The narrowest point. A wider throat lets more propellant through, which means more thrust.',
   exitDia: 'Width of the nozzle exit. Bigger suits thin air and vacuum; smaller suits sea level.',
   nozzleLenPct: 'How long the bell is. Longer bells point the exhaust straighter for slightly better efficiency.',
+  coneAngleDeg: "How steeply the cone's wall opens out. A wide cone is short and light, but the jet leaves it spread sideways, which wastes thrust. A narrow cone points the jet straighter, but it has to be longer and heavier.",
+  innerExitDia: "Width of the nozzle at the kink, where the short inner bell opens into the outer bell. It sets how big the inner bell is while the jet is held there: nearer the right size for the ground, less thrust is wasted low down.",
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
   energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
   exhaust: 'How the hot gas is turned into a jet. Changing it keeps the engine about as powerful.',
@@ -49,17 +51,12 @@ export const AEROSPIKE_DIMS = {
 };
 
 /** Name and tip of the slider that sets how many chambers, or thrust cells, the engine has. */
-const BELL_COUNT = {
-  label: 'Chambers',
-  tip: 'How many identical chambers share the engine. Thrust and propellant flow rise with each one.',
-};
-
 export const COUNT_COPY = {
-  bell: BELL_COUNT,
-  cone: { ...BELL_COUNT },
-  dualBell: { ...BELL_COUNT },
-  none: { ...BELL_COUNT },
-  aerospike: {
+  chambers: {
+    label: 'Chambers',
+    tip: 'How many identical chambers share the engine. Thrust and propellant flow rise with each one.',
+  },
+  cells: {
     label: 'Thrust cells',
     tip: 'How many small chambers fire along the spike. Thrust and propellant flow rise with each one.',
   },
@@ -92,9 +89,15 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   },
   held: {
     label: 'Held at the kink',
-    text: 'The jet of this dual bell is being held at the kink on purpose, so it only fills the short inner bell and wastes less thrust.',
+    text: 'The big bell is too big for the air here, so the jet lets go of the wall at the kink, on purpose. Only the short inner bell is working, which wastes less thrust than a jet torn off a bell this size.',
   },
 };
+
+/** The line under the "Nozzle exit vs outside air" state. A dual bell that is not held at its kink says it fills the outer bell. */
+export function expansionText(result: SimResult, exhaust: ExhaustId): string {
+  const text = STATE_COPY[result.state].text;
+  return exhaust === 'dualBell' && result.state !== 'held' ? `${text} The jet fills the outer bell.` : text;
+}
 
 export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text: string }> = {
   burst: {
