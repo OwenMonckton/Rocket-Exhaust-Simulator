@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { formatMixture, innerExitRange, propellantNote, roundMixture, shapeSlidersShown } from './controls';
+import { formatMixture, innerExitRange, propellantNote, roundMixture, shapeHidden } from './controls';
 import { getPreset } from '../physics/presets';
 import { sanitize } from '../physics/engine';
 import { starterEngine } from '../physics/reshape';
 import type { ExhaustId } from '../physics/types';
+import type { AppState } from '../state/store';
 
 describe('the mixture slider', () => {
   const range = { ofMin: 0.02, ofMax: 40 };
@@ -43,7 +44,11 @@ describe('the propellant note', () => {
 });
 
 describe('the nozzle shape sliders', () => {
-  const shown = (exhaust: ExhaustId) => shapeSlidersShown(sanitize({ ...starterEngine(), exhaust }));
+  // The rule the panel itself hides each slider by.
+  const shown = (exhaust: ExhaustId) => {
+    const state = { config: sanitize({ ...starterEngine(), exhaust }), flight: { altitudeKm: 0, throttle: 1 } } as AppState;
+    return (['exitDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia'] as const).filter((id) => !shapeHidden(id)(state));
+  };
   it('shows each exhaust its own sliders', () => {
     expect(shown('cone')).toContain('coneAngleDeg');
     expect(shown('cone')).not.toContain('nozzleLenPct');

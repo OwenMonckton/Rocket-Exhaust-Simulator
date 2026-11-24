@@ -228,6 +228,13 @@ describe('copy for the new exhausts', () => {
     expect(expansionText(high, 'dualBell')).toMatch(/outer bell/i);
     expect(expansionText(simulate(starterEngine(), { altitudeKm: 0, throttle: 1 }), 'bell')).not.toMatch(/outer bell/i);
   });
+  it('does not say the jet fills the outer bell when it has torn away', () => {
+    const t = starterEngine().throatDia;
+    const cfg = { ...starterEngine(), chamberPressureBar: 12, exitDia: 10 * t, innerExitDia: 8 * t, exhaust: 'dualBell' as const };
+    const r = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    expect(r.state).toBe('separated');
+    expect(expansionText(r, 'dualBell')).toBe(STATE_COPY.separated.text);
+  });
   it('names what the count slider counts for every exhaust', () => {
     for (const id of EXHAUST_IDS) expect(COUNT_COPY[EXHAUSTS[id].counts].label.length).toBeGreaterThan(0);
   });

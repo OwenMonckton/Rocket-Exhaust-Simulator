@@ -1,3 +1,4 @@
+import { jetLeftWall } from '../physics/exhausts';
 import { ENERGY_SOURCES } from '../physics/parts';
 import type { EnergyId, ExhaustId, ExpansionState, Failure, SimResult } from '../physics/types';
 
@@ -93,10 +94,10 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   },
 };
 
-/** The line under the "Nozzle exit vs outside air" state. A dual bell that is not held at its kink says it fills the outer bell. */
+/** The line under the "Nozzle exit vs outside air" state. A dual bell whose jet still has hold of the wall says it fills the outer bell. */
 export function expansionText(result: SimResult, exhaust: ExhaustId): string {
   const text = STATE_COPY[result.state].text;
-  return exhaust === 'dualBell' && result.state !== 'held' ? `${text} The jet fills the outer bell.` : text;
+  return exhaust === 'dualBell' && !jetLeftWall(result.state) ? `${text} The jet fills the outer bell.` : text;
 }
 
 export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text: string }> = {

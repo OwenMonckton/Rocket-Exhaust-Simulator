@@ -41,6 +41,9 @@ export function shapeSlidersShown(config: EngineConfig): ShapeSlider[] {
   return SHAPE_SLIDERS.filter((id) => EXHAUSTS[config.exhaust].sliders[id]);
 }
 
+/** The rule that hides a shape slider from the panel: the one `shapeSlidersShown` states. */
+export const shapeHidden = (id: ShapeSlider) => (s: AppState) => !shapeSlidersShown(s.config).includes(id);
+
 /** Where the dual bell's kink may sit: between the throat and the exit, as `sanitize` keeps it. */
 export function innerExitRange(config: EngineConfig): { min: number; max: number } {
   const min = 1.1 * config.throatDia;
@@ -146,7 +149,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
         : formatLength(v);
     },
     describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
-    hidden: key === 'exitDia' ? (s) => !EXHAUSTS[s.config.exhaust].sliders.exitDia : undefined,
+    hidden: key === 'exitDia' ? shapeHidden('exitDia') : undefined,
   });
 
   /**
@@ -263,7 +266,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
             s.config.exhaust === 'aerospike'
               ? AEROSPIKE_DIMS.nozzleLenPct
               : { label: 'Nozzle length', tip: TIPS.nozzleLenPct },
-          hidden: (s) => !EXHAUSTS[s.config.exhaust].sliders.nozzleLenPct,
+          hidden: shapeHidden('nozzleLenPct'),
         },
         {
           id: 'coneAngleDeg',
@@ -274,7 +277,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.config.coneAngleDeg,
           set: (v) => store.set({ config: { coneAngleDeg: Math.round(v) } }),
           format: (v) => `${Math.round(v)}°`,
-          hidden: (s) => !EXHAUSTS[s.config.exhaust].sliders.coneAngleDeg,
+          hidden: shapeHidden('coneAngleDeg'),
         },
         {
           id: 'innerExitDia',
@@ -285,7 +288,7 @@ export function createControls(root: HTMLElement, store: Store): (s: AppState) =
           get: (s) => s.config.innerExitDia,
           set: (v) => store.set({ config: { innerExitDia: v } }),
           format: (v, s) => `${formatLength(v)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`,
-          hidden: (s) => !EXHAUSTS[s.config.exhaust].sliders.innerExitDia,
+          hidden: shapeHidden('innerExitDia'),
         },
         {
           id: 'chamberPressureBar',
