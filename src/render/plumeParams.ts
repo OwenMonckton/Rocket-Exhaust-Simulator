@@ -95,6 +95,19 @@ export function fixedExitFlow(cfg: EngineConfig, r: SimResult, wholeNozzle = fal
 }
 
 /**
+ * Pressure of the still gas filling the engine's grid before it fires, over chamber pressure:
+ * the outside air, but never a true vacuum, which the solver cannot hold. In vacuum it is a
+ * fraction of the pressure the gas leaves at, and no more than 3% of the chamber's. Without
+ * that limit an engine with no nozzle, whose gas leaves at about half the chamber pressure, began
+ * full of cold gas some ten times as dense as its flame; a big chamber took thousands of frames
+ * to clear it, and the simulated figures were far out all that time. `exitPressure` is over
+ * chamber pressure too.
+ */
+export function engineRestPressure(exitPressure: number, pa: number, pc: number): number {
+  return Math.min(0.3, Math.max(Math.min(0.03, 0.3 * exitPressure), pa / pc));
+}
+
+/**
  * The gas as it would leave a one-piece nozzle if it filled it all the way to the exit. With no
  * nozzle that is the throat.
  */

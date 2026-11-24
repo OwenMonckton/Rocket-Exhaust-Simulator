@@ -11,7 +11,7 @@ import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
-import { fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { engineRestPressure, fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
 import { engineAfterRebuild, latchesNow } from './rebuild';
@@ -330,8 +330,7 @@ export function createRuntime(
           fire,
           length: engineExitX,
           radii,
-          // Never a true vacuum, which the solver cannot hold: a fraction of the exit pressure at least.
-          restPressure: Math.min(0.3, Math.max(0.3 * exitPressure, result.pa / result.pc)),
+          restPressure: engineRestPressure(exitPressure, result.pa, result.pc),
           // Well below anything the exhaust reaches, even down the centreline of a big nozzle
           // where it runs colder than average, so cold still gas can be told apart from it.
           restTemp: Math.min(0.1, 0.2 * exitTemp),

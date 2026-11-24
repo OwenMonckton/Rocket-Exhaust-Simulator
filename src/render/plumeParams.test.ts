@@ -5,7 +5,7 @@ import { PRESETS, getPreset } from '../physics/presets';
 import { machFromAreaRatio, pressureRatio } from '../physics/nozzle';
 import { SPIKE_SAMPLES } from './fluidSim';
 import { engineProfile } from './geometry';
-import { VACUUM_FLOOR, plumeParams, simInputs, spikeSimInputs } from './plumeParams';
+import { VACUUM_FLOOR, engineRestPressure, plumeParams, simInputs, spikeSimInputs } from './plumeParams';
 
 const at = (id: string, altitudeKm: number, patch = {}, fire = 1) => {
   const cfg = { ...getPreset(id)!.config, ...patch };
@@ -167,5 +167,34 @@ describe('plume inputs for each nozzle shape', () => {
     expect(p.exitRadiusM).toBeCloseTo(dual.innerExitDia / 2, 6);
     const torn = simulate({ ...dual, exhaust: 'bell' }, sl);
     expect(p.turbulence).toBeLessThan(plumeParams({ ...dual, exhaust: 'bell' }, torn, sl, 1).turbulence);
+  });
+});
+
+describe('the still gas in an unlit engine', () => {
+  const exitPressureOf = (cfg: ReturnType<typeof starterEngine>, altitudeKm: number) => {
+    const r = simulate(cfg, { altitudeKm, throttle: 1 });
+    return { r, exit: pressureRatio(machFromAreaRatio(r.expansionRatio, r.gamma), r.gamma) };
+  };
+  it('is as it was for every example engine', () => {
+    for (const preset of PRESETS) for (const km of [0, 100]) {
+      const { r, exit } = exitPressureOf(preset.config, km);
+      expect(engineRestPressure(exit, r.pa, r.pc), preset.id).toBe(Math.min(0.3, Math.max(0.3 * exit, r.pa / r.pc)));
+    }
+  });
+  it('holds little gas with no nozzle, so a big chamber clears it quickly as it lights', () => {
+    // The gas leaves at the throat at about half the chamber pressure; a tenth of that would
+    // fill the chamber with cold gas ten times as dense as the flame's.
+    const none = sanitize({ ...starterEngine(), exhaust: 'none' });
+    for (const km of [0, 100]) {
+      const { r, exit } = exitPressureOf(none, km);
+      expect(exit).toBeGreaterThan(0.5);
+      expect(engineRestPressure(exit, r.pa, r.pc)).toBeLessThanOrEqual(0.03);
+      expect(engineRestPressure(exit, r.pa, r.pc)).toBeGreaterThanOrEqual(r.pa / r.pc);
+    }
+  });
+  it('is still the outside air in an engine at low pressure near the ground', () => {
+    const low = sanitize({ ...starterEngine(), exhaust: 'none', chamberPressureBar: 5 });
+    const { r, exit } = exitPressureOf(low, 0);
+    expect(engineRestPressure(exit, r.pa, r.pc)).toBeCloseTo(r.pa / r.pc, 9);
   });
 });
