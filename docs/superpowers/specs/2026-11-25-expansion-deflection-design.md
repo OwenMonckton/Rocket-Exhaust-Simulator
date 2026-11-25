@@ -99,9 +99,15 @@ is a simplification and is recorded as one.
   "Expansion-deflection", counts chambers, has a nozzle, no extension, sliders: exit diameter,
   nozzle length, and plug size.
 - `EngineConfig` gains `plugShare`: the plug's diameter as a share of the wall's diameter at the
-  ring. Range 0.4 to 0.85, default 0.7. It is a share, not a length, so that engine scale and
+  ring. Range 0.4 to 0.8, default 0.7. It is a share, not a length, so that engine scale and
   chamber count need no rule for it. `sanitize` clamps it and gives every other exhaust type the
   default.
+- **When the sizes do not fit, the plug gives way first and the exit second.** A bigger plug pushes
+  the wall at the ring outward (1.4 times the throat's radius at 0.7, 1.67 times at 0.8). For an ED
+  nozzle only, `sanitize` lowers `plugShare` until the wall at the ring is no wider than 95% of the
+  chamber and the exit is at least 1.15 times as wide as the wall at the ring. If that would take
+  the plug below 0.4, it holds the plug at 0.4 and raises the exit diameter instead. No other
+  exhaust type's rules change, and a swap between types keeps the sizes as it does today.
 - The ring's area is the throat area the engine already has (`throatDia`), so swapping to or from
   an ED nozzle keeps the propellant flow. The wall at the ring is therefore wider than a plain
   throat: its radius is `throatDia / 2 / sqrt(1 - plugShare^2)`.
@@ -114,28 +120,42 @@ is a simplification and is recorded as one.
 
 In the thrust block of `simulate` (`src/physics/engine.ts`):
 
+- **Base drag, at every altitude.** The plug's flat base drags on the flow whether the wake is open
+  or closed, so the momentum term is always multiplied by `1 - 0.04 * plugShare^2` (0.98 at the
+  default plug). Applying it at every altitude keeps thrust from stepping down as the wake closes.
 - **Wake open** (the outside pressure is above what the full bell would expand the gas to): the
-  state is `'compensating'`, as an aerospike's is. The gas is taken to leave at the outside
-  pressure, and thrust is pulled part of the way from the over-expanded bell's figure toward a
-  matched nozzle's. The share is `ED_COMPENSATION = 0.5` (an aerospike's is 0.7): the wake sits a
-  little below the outside pressure and drags on the plug's base.
-- **Wake closed**: it runs as the bell it is, with `ED_CLOSED_LOSS = 0.98` on its momentum for the
-  drag of the closed wake.
+  state is `'compensating'`, as an aerospike's is. The rule has the aerospike's shape, at the same
+  place in the code: start from the figure the same bell would give at this altitude (its
+  separation included, exactly as the aerospike's rule starts), take the gas to leave at the
+  outside pressure, and pull thrust part of the way toward a matched nozzle's. The share is
+  `0.3 + 0.3 * plugShare` (0.51 at the default plug; an aerospike's is 0.7).
+- **Wake closed**: it runs as the bell it is, with the base drag above.
 - It never reads `'separated'`.
-- Both constants are proposals. The measuring tool's figures (below) are set beside them in the
-  record; they are changed only if the simulation disagrees by more than a tenth of thrust, and
-  the owner is told.
+- **So the plug size is a real choice.** A bigger plug compensates better near the ground and drags
+  more in vacuum. The reasoning: a bigger plug makes a thinner ring further out, which holds to the
+  wall better and leaves a bigger hollow for the air to fill; and a bigger base is more drag.
+- The numbers in both rules are proposals. The measuring tool's figures (below) are set beside them
+  in the record for the three plug sizes it runs. If the simulation's thrust at the default plug
+  differs from the formula's by more than a tenth at any altitude, the builder changes the numbers
+  to fit, says so in the record, and the owner is told.
 
 ### The simulation
 
 All in the plume grid, switched on only for an ED nozzle:
 
 - **Units**: lengths are in wall radii at the ring, and x = 0 is the plane of the ring.
+- **The grid's size is set by the bell, not by the zoom.** For every other engine the grid's length
+  follows the zoom (`gridLength` in `src/render/plume.ts`). For an ED nozzle it is fixed: long
+  enough for 2.2 bell lengths, and tall enough (the grid is 162 cells high) for 1.25 times the
+  mouth's radius, whichever asks for more. Zooming then changes only the view. At the default
+  engine this makes a cell about 0.036 ring radii, so the default ring (0.3 wide) is about eight
+  cells and the narrowest ring the slider allows (0.2) about five.
 - **The ring**: gas enters at x = 0 between the plug's rim and the wall, straight along the axis at
   Mach 1.1, with the ring's width set so the mass flow matches the engine's. Today the ring's edges
   are fixed (from the spike's radius to 1); they become inputs.
 - **The plug**: a solid body from the left edge to x = 0 with a flat base, using the spike's
-  machinery with a zero-length spike.
+  machinery with a spike of no length. (That machinery divides by the spike's length in three
+  places, so it needs a guard or a length of one cell.)
 - **The bell**: a solid wall from the ring to the mouth, using the extension wall's machinery
   (a slope and a curvature fitted to the bell contour).
 - **The wake**: inside the bell the solver's housekeeping is turned off. Today, any cell with almost
@@ -145,9 +165,12 @@ All in the plume grid, switched on only for an ED nozzle:
   through the mouth.
 - **Start-up**: the bell starts full of still outside air. The gas in the ring comes up with the
   ignition ramp as an aerospike's does.
-- **When it does not fit**: if the bell is longer than 60% of the longest grid (24 ring radii), the
-  nozzle is not simulated. The plume is then simulated from the mouth as a bell's is, the gas inside
-  is drawn, and the page says the nozzle is too long to simulate whole.
+- **When it does not fit**: if the size rule above asks for a grid longer than the longest allowed
+  (24 ring radii), the nozzle is not simulated whole. That happens at an area ratio of about 40 for
+  a bell of usual length. The plume is then simulated from the mouth with the jet the formula
+  describes at that altitude (`simInputs` with the current result: narrower and already at the
+  outside pressure while the wake is open), the gas inside is drawn, and the page says the nozzle
+  is too long to simulate whole.
 
 `src/sim/runtime.ts` routes an ED nozzle as it routes an aerospike: engine grid off, plume grid
 given the ring, plug and wall, and no simulated figures.
@@ -187,8 +210,12 @@ given the ring, plug and wall, and no simulated figures.
   sizes: no runaway, nothing that is not a number, and at each altitude the wake's pressure on the
   centreline just behind the plug and the thrust across the mouth. The record says at what altitude
   the wake closed in the simulation and how the measured thrust sits against the formula.
-- The measuring tool re-runs the cases it already has for the aerospike's kind of ring and the
-  RL10B-2's extension, to show they are unchanged.
+- **Proof that nothing else moved.** The measuring tool has no case today for an aerospike's ring
+  or for the RL10B-2's extension wall in the plume grid. The builder writes both first, before the
+  shader is touched, and records for each a fingerprint of the whole grid after a fixed number of
+  frames from cold (a sum over every cell's four numbers). After the shader changes, the same two
+  cases, and one ordinary bell, must give the same fingerprints to the last digit on the same
+  machine. This is the check on "every change is behind a switch".
 - In a browser: the default ED engine lit at sea level and swept to vacuum, with the wake seen to
   open and close; the three "Show inside" views; a swap to an aerospike and back; a link.
 
@@ -198,9 +225,11 @@ given the ring, plug and wall, and no simulated figures.
   grid has been asked to do. If, after the housekeeping is turned off inside the bell, the wake
   still cannot be lit from cold without runaway at every altitude, the builder stops and reports.
   The fallback is approach 3 (a hollow jet), which the owner would have to agree to.
-- **The ring is narrow.** At the coarsest grid a small ring is two or three cells wide. The plug
-  size range (0.4 to 0.85) is chosen so the default ring is at least five cells at the grid length
-  an ED nozzle uses. The builder checks this and narrows the range if not.
+- **The ring is narrow.** The grid's size rule and the plug range (0.4 to 0.8) are chosen so the
+  ring is at least five cells wide at the default engine. A longer bell makes the cells bigger; the
+  builder checks the ring's width in cells at the longest bell that still fits and, if it falls
+  under four, lowers the top of the plug range or the length at which the nozzle stops being
+  simulated whole.
 - **The two solid bodies have never been used together.** The code that decides whether a cell is
   solid already allows both; the code that brings gas in does not. This is the main change to the
   shader.
@@ -212,13 +241,19 @@ given the ring, plug and wall, and no simulated figures.
 - The plug's drawn shape and the stalk's thickness.
 - The exact names of the new shader inputs.
 - The tip and slider wording, in the page's voice.
-- The order of the work, provided the formula and the picture land before the shader changes, so
-  there is a working ED nozzle with the plume drawn before the simulation is touched.
+- The order of the work, provided two things hold. The formula and the picture land before the
+  shader changes, so there is a working ED nozzle with the plume drawn before the simulation is
+  touched. And the fingerprints of the existing cases are recorded before the shader changes.
 
 ## Calls made without asking
 
 - The plug's size is stored as a share of the wall's diameter, not as a length.
+- The plug size changes the figures: bigger compensates better near the ground and drags more in
+  vacuum. The alternative was a slider that changed only the picture.
 - The gas enters the grid straight along the axis at Mach 1.1, not turned outward.
 - No simulated figures on the page for this type, and no new example engine.
-- The two formula constants (0.5 and 0.98) are proposals to be checked against the simulation.
-- A nozzle too long for the grid falls back to being simulated from its mouth.
+- The numbers in the two formula rules are proposals to be checked against the simulation.
+- A nozzle too long for the grid (area ratio above about 40) falls back to being simulated from
+  its mouth.
+- For this type the grid's size is fixed by the bell, so zooming does not re-size it.
+- When sizes clash, the plug shrinks first and the exit grows second.
