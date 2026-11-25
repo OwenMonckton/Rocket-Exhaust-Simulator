@@ -50,7 +50,7 @@ export function curveValue(f: number, range: { min: number; max: number }, curve
 }
 
 /** The sliders that shape the nozzle, which each exhaust type shows or leaves out. */
-const SHAPE_SLIDERS = ['exitDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia'] as const;
+const SHAPE_SLIDERS = ['exitDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia', 'plugShare'] as const;
 type ShapeSlider = (typeof SHAPE_SLIDERS)[number];
 
 /** The shape sliders this engine's exhaust type shows, in panel order. */
@@ -308,6 +308,17 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           set: (v) => store.set({ config: { innerExitDia: v } }),
           format: (v, s) => `${formatLength(v)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`,
           hidden: shapeHidden('innerExitDia'),
+        },
+        {
+          id: 'plugShare',
+          label: 'Plug size',
+          tip: TIPS.plugShare,
+          step: () => 0.01,
+          range: () => RANGES.plugShare,
+          get: (s) => s.config.plugShare,
+          set: (v) => store.set({ config: { plugShare: Math.round(v * 100) / 100 } }),
+          format: (v) => `${Math.round(v * 100)} % of the wall's width`,
+          hidden: shapeHidden('plugShare'),
         },
         {
           id: 'chamberPressureBar',

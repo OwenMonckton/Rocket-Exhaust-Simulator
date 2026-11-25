@@ -11,6 +11,7 @@ export const TIPS = {
   nozzleLenPct: 'How long the bell is. Longer bells point the exhaust straighter for slightly better efficiency.',
   coneAngleDeg: "How steeply the cone's wall opens out. A wide cone is short and light, but the jet leaves it spread sideways, which wastes thrust. A narrow cone points the jet straighter, but it has to be longer and heavier.",
   innerExitDia: 'Width of the nozzle at the kink, where the short inner bell opens into the outer one. Near the ground only the inner bell works, so size it for the ground: the closer it is to the right size there, the less thrust is wasted low down.',
+  plugShare: 'How much of the throat the plug fills. A bigger plug leaves a thinner ring further out: it adjusts better to the thick air near the ground, but its wide flat back drags more once the engine is in space.',
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
   energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
   exhaust: 'How the hot gas is turned into a jet. Changing it keeps the same total throat size, so as much propellant flows through.',
@@ -94,6 +95,14 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   },
 };
 
+/** What the air does for an expansion-deflection nozzle too big for the altitude. */
+const ED_COMPENSATING_TEXT =
+  'The outside air reaches up into the hollow behind the plug, so the gas hugs the wall and leaves at the outside pressure. A plain bell this size would be over-expanded here.';
+
+/** The same nozzle once its hollow has sealed while the bell is still too big for the altitude. */
+const ED_SEALED_TEXT =
+  'The chamber pressure is high enough here that the hollow behind the plug has sealed itself off from the outside air, so the nozzle runs as a plain bell this size would: too big for this altitude. The outside air reaches the hollow only on a lower-pressure engine.';
+
 /** What the gas does as it leaves an engine with no nozzle, which can be in only these three states. */
 const NO_NOZZLE_TEXT: Partial<Record<ExpansionState, string>> = {
   under: 'There is no nozzle, so the gas leaves the throat at well above the outside pressure and balloons outward.',
@@ -107,6 +116,8 @@ const NO_NOZZLE_TEXT: Partial<Record<ExpansionState, string>> = {
  */
 export function expansionText(result: SimResult, exhaust: ExhaustId): string {
   if (exhaust === 'none' && NO_NOZZLE_TEXT[result.state]) return NO_NOZZLE_TEXT[result.state]!;
+  if (exhaust === 'expansionDeflection' && result.state === 'compensating') return ED_COMPENSATING_TEXT;
+  if (exhaust === 'expansionDeflection' && result.state === 'over') return ED_SEALED_TEXT;
   const text = STATE_COPY[result.state].text;
   return exhaust === 'dualBell' && !jetLeftWall(result.state) ? `${text} The jet fills the outer bell.` : text;
 }

@@ -58,10 +58,48 @@ export const RANGES = {
   coneAngleDeg: { min: 8, max: 30, fallback: 15 },
   /** Diameter at a dual bell's kink, m; 0 means not set yet */
   innerExitDia: { min: 0, max: 25, fallback: 0 },
+  /** An expansion-deflection nozzle's plug, as a share of the wall's diameter at the ring */
+  plugShare: { min: 0.5, max: 0.8, fallback: 0.7 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
 } satisfies Record<string, Range>;
+
+/**
+ * How wide the wall at an expansion-deflection nozzle's ring may be: this share of the chamber's
+ * width, and the exit must be this many times wider than it for the bell to open at all.
+ */
+const ED_CHAMBER_SHARE = 0.95;
+const ED_EXIT_RATIO = 1.15;
+
+/**
+ * The share of its momentum an expansion-deflection nozzle keeps after the drag of its plug's flat
+ * back, which grows with the back's area. A proposal, to be set beside the gas simulation.
+ */
+export function edBaseDrag(plugShare: number): number {
+  return 1 - 0.02 * plugShare ** 2;
+}
+
+/**
+ * How far an expansion-deflection nozzle's open wake makes up for a bell too big for the altitude:
+ * the share of the way from that bell's thrust to a matched nozzle's. A bigger plug leaves a
+ * thinner ring further out, which holds to the wall better and leaves a bigger hollow for the air
+ * to fill. Always short of an aerospike's. A proposal, to be set beside the gas simulation.
+ */
+export function edCompensation(plugShare: number): number {
+  return 0.1 + 0.7 * plugShare;
+}
+
+/**
+ * The outside pressure, over chamber pressure, below which the hollow behind an
+ * expansion-deflection nozzle's plug seals itself off from the outside air. It is the pressure
+ * the sealed hollow settles to, as measured in the gas simulation (docs/future-work.md): 2.2% of
+ * chamber pressure at a plug of 0.7 or more, rising to 4% at the smallest plug. So at sea level
+ * the hollow is open on an engine below about 46 bar and sealed on one above it.
+ */
+export function edWakeSeals(plugShare: number): number {
+  return 0.022 + 0.09 * Math.max(0, 0.7 - plugShare);
+}
 
 function clampTo(v: unknown, r: Range): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return r.fallback;
@@ -83,7 +121,7 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const mix = mixRange({ ...cfg, propellant, fuel, oxidiser });
   const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
-  const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
+  let exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
   // Only a bell has one to extend.
   const exhaust = isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
@@ -96,6 +134,19 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     const lo = 1.1 * throatDia;
     const hi = 0.95 * exitDia;
     innerExitDia = lo <= hi ? Math.min(hi, Math.max(lo, innerExitDia)) : (throatDia + exitDia) / 2;
+  }
+  // A plug pushes the wall at the ring outward. Where that wall would be wider than the chamber
+  // can feed or the exit can open from, the plug gives way first, as far as its smallest; if that
+  // is still not enough, the exit is widened.
+  // Every exhaust keeps its plug setting, as it keeps its cone angle, so a swap away and back
+  // does not lose it; only an expansion-deflection nozzle uses it.
+  let plugShare = clampTo(cfg.plugShare, RANGES.plugShare);
+  if (exhaust === 'expansionDeflection') {
+    // The widest the wall at the ring may be, as a diameter.
+    const room = Math.min(ED_CHAMBER_SHARE * chamberDia, exitDia / ED_EXIT_RATIO);
+    const fits = room > throatDia ? Math.sqrt(1 - (throatDia / room) ** 2) : 0;
+    plugShare = Math.max(RANGES.plugShare.min, Math.min(plugShare, fits));
+    exitDia = Math.max(exitDia, (ED_EXIT_RATIO * throatDia) / Math.sqrt(1 - plugShare ** 2));
   }
   return {
     presetId: typeof cfg.presetId === 'string' ? cfg.presetId : null,
@@ -120,6 +171,7 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
     coneAngleDeg: clampTo(cfg.coneAngleDeg, RANGES.coneAngleDeg),
     innerExitDia,
+    plugShare,
   };
 }
 
@@ -247,6 +299,8 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     }
     let eff = nozzleEff;
     let suction = 0;
+    // The flat back of an expansion-deflection nozzle's plug drags on the flow at every altitude.
+    if (cfg.exhaust === 'expansionDeflection') eff = nozzleEff * edBaseDrag(cfg.plugShare);
     if (cfg.exhaust === 'dualBell') {
       if (state !== 'separated') {
         // High mode: the jet fills the big bell.
@@ -264,10 +318,31 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     }
     let ve = exitVelocity(mach, g, gas.R, gas.tc);
     let thrust = ispScale * eff * idealFlow * ve + (ispScale * pExit - pa) * area - suction;
-    if (cfg.exhaust === 'aerospike' && pa > 0 && pe < pa) {
+    // How far the outside air makes up for a nozzle too big for it. An aerospike's jet has only
+    // air round its outside; an expansion-deflection nozzle's has only air in the hollow behind
+    // its plug, which drags on the plug's back, so it makes up less.
+    // The hollow behind an expansion-deflection nozzle's plug is open to the outside air only
+    // while that air's pressure is above what the hollow settles to when sealed, which is a fixed
+    // share of chamber pressure. From four times that pressure down to it, the help the air gives fades to nothing,
+    // so thrust does not step as the hollow seals.
+    const wakeOpen =
+      cfg.exhaust === 'expansionDeflection' ? Math.min(1, Math.max(0, (pa / (edWakeSeals(cfg.plugShare) * pc) - 1) / 3)) : 0;
+    const compensation =
+      cfg.exhaust === 'aerospike' ? AEROSPIKE_COMPENSATION
+      : cfg.exhaust === 'expansionDeflection' ? edCompensation(cfg.plugShare) * wakeOpen
+      : 0;
+    // Sealed, the nozzle runs as a plain bell this size, but its jet does not tear off the wall:
+    // it is thrown onto the wall at the ring and stays there. It reads as too big, not as separated.
+    // Its thrust stays the bell's (what a bell loses and keeps by tearing its jet off is the best
+    // figure there is for a nozzle this much too big), but the gas it reports is the gas leaving
+    // the whole mouth, as "over-expanded" says: set after the thrust is worked out, below.
+    const sealedTooBig = cfg.exhaust === 'expansionDeflection' && state === 'separated';
+    if (sealedTooBig) state = 'over';
+    if (compensation > 0 && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
-      // aerospike's jet, so below its design altitude the air squeezes the jet in until it leaves
-      // at the outside pressure: it never over-expands and never separates.
+      // aerospike's jet (or the inside of an expansion-deflection nozzle's), so below its design
+      // altitude the air squeezes the jet until it leaves at the outside pressure: it never
+      // over-expands and never separates.
       state = 'compensating';
       mach = Math.max(1, machFromPressureRatio(pa / pc, g));
       pExit = pa;
@@ -276,8 +351,14 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       // Air is a poor wall, and some of the expansion is lost in waves along the spike and in
       // drag on its flat base. Measuring the loss from what a real bell manages, separation
       // included, keeps it to a few percent however large the spike is.
-      const matched = ispScale * nozzleEff * idealFlow * ve + (ispScale - 1) * pa * area;
-      thrust += AEROSPIKE_COMPENSATION * Math.max(0, matched - thrust);
+      const matched = ispScale * eff * idealFlow * ve + (ispScale - 1) * pa * area;
+      thrust += compensation * Math.max(0, matched - thrust);
+    }
+    if (sealedTooBig && state === 'over') {
+      mach = exitMach;
+      pExit = pe;
+      area = ae;
+      ve = exitVelocity(mach, g, gas.R, gas.tc);
     }
     return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve, eff };
   };

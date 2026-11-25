@@ -1,7 +1,7 @@
 import { createRumble } from '../audio/rumble';
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { simulate } from '../physics/engine';
-import { EXHAUSTS, jetLeftWall } from '../physics/exhausts';
+import { EXHAUSTS, jetLeftWall, ringWallRadius } from '../physics/exhausts';
 import { getPreset } from '../physics/presets';
 import { ENERGY_SOURCES } from '../physics/parts';
 import { resolveGas } from '../physics/gasSource';
@@ -11,7 +11,7 @@ import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt, viewTransform, type View } from '../render/geometry';
 import { createPlumeRenderer, type EngineGas } from '../render/plume';
-import { engineRestPressure, fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { edSimInputs, engineRestPressure, fixedExitFlow, plumeParams, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
 import { engineAfterRebuild, latchesNow } from './rebuild';
@@ -235,17 +235,24 @@ export function createRuntime(
     // stands in the plume's grid as a solid body, the gas enters as a ring at the lip, and the
     // grid works out the flow along the spike along with the plume. (With the plume drawn, the
     // aerospike's own view draws the gas on the spike from a formula.)
-    const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike;
+    const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike && !profile.plug;
     // A dual bell's jet held at its kink has left the wall as surely as a torn-off one has.
     const leftWall = jetLeftWall(result.state);
     const wholeNozzle = useSim && engineSimOn && !(lightExhaust && leftWall);
     const spikeSim = useSim && profile.spike ? profile.spike : null;
+    // An expansion-deflection nozzle is the plume grid's kind of flow too: a plug on the
+    // centreline, gas arriving as a ring, and a hollow behind the plug that the outside air may
+    // or may not reach. The grid takes the whole nozzle, from the ring to the mouth and beyond.
+    // (Null where the bell is too long for the grid: the plume is then simulated from the mouth.)
+    const edSim = useSim && profile.plug ? edSimInputs(state.config, result, fire, profile) : null;
     const ext = profile.extension;
     const fixedFlow = ext ? fixedExitFlow(state.config, result, wholeNozzle) : null;
     const fromFixed = ext && fixedFlow && (useSim || state.config.extDeploy < 0.98) ? { ext, flow: fixedFlow } : null;
-    const flowExitX = spikeSim ? spikeSim.lip.x : fromFixed ? fromFixed.ext.seam.x : profile.exitX;
+    const flowExitX = edSim ? profile.throatX : spikeSim ? spikeSim.lip.x : fromFixed ? fromFixed.ext.seam.x : profile.exitX;
     const wholeFlow = wholeNozzle && !fromFixed ? wholeNozzleFlow(result) : null;
-    const plumeRadiusM = spikeSim
+    const plumeRadiusM = edSim
+      ? ringWallRadius(state.config)
+      : spikeSim
       ? spikeSim.lip.r
       : fromFixed
         ? useSim
@@ -254,7 +261,9 @@ export function createRuntime(
         : wholeFlow
           ? wholeFlow.radiusM
           : params.exitRadiusM;
-    const wall = fromFixed
+    const wall = edSim
+      ? edSim.wall
+      : fromFixed
       ? {
           x0: -fromFixed.ext.shift / plumeRadiusM,
           r0: fromFixed.ext.seam.r / plumeRadiusM,
@@ -265,7 +274,9 @@ export function createRuntime(
         }
       : null;
 
-    const sim = spikeSim
+    const sim = edSim
+      ? edSim.inputs
+      : spikeSim
       ? spikeSimInputs(state.config, result, fire, spikeSim)
       : useSim
         ? simInputs(
@@ -280,7 +291,7 @@ export function createRuntime(
           )
         : null;
     // An aerospike has no bell for the jet to follow.
-    if (sim && !profile.spike && (wholeNozzle || !leftWall)) {
+    if (sim && !profile.spike && !edSim && (wholeNozzle || !leftWall)) {
       // Tell the solver how the bell curves in upstream of its lip, so its idea of where the
       // nozzle wall is matches the nozzle that is drawn. Fitted two exit radii back: inside the
       // nozzle, or with no nozzle, along the chamber narrowing to the throat.
@@ -386,7 +397,7 @@ export function createRuntime(
         wall,
         // The same scales the aerospike's own view colours its thrust cells by.
         spikeView:
-          spikeSim && overlay !== 'none' && !failure
+          (spikeSim || edSim) && overlay !== 'none' && !failure
             ? {
                 mode: overlay,
                 machMax: Math.max(1.5, result.exitMach),
@@ -405,7 +416,15 @@ export function createRuntime(
     // The notes are kept to a few words so they fit on one line; SIMULATED_TIP spells them out.
     let simulatedNote = '';
     if (!gas) {
-      simulatedNote = failure ? '' : profile.spike ? 'not for aerospikes' : 'engine gas is drawn';
+      simulatedNote = failure
+        ? ''
+        : profile.spike
+          ? 'not for aerospikes'
+          : profile.plug
+            ? edSim || !useSim
+              ? 'not for expansion-deflection nozzles'
+              : 'this nozzle is too long to simulate whole'
+            : 'engine gas is drawn';
       settledFrames = 0;
       latestReading = null;
       simulated = null;
@@ -461,7 +480,7 @@ export function createRuntime(
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null, wholeNozzle, burnt }, w, h);
+    drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null || edSim !== null, wholeNozzle, burnt }, w, h);
     const throttle = ENERGY_SOURCES[state.config.energy].throttleable ? state.flight.throttle : 1;
     rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 

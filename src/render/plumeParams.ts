@@ -1,11 +1,11 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
-import { machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
+import { areaRatio, machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
 import { ENERGY_SOURCES } from '../physics/parts';
-import { jetLeftWall, lipSlope } from '../physics/exhausts';
+import { edCapRadii, edCapTilt, jetLeftWall, lipSlope, ringWallRadius } from '../physics/exhausts';
 import { resolveGas } from '../physics/gasSource';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
-import { SPIKE_SAMPLES, type SimInputs } from './fluidSim';
-import { engineProfile, spikeJetRadius, spikeSurfaceRadius, type SpikeGeometry } from './geometry';
+import { SIM_NX, SIM_NY, SPIKE_SAMPLES, type SimInputs, type SimWall } from './fluidSim';
+import { engineProfile, spikeJetRadius, spikeSurfaceRadius, type EngineProfile, type SpikeGeometry } from './geometry';
 
 export interface PlumeParams {
   /** Exit pressure over ambient pressure, capped to 0.05–400 */
@@ -189,6 +189,102 @@ export function spikeSimInputs(cfg: EngineConfig, r: SimResult, fire: number, sp
       designDensity: Math.pow(expansion, 1 / g),
       designTemp: Math.pow(expansion, (g - 1) / g),
     },
+  };
+}
+
+/** The longest the plume grid may be, in entry radii (`SIM_MAX_LENGTH` in plume.ts). */
+const ED_MAX_LENGTH = 24;
+/**
+ * The gas of an expansion-deflection nozzle enters the grid just past the speed of sound, so that
+ * nothing downstream can reach back through the ring and change what it delivers.
+ */
+export const ED_ENTRY_MACH = 1.3;
+
+
+/** The grid an expansion-deflection nozzle needs, in units of the wall's radius at the ring. */
+export interface EdGrid {
+  /** Length of the grid downstream of the ring */
+  lengthRadii: number;
+  /** Length of the bell, and radius of its mouth */
+  bellRadii: number;
+  mouthRadii: number;
+  /** False when the bell is too long for the longest grid there is */
+  fits: boolean;
+}
+
+/**
+ * How big the plume grid must be to hold a whole expansion-deflection nozzle and its plume: long
+ * enough for 2.2 bell lengths, and tall enough for 1.25 times the mouth's radius, whichever asks
+ * for more. It is set by the bell, not by the zoom, so the ring always spans the same cells.
+ */
+export function edGrid(profile: EngineProfile, ringWallR: number): EdGrid {
+  const bellRadii = (profile.exitX - profile.throatX) / ringWallR;
+  const mouthRadii = profile.points[profile.points.length - 1].r / ringWallR;
+  // The grid is SIM_NY cells tall, each (length + upstream strip) / SIM_NX across, and the strip
+  // beside the nozzle is 15% of the length up to 2 radii (as the renderer makes it).
+  const span = (1.25 * mouthRadii * SIM_NX) / SIM_NY;
+  const forHeight = span / 1.15 <= 2 / 0.15 ? span / 1.15 : span - 2;
+  const needed = Math.max(2.2 * bellRadii, forHeight);
+  return { lengthRadii: Math.min(ED_MAX_LENGTH, needed), bellRadii, mouthRadii, fits: needed <= ED_MAX_LENGTH };
+}
+
+/**
+ * Everything the plume grid needs to simulate a whole expansion-deflection nozzle, or null where
+ * there is none to simulate: another exhaust, or a bell too long for the grid.
+ *
+ * The grid's origin is the plane of the ring and its unit the wall's radius there. The plug is a
+ * solid body with a flared cap and a flat back; the gas enters through the ring between its rim and
+ * the wall, heading outward along the wall; the bell is a solid wall from the ring to the mouth. The hollow behind
+ * the plug, and whether the outside air reaches into it, the grid works out for itself.
+ */
+export function edSimInputs(
+  cfg: EngineConfig,
+  r: SimResult,
+  fire: number,
+  profile: EngineProfile,
+): { inputs: SimInputs; wall: SimWall; grid: EdGrid } | null {
+  if (!profile.plug) return null;
+  const rw = ringWallRadius(cfg);
+  const grid = edGrid(profile, rw);
+  if (!grid.fits) return null;
+  const g = r.gamma;
+  const flow = { radiusM: rw, mach: ED_ENTRY_MACH, pressure: r.pc * pressureRatio(ED_ENTRY_MACH, g), separated: false };
+  const chord = (grid.mouthRadii - 1) / grid.bellRadii;
+  // The bell leaves the ring steeply and reaches its mouth shallow: the grid's wall is a curve
+  // with that start (as steep as its fit allows) and those ends.
+  const wall: SimWall = { x0: 0, r0: 1, x1: grid.bellRadii, r1: grid.mouthRadii, slope0: 1.9 * chord };
+  // The gas leaves the ring heading outward along the wall, which is what holds it to the wall
+  // and leaves the hollow behind the plug for the outside air. It is sent no more steeply than
+  // keeps its speed along the grid's axis past the speed of sound.
+  const tilt = edCapTilt(cfg);
+  // The ring's width in the plane of the grid's edge: wide enough for gas at this speed and
+  // heading to carry the throat's flow.
+  const throatShare = (cfg.throatDia / 2 / rw) ** 2;
+  const ringInner = Math.sqrt(Math.max(0, 1 - (throatShare * areaRatio(ED_ENTRY_MACH, g)) / Math.cos(tilt)));
+  // The plug's cap: past the ring it flares outward beside the wall, turning the gas with it,
+  // and ends in a flat back.
+  const capLength = edCapRadii(cfg);
+  const radii: number[] = [];
+  for (let i = 0; i < SPIKE_SAMPLES; i++) radii.push(ringInner + Math.tan(tilt) * ((i / (SPIKE_SAMPLES - 1)) * capLength));
+  // How much further the whole bell would expand the gas.
+  const expansion = pressureRatio(machFromAreaRatio(r.expansionRatio, g), g) / pressureRatio(ED_ENTRY_MACH, g);
+  return {
+    inputs: {
+      ...simInputs(cfg, r, fire, { flow, wallSlope: 0 }),
+      // The ring delivers the same gas all the way across.
+      profile: 0,
+      spike: {
+        radii,
+        length: capLength,
+        // Outward: the opposite of an aerospike's cells, which fire inward.
+        tilt: -tilt,
+        designDensity: Math.pow(expansion, 1 / g),
+        designTemp: Math.pow(expansion, (g - 1) / g),
+      },
+      ed: { ringInner, lengthRadii: grid.lengthRadii },
+    },
+    wall,
+    grid,
   };
 }
 

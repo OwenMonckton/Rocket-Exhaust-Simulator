@@ -241,11 +241,30 @@ export function drawEngine(
   // Simulated gas is drawn on the layer underneath, so open a window onto it.
   const simGas = !!anim.simGas && !anim.failure;
   if (simGas) {
+    ctx.save();
+    // An expansion-deflection nozzle is simulated from its ring onward: the window opens onto
+    // the bell, and the chamber ahead of the ring is painted in below.
+    if (profile.plug) {
+      ctx.beginPath();
+      ctx.rect(X(profile.throatX), 0, widthPx, heightPx);
+      ctx.clip();
+    }
     cavity(jet);
     ctx.globalCompositeOperation = 'destination-out';
     ctx.fillStyle = '#000';
     ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
+    if (profile.plug && anim.fire > 0.01) {
+      // The gas in the chamber, which no grid holds for this nozzle: a plain glow in the flame's colour.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, X(profile.throatX), heightPx);
+      ctx.clip();
+      cavity();
+      ctx.fillStyle = css(lerp3(staticLook(cfg).core, [1, 1, 1], 0.35), 0.9 * anim.fire);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   // Nuclear salt water: the fuel waits in a bundle of thin neutron-absorbing tubes, so it
@@ -396,6 +415,46 @@ export function drawEngine(
       ctx.fillRect(-2 * half, -2 * half, 4 * half, 4 * half);
       ctx.restore();
     }
+  }
+
+  // An expansion-deflection nozzle: the plug in its throat, and the hollow behind the plug.
+  const plug = profile.plug;
+  if (plug) {
+    // With the gas drawn, the hollow is drawn too. While the outside air fills it, it runs the
+    // length of the bell and leaves the gas a band along the wall as wide as the jet the figures
+    // describe. Once it has closed, it is a short cone of dead gas behind the plug.
+    if (anim.fire > 0.01 && !anim.failure && !simGas) {
+      const re = profile.points[profile.points.length - 1].r;
+      const open = result.state === 'compensating';
+      const endX = open ? profile.exitX : plug.capX + 2.2 * plug.capR;
+      const endR = open ? Math.min(0.97 * re, Math.sqrt(Math.max(0, re * re - (result.effectiveExitDia / 2) ** 2))) : 0;
+      ctx.beginPath();
+      ctx.moveTo(X(plug.capX), cy - plug.capR * ppm);
+      ctx.lineTo(X(endX), cy - Math.max(endR, open ? plug.capR : 0) * ppm);
+      ctx.lineTo(X(endX), cy + Math.max(endR, open ? plug.capR : 0) * ppm);
+      ctx.lineTo(X(plug.capX), cy + plug.capR * ppm);
+      ctx.closePath();
+      ctx.fillStyle = open ? '#0d0f14' : 'rgba(13,15,20,0.7)';
+      ctx.fill();
+    }
+    // The plug itself: a stalk that flares out to a flat-backed rim, in the wall's metal.
+    const steel = ctx.createLinearGradient(0, cy - plug.rimR * ppm, 0, cy + plug.rimR * ppm);
+    steel.addColorStop(0, '#a9b1bd');
+    steel.addColorStop(0.5, '#565d69');
+    steel.addColorStop(1, '#8f97a3');
+    ctx.beginPath();
+    ctx.moveTo(X(plug.stalkX), cy - plug.stalkR * ppm);
+    ctx.lineTo(X(plug.flareX), cy - plug.stalkR * ppm);
+    for (const q of plug.cap) ctx.lineTo(X(q.x), cy - q.r * ppm);
+    for (let i = plug.cap.length - 1; i >= 0; i--) ctx.lineTo(X(plug.cap[i].x), cy + plug.cap[i].r * ppm);
+    ctx.lineTo(X(plug.flareX), cy + plug.stalkR * ppm);
+    ctx.lineTo(X(plug.stalkX), cy + plug.stalkR * ppm);
+    ctx.closePath();
+    ctx.fillStyle = steel;
+    ctx.fill();
+    ctx.strokeStyle = '#23262d';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   // Nuclear salt water: a film of plain water runs down the inside of the nozzle wall to keep

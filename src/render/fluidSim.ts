@@ -38,6 +38,20 @@ export interface SimInputs {
   wallCurve: number;
   /** Present for an aerospike, whose gas the grid takes in and shapes quite differently */
   spike?: SimSpike;
+  /**
+   * Present for an expansion-deflection nozzle simulated whole. Its plug and ring are given as a
+   * stub of a spike (`spike`), and its bell as a wall. This marks the inside of that bell as the
+   * inside of a nozzle, where the grid's housekeeping for open air does not belong.
+   */
+  ed?: SimEd;
+}
+
+/** An expansion-deflection nozzle in the grid. Lengths are in units of the wall's radius at the ring. */
+export interface SimEd {
+  /** Inner edge of the ring the gas enters through: the plug's rim */
+  ringInner: number;
+  /** How long the grid must be, set by the bell and not by the zoom */
+  lengthRadii: number;
 }
 
 /** How many points describe the surface of an aerospike's spike. */
@@ -178,6 +192,7 @@ uniform ivec2 uInletGrid;
 uniform vec3 uInletScale;   // its density, speed and pressure in this solver's units
 uniform float uInletCold;   // temperature of the still gas in an unlit engine
 uniform vec2 uInletGeom;    // where its grid ends (0: at this grid's origin), and its columns per radius
+uniform float uEdOn;        // 1 for an expansion-deflection nozzle: the wall is its bell, and the gas inside it is inside a nozzle
 uniform float uSpikeOn;     // 1 for an aerospike: a solid spike stands in the grid, and the gas arrives as a ring round it
 uniform float uSpike[${SPIKE_SAMPLES}];     // radius of the spike's surface, at evenly spaced points from the lip's plane to its base
 uniform float uSpikeLen;    // distance from the lip's plane to the base
@@ -548,9 +563,15 @@ void main() {
   vec4 w = toPrim(U1);
   S1 = clamp(S1, 0.0, w.x);
   float frac = S1 / w.x;
+  // Inside the bell of an expansion-deflection nozzle. What follows keeps open air at the outside
+  // pressure and clears away stray exhaust, which is right for open air and wrong in there: it
+  // would hold the hollow behind the plug at the outside pressure whatever the flow did. Inside
+  // the bell, air arrives only by flowing in through the mouth.
+  vec2 here = position(c);
+  bool inBell = uEdOn > 0.5 && uWallOn > 0.5 && here.x >= 0.0 && here.x <= uWall.z && here.y < extensionRadius(here.x);
   if (uFire > 0.02) {
     // Hold the surrounding air at ambient, leaving anything containing exhaust alone.
-    float k = uRelax * (1.0 - smoothstep(0.002, 0.02, frac));
+    float k = inBell ? 0.0 : uRelax * (1.0 - smoothstep(0.002, 0.02, frac));
     float before = w.x;
     w.x = mix(w.x, uAmb.x, k);
     w.w = mix(w.w, uAmb.y, k);
@@ -568,7 +589,7 @@ void main() {
     // and every plug the jet pushed out of the way would run down it as a shock front.
     float slow = 1.0 - smoothstep(0.02, 0.08, length(w.yz) / uExitSpeed);
     float besideAir = 1.0 - smoothstep(0.3, 0.7, min(min(fxm1, fxp1), min(fym1, fyp1)));
-    frac *= 1.0 - 0.02 * slow * besideAir;
+    if (!inBell) frac *= 1.0 - 0.02 * slow * besideAir;
   } else {
     // Engine off: let everything settle back to still air.
     w.x = mix(w.x, uAmb.x, 0.05);
@@ -675,7 +696,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
     diverge: u('uDiverge'), profile: u('uProfile'), exitSpeed: u('uExitSpeed'), amb: u('uAmb'),
     wallOn: u('uWallOn'), wall: u('uWall'), wallThick: u('uWallThick'), upstream: u('uUpstream'), wallCurve: u('uWallCurve'), wallShape: u('uWallShape'),
     inletOn: u('uInletOn'), inlet: u('uInlet'), inletGrid: u('uInletGrid'), inletScale: u('uInletScale'), inletCold: u('uInletCold'), inletGeom: u('uInletGeom'),
-    spikeOn: u('uSpikeOn'), spike: u('uSpike[0]'), spikeLen: u('uSpikeLen'), spikeDir: u('uSpikeDir'),
+    edOn: u('uEdOn'), spikeOn: u('uSpikeOn'), spike: u('uSpike[0]'), spikeLen: u('uSpikeLen'), spikeDir: u('uSpikeDir'),
   };
   const r = (name: string) => gl.getUniformLocation(resampler, name);
   const rloc = {
@@ -829,6 +850,7 @@ export function createFluidSim(gl: WebGL2RenderingContext): FluidSim | null {
         gl.uniform2f(loc.inletGeom, inlet.exitX, inlet.columnsPerRadius);
       }
       const spike = inputs.spike;
+      gl.uniform1f(loc.edOn, inputs.ed ? 1 : 0);
       gl.uniform1f(loc.spikeOn, spike ? 1 : 0);
       if (spike) {
         gl.uniform1fv(loc.spike, spike.radii.slice(0, SPIKE_SAMPLES));

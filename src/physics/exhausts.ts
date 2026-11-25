@@ -14,7 +14,7 @@ export interface ExhaustType {
   /** True where a deployable extension can be fitted */
   extension: boolean;
   /** Which shape sliders this type shows */
-  sliders: { exitDia: boolean; nozzleLenPct: boolean; coneAngleDeg: boolean; innerExitDia: boolean };
+  sliders: { exitDia: boolean; nozzleLenPct: boolean; coneAngleDeg: boolean; innerExitDia: boolean; plugShare: boolean };
 }
 
 export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
@@ -25,7 +25,7 @@ export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
     counts: 'chambers',
     hasNozzle: true,
     extension: true,
-    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: false },
+    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: false, plugShare: false },
   },
   cone: {
     id: 'cone',
@@ -34,7 +34,7 @@ export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
     counts: 'chambers',
     hasNozzle: true,
     extension: false,
-    sliders: { exitDia: true, nozzleLenPct: false, coneAngleDeg: true, innerExitDia: false },
+    sliders: { exitDia: true, nozzleLenPct: false, coneAngleDeg: true, innerExitDia: false, plugShare: false },
   },
   dualBell: {
     id: 'dualBell',
@@ -43,7 +43,7 @@ export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
     counts: 'chambers',
     hasNozzle: true,
     extension: false,
-    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: true },
+    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: true, plugShare: false },
   },
   aerospike: {
     id: 'aerospike',
@@ -52,7 +52,16 @@ export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
     counts: 'cells',
     hasNozzle: true,
     extension: false,
-    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: false },
+    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: false, plugShare: false },
+  },
+  expansionDeflection: {
+    id: 'expansionDeflection',
+    name: 'Expansion-deflection',
+    tip: 'A plug sits in the throat and throws the gas out through a ring onto the wall of a short bell. On a low-pressure engine near the ground, the outside air fills the hollow behind the plug and the nozzle acts like a smaller one. Higher up, or at high chamber pressure, the hollow seals itself and it runs as a plain bell.',
+    counts: 'chambers',
+    hasNozzle: true,
+    extension: false,
+    sliders: { exitDia: true, nozzleLenPct: true, coneAngleDeg: false, innerExitDia: false, plugShare: true },
   },
   none: {
     id: 'none',
@@ -61,12 +70,12 @@ export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
     counts: 'chambers',
     hasNozzle: false,
     extension: false,
-    sliders: { exitDia: false, nozzleLenPct: false, coneAngleDeg: false, innerExitDia: false },
+    sliders: { exitDia: false, nozzleLenPct: false, coneAngleDeg: false, innerExitDia: false, plugShare: false },
   },
 };
 
 /** Menu order. */
-export const EXHAUST_IDS: ExhaustId[] = ['bell', 'cone', 'dualBell', 'aerospike', 'none'];
+export const EXHAUST_IDS: ExhaustId[] = ['bell', 'cone', 'dualBell', 'aerospike', 'expansionDeflection', 'none'];
 
 export function isExhaustId(v: unknown): v is ExhaustId {
   return typeof v === 'string' && Object.hasOwn(EXHAUSTS, v);
@@ -75,6 +84,44 @@ export function isExhaustId(v: unknown): v is ExhaustId {
 /** The kink diameter a dual bell opens with: the inner bell gets the square root of the full area ratio. */
 export function defaultInnerExitDia(throatDia: number, exitDia: number): number {
   return throatDia * Math.sqrt(exitDia / throatDia);
+}
+
+/**
+ * Radius of the wall where the gas passes through at its narrowest, m. For every type but one
+ * that is the throat's radius. An expansion-deflection nozzle's throat is the ring between its
+ * plug and its wall, and the ring has the throat's area, so its wall is wider than a plain throat
+ * of the same area would be.
+ */
+export function ringWallRadius(cfg: EngineConfig): number {
+  const rt = cfg.throatDia / 2;
+  return cfg.exhaust === 'expansionDeflection' ? rt / Math.sqrt(1 - cfg.plugShare ** 2) : rt;
+}
+
+/** How far the cap of an expansion-deflection nozzle's plug runs past the ring at most, in ring-wall radii. */
+export const ED_CAP_RADII = 0.6;
+
+/**
+ * How far the cap runs past the ring on this engine, in ring-wall radii: its usual length, but
+ * never more than half the bell's, so that on a very short bell it does not reach the mouth and
+ * squeeze the gas a second time.
+ */
+export function edCapRadii(cfg: EngineConfig): number {
+  const rw = ringWallRadius(cfg);
+  return Math.min(ED_CAP_RADII, (0.5 * bellLength(cfg, rw, cfg.exitDia / 2)) / rw);
+}
+/** The steepest the cap sends the gas outward, radians. */
+const ED_MAX_TILT = (30 * Math.PI) / 180;
+
+/**
+ * The angle the cap of an expansion-deflection nozzle's plug flares outward at, radians: the
+ * angle its bell leaves the ring at (1.8 times the bell's average slope, as the gas simulation
+ * fits it), so that cap and wall run side by side. This is what throws the gas onto the wall.
+ */
+export function edCapTilt(cfg: EngineConfig): number {
+  const rw = ringWallRadius(cfg);
+  const re = cfg.exitDia / 2;
+  const chord = (re - rw) / bellLength(cfg, rw, re);
+  return Math.min(Math.atan(1.8 * chord), ED_MAX_TILT);
 }
 
 /** True where the jet has left the nozzle wall before the exit, by tearing off or by being held at a kink. */
@@ -160,6 +207,12 @@ export function divergingWall(cfg: EngineConfig): Diverging {
       const length = bellLength(cfg, rt, re);
       return { points: bellWall(rt, re, length), length, kink: null };
     }
+    case 'expansionDeflection': {
+      // The ordinary bell, started from the wall of the ring.
+      const rw = ringWallRadius(cfg);
+      const length = bellLength(cfg, rw, re);
+      return { points: bellWall(rw, re, length), length, kink: null };
+    }
     case 'cone': {
       // The throat arc turns onto the half-angle, then the wall runs straight to the exit.
       const turn = cfg.coneAngleDeg * DEG;
@@ -208,6 +261,7 @@ export function divergingWall(cfg: EngineConfig): Diverging {
 export function lipSlope(cfg: EngineConfig): number {
   switch (cfg.exhaust) {
     case 'bell':
+    case 'expansionDeflection':
       return (0.45 * Math.tan((15 * Math.PI) / 180) * 100) / cfg.nozzleLenPct;
     case 'cone':
       return Math.tan(cfg.coneAngleDeg * DEG);

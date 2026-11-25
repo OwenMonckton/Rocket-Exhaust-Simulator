@@ -169,6 +169,7 @@ function build(s: Spec): Preset {
       extDeploy: 1,
       coneAngleDeg: 15,
       innerExitDia: 0,
+      plugShare: 0.7,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };

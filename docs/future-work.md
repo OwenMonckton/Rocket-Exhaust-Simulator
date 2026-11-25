@@ -125,11 +125,7 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
 3. **More exhaust types**, split in two:
    - **3a (built):** plain cone, dual bell and no nozzle. See "Exhaust types piece (part 3a)"
      below.
-   - **3b (to do):** expansion-deflection. A new type is not only a record in `EXHAUSTS`: it also
-     needs a case in the two switches in `src/physics/exhausts.ts` (`divergingWall` and
-     `lipSlope`, which will not compile without one), and its thrust rule goes in the thrust block
-     of `simulate` in `src/physics/engine.ts`, where the cone's, the dual bell's and no nozzle's are
-     still chosen by the exhaust's id (`cfg.exhaust === ...`) rather than read from the record.
+   - **3b (built):** expansion-deflection. See "Expansion-deflection piece (part 3b)" below.
 4. **Plume colour from what is in the exhaust**, replacing hand-picked colours.
 5. **Electric thrusters** (ion, Hall effect), which need their own view.
 
@@ -1118,3 +1114,199 @@ were no console errors. An example engine shows no colour line, as it has no mak
 - **The example engines and the engines built from the same parts do not quite match.** Merlin's
   hand-picked orange is richer than derived kerosene's. This is the cost of keeping the examples
   exactly as they were.
+
+## Expansion-deflection piece (part 3b): what was built and what was left
+
+The design is in `docs/superpowers/specs/2026-11-25-expansion-deflection-design.md`. Several of its
+choices did not survive meeting the gas simulation; they are listed under the decisions below.
+
+### Words used below
+
+- **Plug**: the solid body on the centreline at the throat. **Cap**: the part of it past the
+  throat, which flares outward beside the wall and ends in a flat back.
+- **Ring**: the gap between the plug's rim and the wall, where the gas comes through.
+- **Hollow** (or wake): the space behind the cap's flat back.
+- **Open and sealed**: the hollow is open when outside air has come in through the nozzle's mouth
+  and fills it, at the outside pressure. It is sealed when the gas from the ring has closed over it
+  and it holds its own pressure, whatever the outside is.
+- **The engine grid and the plume grid**: the two gas simulations (see "One solver, two connected
+  grids" above).
+- **Fingerprint**: the sum of every number in the plume grid, and of their squares, after a fixed
+  case has run from cold. Two runs that did the same arithmetic give the same fingerprint.
+
+### What was built
+
+- **A sixth exhaust type**, "Expansion-deflection", with a "Plug size" slider (0.5 to 0.8 of the
+  wall's width at the ring). The ring has the throat's area, so swapping to it keeps the propellant
+  flow; the wall at the ring is therefore wider than a plain throat.
+- **The plug in the cutaway**: a stalk down the chamber, flaring to a rim at the throat, and a cap
+  past it.
+- **The whole nozzle in the plume grid.** The engine grid runs from the centreline to the wall and
+  cannot hold a plug, so it is switched off for this nozzle, as for an aerospike. The plume grid
+  takes the nozzle from the ring onward: the plug's cap as a solid body on the centreline (the
+  machinery an aerospike's spike uses), the bell as a solid wall (the machinery the RL10B-2's
+  extension uses), and the gas arriving through the ring. The two had never been used together;
+  the solver already allowed it.
+- **One change to the solver's shader.** Inside the bell, two pieces of housekeeping are switched
+  off: the pull that holds open air at the outside pressure, and the rule that turns slow exhaust
+  beside air into air. Both are right for open air and would have pinned the hollow at the outside
+  pressure. The switch is off for every other engine.
+- **The grid is sized by the bell, not by the zoom**: 2.2 bell lengths long and at least 1.25
+  mouth radii tall. A bell that would need more than the longest grid (about area ratio 40 at the
+  usual length) is not simulated whole: the plume is simulated from its mouth, the gas inside is
+  drawn, and the page says the nozzle is too long to simulate whole.
+- **A thrust rule** (below), a sentence for each of its states, and a new share-link format, `v5`,
+  which carries the plug. Older links open as before.
+- **In the measuring tool**: `fingerprint()`, `edCase()` and `edProbe()`.
+
+### Decisions made during the build, in order
+
+1. **Every exhaust keeps its plug setting**, as it keeps its cone angle, so swapping away and back
+   does not lose it. The design said both that other exhausts get the default and that a swap keeps
+   the plug; they could not both hold.
+2. **The gas is not fed in straight.** The design fed it along the axis at Mach 1.1 and expected
+   the plug's rim and the wall's curve to turn it. Measured, that gas filled the bell like an
+   ordinary nozzle's at every altitude and pressure: at an area ratio of 36 at sea level it reached
+   the mouth at 0.13 of the outside pressure with the hollow sealed. The nozzle's defining
+   behaviour never appeared. A real one throws the gas outward onto the wall, so the plug was given
+   a cap that flares beside the wall for 0.6 ring radii, and the gas now enters at Mach 1.3 heading
+   outward at the cap's angle (the angle the bell leaves the ring at, up to 30 degrees). Its speed
+   along the grid's axis is still past the speed of sound (1.3 times the cosine of 30 degrees is
+   1.13), which was the reason for feeding it straight.
+3. **The smallest plug is 0.5, not 0.4.** The ring must be wide enough in the grid's plane to carry
+   the throat's flow at that speed and heading, and below about 0.5 there is not room inside the
+   wall.
+4. **The hollow seals by pressure, not by the bell's size.** The design's formula had the hollow
+   open whenever the bell was too big for the altitude. The simulation shows it open only while the
+   outside pressure is above what the sealed hollow settles to, which is a fixed share of chamber
+   pressure: 2.2% at a plug of 0.7 or 0.8, 4% at 0.5. So at sea level the hollow is open on an
+   engine below about 46 bar and sealed on one above it; at 100 bar it is sealed on the ground.
+   The formula now follows that (`edWakeSeals` in `src/physics/engine.ts`). The help the open
+   hollow gives fades in from that pressure to four times it, so thrust does not step.
+5. **The first formula numbers were changed before the simulation was built.** With base drag
+   `1 - 0.04 x plug^2` and a compensation share of `0.3 + 0.3 x plug`, the nozzle beat the same
+   bell by only 1.4% at sea level and a bigger plug was worse everywhere. They are now
+   `1 - 0.02 x plug^2` and `0.1 + 0.7 x plug` (always under an aerospike's 0.7).
+6. **Sealed and too big, it reads "over-expanded", never "separated".** Its jet is thrown onto the
+   wall at the ring and stays there.
+7. **The cap is shorter on a very short bell**: its usual 0.6 ring radii, but never more than half
+   the bell's length. At the smallest exit the bell is shorter than the cap, which would have
+   poked out of the mouth and squeezed the gas a second time. (Found in the final review.)
+8. **Sealed and far too big, it reports the gas leaving the whole mouth.** Its thrust there is the
+   same bell's, tearing off included, less the plug's drag; but the pressure, speed and width it
+   reports are the full bell's, so the plume is drawn as wide as the mouth, as "over-expanded"
+   says. (Found in the final review: it used to report the torn-off jet's.)
+9. **The drawn cap follows the drawn wall** where a straight flare would pinch the passage between
+   them (the drawn wall is still coming round its throat arc there).
+10. **The chamber is painted, not simulated.** The cutaway's window onto the simulated gas opens
+   onto the bell only. No grid holds the chamber's gas for this nozzle, so it is a plain glow in
+   the flame's colour in every "Show inside" view.
+
+### Proof that nothing else moved
+
+Four fingerprints were taken before the shader was touched and again after, on the same machine
+(Intel UHD 730) and browser: Merlin 1D at sea level, the XRS-2200 aerospike at sea level, and the
+RL10B-2 at 60 km with its extension seated and halfway along. Each repeated exactly when run twice,
+and all four were identical after the change. They are in
+`docs/superpowers/plans/2026-11-25-expansion-deflection-fingerprints.md`.
+
+### What was measured, lit from cold
+
+`edCase()`: the starter engine with this nozzle at an area ratio of 16, lit from cold over 60
+frames, settled for 240 more, then read three times 25 frames apart and averaged. Thrust is taken
+across the plane of the mouth. The hollow's pressure is read on the centreline two cells behind
+the cap.
+
+No run had a cell that was not a number or had run away. Twenty-two runs were made before
+decision 4 and seven after it; the table gathers them, with runs of the same plug and pressure
+that read alike set on one line.
+
+| Chamber | Plug | Altitude | Hollow, over outside pressure | Hollow, % of chamber pressure | Thrust, simulation over formula |
+|---|---|---|---|---|---|
+| 100 bar | 0.7 | 0 km | 2.1 | 2.1 | 0.900 |
+| 100 bar | 0.7 | 5 km | 4.0 | 2.2 | 0.905 |
+| 100 bar | 0.7 | 10 km | 12.6 | 3.3 | 0.904 |
+| 100 bar | 0.7 | 20 km | 59 | 3.3 | 0.902 |
+| 100 bar | 0.7 | 40 km | over 1,000 | 3.3 | 0.903 |
+| 100 bar | 0.7 | 100 km | over 1,000 | 3.3 | 0.903 |
+| 100 bar | 0.5 | 0 km | 4.0 | 4.0 | 0.896 |
+| 100 bar | 0.5 | 5 to 100 km | 7.5 and up | 4.0 | 0.900 to 0.904 |
+| 100 bar | 0.8 | 0 km | 2.3 | 2.3 | 0.945 |
+| 100 bar | 0.8 | 5 to 100 km | 3.8 and up | 2.1 to 3.7 | 0.937 to 0.944 |
+| 40 bar | 0.7 | 0 km | 1.01 | 2.6 | 0.902 |
+| 40 bar | 0.7 | 5 km | 1.6 | 2.2 | 0.899 |
+| 40 bar | 0.7 | 10 km | 3.4 | 2.2 | 0.902 |
+| 15 bar | 0.7 | 0 km | 0.90 | 6.1 | 1.159 |
+| 15 bar | 0.8 | 0 km | 0.71 | 4.8 | 1.044 |
+| 15 bar | 0.5 | 0 km | 0.88 | 5.9 | 1.188 |
+
+(The 100-bar rows other than 0 and 100 km at plug 0.7 were measured against the formula before
+decision 4; the formula's figure for them did not change with it. The 100 bar, 40 bar and 15 bar
+rows at 0 km, and 100 bar at 100 km, were measured after.)
+
+What this shows:
+
+- **The hollow opens and seals because of the flow.** At 40 bar at sea level it sits at 1.01 times
+  the outside pressure and holds outside air: open. By 5 km it is at 1.6 times and by 10 km 3.4
+  times: sealed. At 100 bar it is sealed even on the ground. At 15 bar it sits a little under the
+  outside pressure (0.7 to 0.9), as an open hollow that the jet is drawing on should.
+- **Sealed, the simulation reads 10% under the formula** (6% under at the biggest plug). The
+  formula charges about 1% for the plug. The rest is most likely the shocks where this crude cap
+  throws the gas onto a wall that was shaped as an ordinary bell: a real nozzle of this kind is
+  contoured to avoid them. The design said to change the formula's numbers where the simulation
+  differed by more than a tenth. Two rows are just past that (0.896 and 0.899). They were not
+  changed: charging this nozzle 10% for a crude cap would make the formula describe this
+  simulation's plug, not the part. That is the owner's call to overturn.
+- **Open at 15 bar, the simulation reads 16 to 19% above the formula** at plugs of 0.7 and 0.5,
+  about what a perfectly matched nozzle would give. The formula was not raised to meet it, because
+  it is not allowed to beat an aerospike, and because thrust read across the mouth of an open,
+  unsteady hollow is the least trustworthy figure in the table.
+- **The simulation does not show the formula's rule about plug size.** The formula says a bigger
+  plug helps near the ground and costs in vacuum. In the simulation the biggest plug is the best
+  when sealed (0.94 against 0.90) and the worst when open (1.04 against 1.16 and 1.19). The rule
+  was reasoned, not measured, and the simulation contradicts it.
+
+### Seen in a browser
+
+A 17-bar engine with this nozzle, lit and sent on an ascent: the log read "altitude compensating",
+then "over-expanded" as the hollow sealed, then "ideally expanded" and "under-expanded". "Show
+inside: Gas speed" showed a fast jet along the wall and slow, turning gas in the hollow, at sea
+level and at altitude. Widening the exit to an area ratio of 541 gave the note "this nozzle is too
+long to simulate whole" and carried on. The link was a `v5` one. No console errors.
+
+### What was left
+
+- **No simulated figures on the page for this nozzle.** They need the plume grid read back in the
+  app, which only the measuring tool does.
+- **The formula and the simulation disagree** in the three ways listed above. The page shows the
+  formula's figures.
+- **The flame view draws the whole bell as one bright glow.** The gas near the ring is tens of
+  times denser than at the mouth, and the glow is judged against the mouth. Judging it against a
+  middling density dimmed the plume outside too much and was undone. "Show inside" by speed or
+  temperature shows the structure.
+- **The plume beyond the mouth is short.** The grid is 2.2 bell lengths long, so the plume has
+  about one bell length before it fades out at the grid's end.
+- **"Show inside" colours exhaust outside the bell too**, where a little curls back round the lip
+  in thin air.
+- **Air trapped at start-up stays in a sealed hollow.** With the housekeeping off inside the bell,
+  the air that was there before ignition is swept round and round and only slowly carried away, so
+  how much of the hollow is exhaust is not a reliable sign of whether it is open. Its pressure is.
+- **The bell is fitted by a slope and a curvature.** It is within 5% of the drawn bell's radius
+  along its length at the default engine (a test checks that).
+- **The plug's cooling is not modelled.** A real plug in the throat is very hard to keep cool; the
+  heat limit is the same as a bell's.
+- **Nozzles above an area ratio of about 40 are not simulated whole.**
+- **One chamber only**, and no nozzle extension.
+- **In the narrowest chamber the wall opens out to the ring.** With the smallest plug the wall at
+  the ring is 1.155 throats wide, and the narrowest chamber allowed is 1.11, so on such an engine
+  the chamber flares to its throat instead of narrowing to it.
+- **With the gas drawn, "Show inside" ignores the plug**: the drawn speed jumps at the ring, and
+  the throat's heat glow is drawn at a plain throat's radius, inside the passage.
+- **The plume grid is not cleared when the exhaust is changed while firing**, so the first moments
+  after a swap to or from this nozzle show the old gas in the new shape.
+- **Small things**
+  - The drawn cap is a little slimmer than the simulated one where it follows the drawn wall.
+  - The simulated ring is a little wider than the drawn one, because the gas enters the grid
+    already past the speed of sound and heading outward, which takes more room than the throat.
+  - `isModified` in `src/state/store.ts` does not look at the plug size (or the cone angle or the
+    dual bell's kink), which only matters for an example engine whose exhaust has not been changed.

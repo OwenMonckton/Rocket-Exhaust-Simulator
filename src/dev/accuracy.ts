@@ -12,23 +12,27 @@
 //   console.table(acc.joinTable());
 //   console.table(acc.exhaustTable());   // each energy source with each new exhaust type, lit from cold
 //   console.table(acc.lightUp(acc.built('reactor', 'none')));   // frame by frame as it lights
+//   acc.fingerprints();                  // the plume grid's whole state for four fixed cases, to show a change left them alone
+//   acc.edCase(0, 0.7);                  // an expansion-deflection nozzle lit from cold: its wake and its thrust
+//   console.table(acc.edProbe(0, 0.7));  // the flow across its bell at a few stations
 //
 // Anywhere it takes an engine, it takes an example engine's id or a whole configuration (see `built`).
 //
 // docs/future-work.md records what it measured.
 
 import { simulate } from '../physics/engine';
-import { EXHAUSTS, jetLeftWall } from '../physics/exhausts';
-import { machFromAreaRatio } from '../physics/nozzle';
+import { ED_CAP_RADII, EXHAUSTS, jetLeftWall, ringWallRadius } from '../physics/exhausts';
+import { machFromAreaRatio, pressureRatio } from '../physics/nozzle';
 import { getPreset } from '../physics/presets';
+import { sanitize } from '../physics/engine';
 import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, SimResult } from '../physics/types';
 import { ENGINE_NX, ENGINE_NY, createEngineSim, type EngineSim, type EngineSimInputs } from '../render/engineSim';
-import { SIM_NX, SIM_NY, createFluidSim, type FluidSim } from '../render/fluidSim';
+import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type SimWall } from '../render/fluidSim';
 import { stepGas } from '../render/gasSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt } from '../render/geometry';
 import { gridLength } from '../render/plume';
-import { engineRestPressure, simInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { ED_ENTRY_MACH, edSimInputs, engineRestPressure, fixedExitFlow, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 
 interface Context {
   gl: WebGL2RenderingContext;
@@ -489,4 +493,241 @@ export function joinTable() {
     joined('rs-25', 0, 14),
     joined('rs-25', 30, 10),
   ];
+}
+
+// ---- Fingerprints of the plume grid ----
+//
+// For showing that a change to the plume solver left the engines it was not meant for exactly as
+// they were. Each case runs the plume grid alone, from cold, with inputs that depend on nothing but
+// the engine, and sums every number in the grid. The same build on the same graphics card gives the
+// same sums every time; a change that reaches a case moves them.
+
+export type FingerprintCase = 'bell' | 'aerospike' | 'extensionSeated' | 'extensionHalf';
+
+const FINGERPRINT_FRAMES = 240;
+const FINGERPRINT_RAMP = 60;
+
+/** What the plume grid is given for a case at full fire: inputs, any wall, and the grid's size. */
+function fingerprintSetup(name: FingerprintCase): { inputs: SimInputs; wall: SimWall | null; length: number; upstream: number } {
+  const size = (across: number) => {
+    const length = gridLength(across * 1.05);
+    return { length, upstream: Math.min(2, 0.15 * length) };
+  };
+  if (name === 'bell') {
+    // Merlin 1D at sea level, the jet as it leaves the whole nozzle.
+    const cfg = getPreset('merlin-1d')!.config;
+    const r = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    return { inputs: simInputs(cfg, r, 1, { flow: wholeNozzleFlow(r) }), wall: null, ...size(10) };
+  }
+  if (name === 'aerospike') {
+    // The XRS-2200 at sea level: a ring of gas at the lip of a solid spike.
+    const cfg = getPreset('xrs-2200')!.config;
+    const r = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    return { inputs: spikeSimInputs(cfg, r, 1, engineProfile(cfg).spike!), wall: null, ...size(10) };
+  }
+  // The RL10B-2 at 60 km, its extension seated or halfway along its travel: a solid curved wall
+  // standing in the plume grid, as the app builds it (runtime.ts).
+  const cfg = { ...getPreset('rl10b-2')!.config, extDeploy: name === 'extensionSeated' ? 1 : 0.5 };
+  const r = simulate(cfg, { altitudeKm: 60, throttle: 1 });
+  const ext = engineProfile(cfg).extension!;
+  const flow = fixedExitFlow(cfg, r, true)!;
+  const wall: SimWall = {
+    x0: -ext.shift / flow.radiusM,
+    r0: ext.seam.r / flow.radiusM,
+    x1: (ext.length - ext.shift) / flow.radiusM,
+    r1: cfg.exitDia / 2 / flow.radiusM,
+    slope0: ext.seamSlope,
+  };
+  return { inputs: simInputs(cfg, r, 1, { flow, wallSlope: ext.seamSlope }), wall, ...size(10) };
+}
+
+/**
+ * The plume grid's state after a case has run from cold: the sum of all its numbers and the sum
+ * of their squares, to 17 figures, and how many cells hold something that is not a number.
+ */
+export function fingerprint(name: FingerprintCase): string {
+  const { plume } = begin();
+  const { inputs, wall, length, upstream } = fingerprintSetup(name);
+  plume.reset();
+  for (let frame = 0; frame < FINGERPRINT_FRAMES; frame++) {
+    const fire = frame < FINGERPRINT_RAMP ? (frame + 1) / FINGERPRINT_RAMP : 1;
+    plume.step({ ...inputs, fire }, length + upstream, wall, upstream);
+    pace(frame);
+  }
+  let sum = 0;
+  let squares = 0;
+  let bad = 0;
+  for (const texture of [plume.texture, plume.scalarTexture]) {
+    const cells = read(texture, SIM_NX, SIM_NY);
+    for (let i = 0; i < cells.length; i++) {
+      const v = cells[i];
+      if (!Number.isFinite(v)) {
+        bad++;
+        continue;
+      }
+      sum += v;
+      squares += v * v;
+    }
+  }
+  return `${sum.toPrecision(17)} ${squares.toPrecision(17)} bad=${bad}`;
+}
+
+/** Every case's fingerprint, run twice, with whether the two runs agreed. */
+export function fingerprints() {
+  const cases: FingerprintCase[] = ['bell', 'aerospike', 'extensionSeated', 'extensionHalf'];
+  return cases.map((name) => {
+    const first = fingerprint(name);
+    const second = fingerprint(name);
+    return { case: name, fingerprint: first, repeats: first === second };
+  });
+}
+
+// ---- An expansion-deflection nozzle, simulated whole in the plume grid ----
+
+/** The engine the app opens on with an expansion-deflection nozzle: area ratio 16, room for any plug. */
+export function edEngine(plugShare = 0.7, change: Partial<EngineConfig> = {}): EngineConfig {
+  const base = starterEngine();
+  return sanitize({ ...base, exhaust: 'expansionDeflection', chamberDia: base.throatDia * 2.5, exitDia: base.throatDia * 4, plugShare, ...change });
+}
+
+/** The plume grid after an expansion-deflection nozzle has run from cold, with what is needed to read it. */
+function edRun(cfg: EngineConfig, altitudeKm: number, throttle: number, frames: number, ramp: number) {
+  const { plume } = begin();
+  const r = simulate(cfg, { altitudeKm, throttle });
+  const profile = engineProfile(cfg);
+  const ed = edSimInputs(cfg, r, 1, profile);
+  if (!ed) throw new Error('This nozzle is not simulated whole');
+  const length = ed.grid.lengthRadii;
+  const upstream = Math.min(2, 0.15 * length);
+  const cell = (length + upstream) / SIM_NX;
+  plume.reset();
+  for (let frame = 0; frame < frames; frame++) {
+    const fire = frame < ramp ? (frame + 1) / ramp : 1;
+    plume.step({ ...ed.inputs, fire }, length + upstream, ed.wall, upstream);
+    pace(frame);
+  }
+  const state = read(plume.texture, SIM_NX, SIM_NY);
+  const scalar = read(plume.scalarTexture, SIM_NX, SIM_NY);
+  const g = r.gamma;
+  /** The gas in the cell at column i, row j. */
+  const at = (i: number, j: number) => {
+    const n = j * SIM_NX + i;
+    const rho = state[n * 4];
+    const u = state[n * 4 + 1] / rho;
+    const v = state[n * 4 + 2] / rho;
+    const p = (g - 1) * (state[n * 4 + 3] - 0.5 * rho * (u * u + v * v));
+    // The exhaust amount is read back four numbers a cell like the rest, with only the first used.
+    return { rho, u, v, p, mach: Math.sqrt((u * u + v * v) / ((g * p) / rho)), exhaust: scalar[n * 4] / rho };
+  };
+  /** Column of the cell at x ring radii from the ring's plane. */
+  const column = (x: number) => Math.min(SIM_NX - 1, Math.max(0, Math.floor((x + upstream) / cell)));
+  return { r, ed, cell, upstream, at, column, g };
+}
+
+/**
+ * The flow across the bell at four stations along it, a few points from the centreline to the
+ * wall: Mach number, pressure over the outside pressure, how much of the gas is exhaust, and
+ * which way it is heading (degrees outward from the axis). For seeing what the nozzle is doing.
+ */
+export function edProbe(altitudeKm = 0, plugShare = 0.7, exitThroats = 4, throttle = 1, frames = 420, ramp = 60) {
+  const run = edRun(edEngine(plugShare, { exitDia: starterEngine().throatDia * exitThroats }), altitudeKm, throttle, frames, ramp);
+  const { wall, grid, inputs } = run.ed;
+  const shape = { slope: Math.min(wall.slope0 ?? 0, (1.8 * (wall.r1 - wall.r0)) / wall.x1), chord: (wall.r1 - wall.r0) / wall.x1 };
+  const wallAt = (x: number) => wall.r0 + shape.slope * x + ((shape.chord - shape.slope) / wall.x1) * x * x;
+  const rows: Record<string, string | number>[] = [];
+  for (const share of [0.1, 0.3, 0.6, 1.0, 1.3]) {
+    const x = share * grid.bellRadii;
+    const edge = share <= 1 ? wallAt(x) : grid.mouthRadii * 1.2;
+    const row: Record<string, string | number> = { 'x / bell': share, 'wall r': +edge.toFixed(2) };
+    for (const f of [0.03, 0.2, 0.4, 0.6, 0.8, 0.95]) {
+      const j = Math.min(SIM_NY - 1, Math.floor((f * edge) / run.cell));
+      const c = run.at(run.column(x), j);
+      const heading = Math.round((Math.atan2(c.v, c.u) * 180) / Math.PI);
+      row[`r=${f}`] = `M${c.mach.toFixed(2)} p${(c.p / inputs.pAmb).toFixed(2)} e${c.exhaust.toFixed(2)} ${heading}°`;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * An expansion-deflection nozzle lit from cold and left to settle, then read `samples` times
+ * `every` frames apart and averaged: whether anything ran away, what is in the hollow behind the
+ * plug and at what pressure, and the thrust across the mouth beside the formula's.
+ *
+ * The wake is read on the centreline two cells behind the cap's back. It is open when what is
+ * there is mostly outside air, and closed when it is exhaust.
+ *
+ * Thrust is the momentum of everything crossing the plane of the mouth plus its pressure above
+ * the outside's, over the mouth's area. The formula's figure carries losses this gas simulation
+ * does not have (it has no friction and no heat loss), so a ratio a few percent above 1 is agreement.
+ */
+export function edCase(altitudeKm = 0, plugShare = 0.7, change: Partial<EngineConfig> = {}, throttle = 1, settle = 300, samples = 4, every = 25, ramp = 60) {
+  const cfg = edEngine(plugShare, change);
+  const { plume } = begin();
+  const r = simulate(cfg, { altitudeKm, throttle });
+  const ed = edSimInputs(cfg, r, 1, engineProfile(cfg));
+  if (!ed) throw new Error('This nozzle is not simulated whole');
+  const length = ed.grid.lengthRadii;
+  const upstream = Math.min(2, 0.15 * length);
+  const cell = (length + upstream) / SIM_NX;
+  const g = r.gamma;
+  const pAmb = ed.inputs.pAmb;
+  plume.reset();
+  let frame = 0;
+  const run = (frames: number) => {
+    for (let n = 0; n < frames; n++, frame++) {
+      const fire = frame < ramp ? (frame + 1) / ramp : 1;
+      plume.step({ ...ed.inputs, fire }, length + upstream, ed.wall, upstream);
+      pace(frame);
+    }
+  };
+  const column = (x: number) => Math.min(SIM_NX - 1, Math.max(0, Math.floor((x + upstream) / cell)));
+  let wild = 0;
+  let wakeP = 0;
+  let wakeExhaust = 0;
+  let thrust = 0;
+  run(ramp + settle);
+  for (let k = 0; k < samples; k++) {
+    if (k > 0) run(every);
+    const state = read(plume.texture, SIM_NX, SIM_NY);
+    const scalar = read(plume.scalarTexture, SIM_NX, SIM_NY);
+    const at = (i: number, j: number) => {
+      const n = (j * SIM_NX + i) * 4;
+      const rho = state[n];
+      const u = state[n + 1] / rho;
+      const v = state[n + 2] / rho;
+      return { rho, u, p: (g - 1) * (state[n + 3] - 0.5 * rho * (u * u + v * v)), exhaust: scalar[n] / rho };
+    };
+    for (let n = 0; n < state.length; n++) if (!Number.isFinite(state[n]) || Math.abs(state[n]) > 1e6) wild++;
+    // The hollow: the two cells nearest the centreline, two cells behind the cap's back.
+    const iWake = column(ED_CAP_RADII) + 2;
+    wakeP += (at(iWake, 0).p + at(iWake, 1).p) / 2 / samples;
+    wakeExhaust += (at(iWake, 0).exhaust + at(iWake, 1).exhaust) / 2 / samples;
+    // The mouth: every cell from the centreline to the lip, each a ring of area 2 pi r dr.
+    const iMouth = column(ed.grid.bellRadii);
+    let sum = 0;
+    for (let j = 0; (j + 0.5) * cell < ed.grid.mouthRadii; j++) {
+      const c = at(iMouth, j);
+      sum += (c.rho * c.u * c.u + c.p - pAmb) * 2 * Math.PI * (j + 0.5) * cell * cell;
+    }
+    thrust += sum / samples;
+  }
+  // Out of the grid's units: pressures in units of the pressure the gas enters at, lengths in ring-wall radii.
+  const rw = ringWallRadius(cfg);
+  const entryPressure = r.pc * pressureRatio(ED_ENTRY_MACH, g);
+  const newtons = thrust * entryPressure * rw * rw * cfg.chambers;
+  return {
+    'altitude km': altitudeKm,
+    plug: cfg.plugShare,
+    'chamber bar': +(r.pc / 1e5).toFixed(0),
+    'wild cells': wild,
+    'wake p / outside': +(wakeP / pAmb).toFixed(2),
+    'wake p / chamber %': +((100 * wakeP * entryPressure) / r.pc).toFixed(2),
+    'wake exhaust share': +wakeExhaust.toFixed(2),
+    wake: wakeExhaust < 0.5 ? 'open' : 'closed',
+    'formula state': r.state,
+    'thrust sim / formula': r.thrust > 0 ? +(newtons / r.thrust).toFixed(3) : 0,
+    'thrust sim kN': +(newtons / 1000).toFixed(0),
+  };
 }

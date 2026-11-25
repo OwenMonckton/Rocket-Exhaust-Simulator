@@ -27,6 +27,7 @@ const base: EngineConfig = {
   exhaust: 'bell' as const,
   coneAngleDeg: 15,
   innerExitDia: 0,
+  plugShare: 0.7,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 
