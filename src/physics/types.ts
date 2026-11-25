@@ -18,9 +18,13 @@ export type PropellantId =
   | 'rj-water'
   | 'aj-hydrazine'
   | 'aj-ammonia'
-  | 'aj-hydrogen';
+  | 'aj-hydrogen'
+  | 'xenon'
+  | 'krypton'
+  | 'argon'
+  | 'iodine';
 
-export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater' | 'resistojet' | 'arcjet';
+export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater' | 'resistojet' | 'arcjet' | 'ion' | 'hall';
 export type ExhaustId = 'bell' | 'cone' | 'dualBell' | 'none' | 'aerospike' | 'expansionDeflection';
 
 export type RGB = [number, number, number];
@@ -160,7 +164,13 @@ export type Failure =
   | 'detonation'
   | 'unsolved'
   /** An electrically heated engine given too little power to turn its propellant into gas */
-  | 'underpowered';
+  | 'underpowered'
+  /** A beam thruster switched on in air */
+  | 'noVacuum'
+  /** A gridded ion thruster asked for more current than its grids can pass */
+  | 'gridOverload'
+  /** A Hall thruster whose channel cannot shed its waste heat */
+  | 'channelOverheat';
 
 export interface Limits {
   structural: number;

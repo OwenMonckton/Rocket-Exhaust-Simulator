@@ -127,6 +127,26 @@ export const ENERGY_SOURCES: Record<EnergyId, EnergySource> = {
     instabilityRefDia: 100,
     starter: { contraction: 5, lStar: 2 },
   },
+  ion: {
+    id: 'ion',
+    name: 'Ion thruster',
+    tip: 'Propellant atoms are stripped of an electron and pulled out through two charged grids. The faintest push of any engine here, and by far the most efficient. It only works in a vacuum.',
+    throttleable: true,
+    mixKind: 'none',
+    kind: 'beam',
+    instabilityRefDia: 100,
+    starter: { contraction: 1, lStar: 1 },
+  },
+  hall: {
+    id: 'hall',
+    name: 'Hall thruster',
+    tip: 'A ring-shaped channel and a magnetic field do the job of an ion thruster\u2019s grids. More push for the power, at a slower exhaust. It only works in a vacuum.',
+    throttleable: true,
+    mixKind: 'none',
+    kind: 'beam',
+    instabilityRefDia: 100,
+    starter: { contraction: 1, lStar: 1 },
+  },
 };
 
 /** True for an engine that runs on electrical power. */
@@ -149,5 +169,7 @@ export { EXHAUSTS, EXHAUST_IDS, isExhaustId } from './exhausts';
 
 /** The propellants an energy source can use, in menu order. */
 export function propellantsFor(energy: EnergyId): PropellantId[] {
-  return PROPELLANT_IDS.filter((id) => PROPELLANTS[id].energy === energy);
+  // The two beam thrusters share their propellants, which are filed under the ion thruster.
+  const filed = isBeam(energy) ? 'ion' : energy;
+  return PROPELLANT_IDS.filter((id) => PROPELLANTS[id].energy === filed);
 }

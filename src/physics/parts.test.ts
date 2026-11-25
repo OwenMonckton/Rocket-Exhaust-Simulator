@@ -12,7 +12,8 @@ describe('engine parts', () => {
     for (const e of ENERGY_IDS) {
       const offered = propellantsFor(e);
       expect(offered.length).toBeGreaterThan(0);
-      expect(offered).toEqual(PROPELLANT_IDS.filter((id) => PROPELLANTS[id].energy === e));
+      // The two beam thrusters share theirs, which are filed under the ion thruster.
+      expect(offered).toEqual(PROPELLANT_IDS.filter((id) => PROPELLANTS[id].energy === (e === 'hall' ? 'ion' : e)));
     }
   });
 

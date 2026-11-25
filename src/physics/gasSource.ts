@@ -3,7 +3,7 @@
 // that names its thermo reactant (`fluid`).
 import { FUELS, NO_OXIDISER, type Family } from './chem/ingredients';
 import { pairRange, solveFluid, solveHeated, solvePair, type SolvedGas } from './chem/pair';
-import { ENERGY_SOURCES } from './parts';
+import { ENERGY_SOURCES, isBeam } from './parts';
 import { dropletNote, verdictFor, type ChemFailure } from './chem/verdict';
 import { lookFromExhaust } from './plumeLook';
 import { PROPELLANTS, gasProps, richness } from './propellants';
@@ -196,6 +196,13 @@ function heated(cfg: EngineConfig, fluid: string, pcBar: number, eps: number): H
 
 /** The engine's gas at chamber pressure `pcBar` and area ratio `eps`. Cheap when nothing changed. */
 export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSource {
+  // A beam thruster has no gas: anything that asks for one gets the stand-in, marked as not real.
+  if (isBeam(cfg.energy)) {
+    return {
+      calculated: false, settled: false, gas: { ...NO_GAS }, ispScale: 1, lStarRef: 0,
+      look: PROPELLANTS.xenon.look, derivedLook: false, richness: 0, failure: null, exhaust: [], notes: [],
+    };
+  }
   if (cfg.propellant !== 'calculated') {
     const p = PROPELLANTS[cfg.propellant];
     if (p.fluid && ENERGY_SOURCES[cfg.energy].mixKind === 'power') {

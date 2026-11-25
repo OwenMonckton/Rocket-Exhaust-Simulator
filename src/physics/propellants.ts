@@ -53,6 +53,27 @@ function heatedFluid(id: PropellantId, energy: 'resistojet' | 'arcjet', name: st
   };
 }
 
+/**
+ * A propellant a beam thruster ionises. Nothing here is hot gas, so the table and the look are
+ * never used: its atom's mass and its beam's colour are in electric.ts.
+ */
+function beamPropellant(id: PropellantId, name: string, tip: string, fuel: string): Propellant {
+  return {
+    id,
+    energy: 'ion',
+    name,
+    tip,
+    fuel,
+    oxidiser: 'a voltage to throw it out',
+    ofMin: 0,
+    ofMax: 0,
+    ofDefault: 0,
+    lStarRef: 0,
+    table: [],
+    look: HEATED_LOOK,
+  };
+}
+
 const KEROLOX_LOOK: PlumeLook = {
   core: [1.0, 0.93, 0.72],
   mid: [1.0, 0.62, 0.2],
@@ -397,6 +418,15 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
   'aj-hydrogen': heatedFluid('aj-hydrogen', 'arcjet', 'Hydrogen',
     'The most efficient choice by far, and the hardest to store.',
     'liquid hydrogen', 'H2(L)'),
+  // What a beam thruster can ionise and throw out.
+  xenon: beamPropellant('xenon', 'Xenon',
+    'A heavy, inert gas that is easy to ionise: the most thrust for the power. Rare and expensive.', 'xenon gas'),
+  krypton: beamPropellant('krypton', 'Krypton',
+    'Lighter and far cheaper than xenon. It leaves faster, with less thrust for the power.', 'krypton gas'),
+  argon: beamPropellant('argon', 'Argon',
+    'Cheap and plentiful, and much lighter: the fastest exhaust here, the least thrust, and the hardest to ionise.', 'argon gas'),
+  iodine: beamPropellant('iodine', 'Iodine',
+    'Almost as heavy as xenon and stored as a solid, so it needs no pressure tank. It corrodes what it touches.', 'solid iodine, warmed to a vapour'),
 };
 
 export const PROPELLANT_IDS = Object.keys(PROPELLANTS) as PropellantId[];

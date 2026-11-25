@@ -156,6 +156,18 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
     title: 'Not enough power to boil the propellant',
     text: 'The electrical power could not turn this much propellant into gas, so the engine never started. The engine is unharmed. Raise the power, or pass less propellant by lowering the chamber pressure or narrowing the throat. Restarting with nothing changed goes back to the last setup that ran.',
   },
+  noVacuum: {
+    title: 'Will not light in air',
+    text: 'This thruster makes a thin glow of charged gas and throws it out with a voltage, and that only works in a vacuum: in air the voltage simply arcs across. The thruster is unharmed. Take it above about 80 km and switch it on again. Real ones need an even harder vacuum than that.',
+  },
+  gridOverload: {
+    title: 'Grids overloaded',
+    text: 'The two grids can only pull so much current through each square centimetre, and this asked for more: the beam spread and struck the grids, and the thruster tripped off. It is unharmed. Raise the voltage, lower the power or widen the thruster.',
+  },
+  channelOverheat: {
+    title: 'Channel overheated',
+    text: 'The power that does not become thrust ends up heating the channel walls, and this was more than they can shed: the thruster tripped off. It is unharmed. Lower the power or widen the thruster.',
+  },
   unsolved: {
     title: 'No answer',
     text: 'The chemistry would not settle for this mixture, so there is no way to say how the engine runs, and no figures are shown. Try a different mixture ratio or chamber pressure. Relighting with nothing changed goes back to the last setup that ran.',
@@ -174,6 +186,9 @@ const FAILURE_NOTE: Partial<Record<Exclude<Failure, null>, string>> = {
   detonation: 'A propellant here would explode in the engine.',
   unsolved: 'No figures: the chemistry would not settle.',
   underpowered: 'Not enough power to turn the propellant into gas.',
+  noVacuum: 'This thruster only runs in a vacuum: take it above about 80 km.',
+  gridOverload: 'Past its limit: the grids cannot pass this much current.',
+  channelOverheat: 'Past its limit: the channel cannot shed this much heat.',
 };
 
 /** The line under the limit bars about the engine's failure, or '' when it has none. */

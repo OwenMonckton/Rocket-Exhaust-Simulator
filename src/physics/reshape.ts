@@ -4,7 +4,7 @@ import { EXHAUSTS } from './exhausts';
 
 import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
-import { ENERGY_SOURCES, isElectric, propellantsFor } from './parts';
+import { ENERGY_SOURCES, isBeam, isElectric, propellantsFor } from './parts';
 import { isPropellantId } from './propellants';
 import type { EnergyId, EngineConfig, ExhaustId, PropellantId } from './types';
 
@@ -91,6 +91,15 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): E
   return source.mixKind === 'temperature' ? cooled(swapped, 0) : eased(swapped, heatLoad(cfg));
 }
 
+/**
+ * What each beam thruster starts as: about NSTAR, the ion thruster that flew on Deep Space 1 and
+ * Dawn, and about the SPT-100, the most-flown Hall thruster.
+ */
+const BEAM_STARTER: Partial<Record<EnergyId, Pick<EngineConfig, 'powerKW' | 'voltage' | 'exitDia'>>> = {
+  ion: { powerKW: 2.3, voltage: 1100, exitDia: 0.3 },
+  hall: { powerKW: 1.35, voltage: 300, exitDia: 0.1 },
+};
+
 /** What each heated-gas electric source starts at: its power, kW. */
 const STARTER_POWER: Partial<Record<EnergyId, number>> = { resistojet: 0.2, arcjet: 2 };
 
@@ -99,6 +108,11 @@ const STARTER_POWER: Partial<Record<EnergyId, number>> = { resistojet: 0.2, arcj
  * ratio 100, about what a flown hydrazine arcjet has, on the source's first propellant.
  */
 function electricStarter(cfg: EngineConfig, energy: EnergyId): EngineConfig {
+  if (isBeam(energy)) {
+    const start = BEAM_STARTER[energy]!;
+    // The blank engine's proportions stand in for the dimensions a beam thruster does not have.
+    return sanitize({ ...starterEngine(), presetId: null, energy, propellant: 'xenon', exhaust: 'none', ...start });
+  }
   const source = ENERGY_SOURCES[energy];
   const throatDia = 0.0006;
   const pcBar = 4;
@@ -259,7 +273,8 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
  * where a flame would burn through throats that small (small throats are the hardest to keep cool).
  */
 export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
-  if (cfg.exhaust === exhaust) return cfg;
+  // A beam thruster has no nozzle to change.
+  if (cfg.exhaust === exhaust || isBeam(cfg.energy)) return cfg;
   if (EXHAUSTS[cfg.exhaust].counts === 'chambers' && EXHAUSTS[exhaust].counts === 'chambers') {
     // The dimensions, count, pressure and wall mean the same thing for both: only the nozzle
     // changes. `sanitize` drops an extension the new type cannot take and sets a dual bell's kink.
