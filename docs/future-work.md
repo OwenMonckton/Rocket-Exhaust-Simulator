@@ -1459,7 +1459,10 @@ Where the published figures came from:
    the empty "Mixture" heading was left standing.
 10. **A heated-gas electric engine rumbles at 15% of an ordinary engine's volume**, and a beam
     thruster makes no sound. A quarter of a newton does not roar.
-11. **The beam is drawn as a wedge in 32 overlaid layers**, on the 2D canvas, so no shader changed.
+11. **The beam is drawn on the 2D canvas, so no shader changed.** At first it was 32 faint wedges
+    laid over one another; each was so faint that its fade rounded to steps, which showed as
+    vertical bands and a hard end. In the polish pass it became one gradient swept across the
+    beam, painted once at full strength and then thinned out with distance.
 12. **An electric example counts as changed when its power or voltage is changed.** (Found in the
     final review: the header went on calling a 10 kW thruster "NSTAR" with no "Undo changes".)
 13. **No "vs stock" line against a stock figure of nothing.** A changed beam example brought down
@@ -1507,7 +1510,8 @@ SPT-100 example lit. No console errors.
 - **An arcjet's solver assumes the atoms recombine in the nozzle.** Real ones mostly do not. The
   heating share covers the loss on average, tuned at one point (hydrazine, 2 kW); other
   propellants and powers are not checked against anything.
-- **Not checked at phone width** for the electric engines.
+- **Checked at phone width in the polish pass** (375 wide): the picker, an ion thruster lit, and
+  its controls all fit. Nothing needed changing.
 - **The test-log line about the altitude** is written when the energy source is changed, but is
   cleared straight away when an example is picked, because picking an example starts a new log.
 - **An altitude sweep with a beam thruster** starts on the ground and so stops at once with
@@ -1531,3 +1535,18 @@ SPT-100 example lit. No console errors.
   was found from it. (Final review, not judged.)
 - **Water in a resistojet has a narrow window**: on the starter it goes from "not enough power"
   at 0.56 kW to a burnt-out heater at 0.70 kW.
+
+## Polish pass after part 5
+
+Done 25 November 2026, across the page at 1440, 1024 and 375 wide.
+
+- **The beam's bands and hard end are gone** (see decision 11 above).
+- **The gas-speed and temperature legend sits below the clock.** It was drawn in the picture's top
+  left corner, where the Standby and Hot-fire clock covered it.
+- **"Sea level / vacuum" keeps to one line at laptop width.** Between 901 and 1240 pixels wide the
+  data column is at its narrowest and the label wrapped, which pushed its figure a line lower
+  than the efficiency figure beside it. The two labels are set a little tighter there.
+
+Looked at and left: the design detector's advisories about font sizes and colours outside
+DESIGN.md are all on lines from before this pass. The first-fire "Sound is off" notice can sit
+over the end of the legend for the few seconds it shows.

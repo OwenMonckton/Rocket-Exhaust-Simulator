@@ -1359,6 +1359,14 @@ button.primary:hover:not(:disabled) {
   }
 }
 
+/* The data column is at its narrowest here: the two labels over the paired figures are set a
+   little tighter so each keeps to one line and the figures under them stay level. */
+@media (min-width: 901px) and (max-width: 1240px) {
+  .pair .k {
+    letter-spacing: 0.04em;
+  }
+}
+
 /* The product name gives way to the engine's here, but stays for a screen reader. */
 @media (min-width: 901px) and (max-width: 1240px) {
   header h1 {

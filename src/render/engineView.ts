@@ -706,7 +706,8 @@ export function drawEngine(
 
   if (anim.overlay !== 'none') {
     const lx = 18;
-    const ly = 18;
+    // Below the clock, which stands in the picture's top left corner.
+    const ly = 58;
     const lw = 150;
     const legend = ctx.createLinearGradient(lx, 0, lx + lw, 0);
     for (let i = 0; i <= 8; i++) legend.addColorStop(i / 8, css(heatMap(i / 8)));

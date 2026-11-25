@@ -6,7 +6,7 @@ import type { StageLayout } from '../sim/runtime';
 import { movedToVacuum, rumbleShare, simulationOffered, skyOnly } from '../sim/stageRules';
 import { silhouettePath } from '../ui/picker';
 import { calloutsFor } from '../ui/stand';
-import { BEAM_BODY_LENGTH, beamAlpha, beamColour, beamShape } from './beamView';
+import { BEAM_BODY_LENGTH, beamAcross, beamAlpha, beamColour, beamShape } from './beamView';
 import { engineProfile, viewTransform } from './geometry';
 
 const space = { altitudeKm: 100, throttle: 1 };
@@ -123,5 +123,23 @@ describe('the note that a thruster was taken to space', () => {
     expect(movedToVacuum({ beam: true, altitude: 99.5 }, { beam: true, altitude: 100 })).toBe(false);
     expect(movedToVacuum({ beam: false, altitude: 0 }, { beam: false, altitude: 100 })).toBe(false);
     expect(movedToVacuum({ beam: true, altitude: 0 }, { beam: true, altitude: 50 })).toBe(false);
+  });
+});
+
+describe('the beam across its width (polish)', () => {
+  it('is nothing at each edge, full down the middle, the same either side, and smooth', () => {
+    expect(beamAcross(0)).toBe(0);
+    expect(beamAcross(1)).toBe(0);
+    expect(beamAcross(0.5)).toBe(1);
+    expect(beamAcross(-0.2)).toBe(0);
+    expect(beamAcross(1.2)).toBe(0);
+    let last = 0;
+    for (let t = 0.05; t <= 0.5; t += 0.05) {
+      expect(beamAcross(t)).toBeCloseTo(beamAcross(1 - t), 12);
+      expect(beamAcross(t)).toBeGreaterThan(last);
+      // No step bigger than a sixth of the whole between neighbours a twentieth apart.
+      expect(beamAcross(t) - last).toBeLessThan(1 / 6);
+      last = beamAcross(t);
+    }
   });
 });

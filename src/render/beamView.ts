@@ -18,6 +18,18 @@ export const BEAM_BODY_LENGTH: Record<BeamType, number> = { ion: 0.6, hall: 0.35
 /** A Hall thruster's channel runs from this share of its radius out to its edge. */
 export const HALL_CHANNEL_INNER = 0.6;
 
+/** How strongly the middle of the beam shows at its brightest, where it leaves the thruster. */
+const BEAM_PEAK = 0.7;
+
+/**
+ * How dense the beam is across its width: `t` runs from one edge (0) to the other (1). Nothing at
+ * either edge, everything down the middle, and smooth between.
+ */
+export function beamAcross(t: number): number {
+  const u = 1 - (2 * t - 1) ** 2;
+  return u <= 0 ? 0 : u ** 1.5;
+}
+
 /** The shape of the beam: how wide it spreads and how far it is drawn. */
 export function beamShape(cfg: EngineConfig): { halfAngleDeg: number; lengthM: number } {
   return { halfAngleDeg: HALF_ANGLE[cfg.energy as BeamType] ?? HALF_ANGLE.ion, lengthM: BEAM_DIAMETERS * cfg.exitDia };
@@ -69,31 +81,40 @@ export function drawBeamThruster(
   // --- The beam: a faint steady glow widening from the face. No flicker, no shocks.
   if (alpha > 0) {
     const reach = Math.min(lengthM * view.ppm, widthPx - x1 + 40);
-    const spread = Math.tan((halfAngleDeg * Math.PI) / 180) * reach;
+    const theta = (halfAngleDeg * Math.PI) / 180;
+    // A Hall thruster's beam leaves a ring near its rim; the grids' beam leaves the whole face.
+    const start = r * (type === 'hall' ? 0.95 : 0.92);
+    const spread = Math.tan(theta) * reach;
+    // Where the beam's two edges would meet if they ran back through the thruster.
+    const apexX = x1 - start / Math.tan(theta);
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    // Wedges laid one over another, each narrower than the last, add up to a beam that is densest
-    // down its middle and fades smoothly to its edges.
-    const LAYERS = 32;
-    for (let k = 1; k <= LAYERS; k++) {
-      const share = k / LAYERS;
-      // A Hall thruster's beam leaves a ring; the grids' beam leaves the whole face.
-      const start = r * (type === 'hall' ? 0.6 + 0.35 * share : 0.92 * share);
-      const end = start + spread * share;
-      const strength = 0.75 / LAYERS;
-      const g = ctx.createLinearGradient(x1, 0, x1 + reach, 0);
-      g.addColorStop(0, css(colour, alpha * strength));
-      g.addColorStop(0.3, css(colour, alpha * strength * 0.5));
-      g.addColorStop(1, css(colour, 0));
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.moveTo(x1, cy - start);
-      ctx.lineTo(x1 + reach, cy - end);
-      ctx.lineTo(x1 + reach, cy + end);
-      ctx.lineTo(x1, cy + start);
-      ctx.closePath();
-      ctx.fill();
-    }
+    ctx.beginPath();
+    ctx.moveTo(x1, cy - start);
+    ctx.lineTo(x1 + reach, cy - start - spread);
+    ctx.lineTo(x1 + reach, cy + start + spread);
+    ctx.lineTo(x1, cy + start);
+    ctx.closePath();
+    ctx.clip();
+    // Across the beam: one gradient swept round that meeting point, densest down the middle. It
+    // is painted once at its full strength. (Many faint layers laid over one another round to
+    // steps, which showed as bands and a hard end.)
+    const share = theta / Math.PI;
+    const across = ctx.createConicGradient(-theta, apexX, cy);
+    const STOPS = 16;
+    for (let k = 0; k <= STOPS; k++) across.addColorStop((k / STOPS) * share, css(colour, BEAM_PEAK * alpha * beamAcross(k / STOPS)));
+    across.addColorStop(Math.min(1, share + 1e-4), css(colour, 0));
+    ctx.fillStyle = across;
+    ctx.fillRect(x1, cy - start - spread, reach, 2 * (start + spread));
+    // Along the beam: thin it out with distance, down to nothing where it is last drawn.
+    ctx.globalCompositeOperation = 'destination-out';
+    const d0 = x1 - apexX;
+    const along = ctx.createRadialGradient(apexX, cy, d0, apexX, cy, d0 + reach);
+    along.addColorStop(0, 'rgba(0,0,0,0)');
+    along.addColorStop(0.3, 'rgba(0,0,0,0.5)');
+    along.addColorStop(0.7, 'rgba(0,0,0,0.85)');
+    along.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = along;
+    ctx.fillRect(x1, cy - start - spread, reach, 2 * (start + spread));
     ctx.restore();
   }
 
