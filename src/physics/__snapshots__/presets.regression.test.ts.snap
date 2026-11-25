@@ -175,6 +175,76 @@ exports[`example engines > figures for nerva 1`] = `
 }
 `;
 
+exports[`example engines > figures for next 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 4229.567083,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.3761260795,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0,
+    "instability": 0,
+    "isp": 4229.567083,
+    "ispSeaLevel": 0,
+    "ispVacuum": 4229.567083,
+    "massFlow": 0.000005588691823,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.3761260795,
+    "tc": 0,
+    "thrust": 0.2318071113,
+  },
+}
+`;
+
+exports[`example engines > figures for nstar 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 3306.404684,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.5814080731,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0,
+    "instability": 0,
+    "isp": 3306.404684,
+    "ispSeaLevel": 0,
+    "ispVacuum": 3306.404684,
+    "massFlow": 0.000002865995806,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.5814080731,
+    "tc": 0,
+    "thrust": 0.09292920753,
+  },
+}
+`;
+
 exports[`example engines > figures for nswr 1`] = `
 {
   "seaLevel": {
@@ -416,6 +486,76 @@ exports[`example engines > figures for solid-booster 1`] = `
     "structural": 0.4993032787,
     "tc": 3384.312931,
     "thrust": 1331239.555,
+  },
+}
+`;
+
+exports[`example engines > figures for spt-100 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0.4722700119,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0.4722700119,
+    "instability": 0,
+    "isp": 1614.659078,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0.000005442899862,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0.08618503424,
+  },
+}
+`;
+
+exports[`example engines > figures for xr-5 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0.5447174301,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0.5447174301,
+    "instability": 0,
+    "isp": 1614.659078,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0.00001814299954,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0.2872834475,
   },
 }
 `;

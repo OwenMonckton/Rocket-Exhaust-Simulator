@@ -4,6 +4,7 @@ import { ambientPressure } from './atmosphere';
 import { rangesFor, sanitize, simulate } from './engine';
 import { destroys } from './limits';
 import { ENERGY_SOURCES, isBeam, isElectric, propellantsFor } from './parts';
+import { PRESETS, getPreset } from './presets';
 import { starterEngine, withEnergy, withPropellant } from './reshape';
 import type { EngineConfig, PropellantId } from './types';
 
@@ -223,5 +224,45 @@ describe('swapping to and from a beam thruster', () => {
     const a = beam('ion');
     const b = withPropellant(a, 'krypton');
     expect(b).toMatchObject({ propellant: 'krypton', powerKW: a.powerKW, voltage: a.voltage, exitDia: a.exitDia });
+  });
+});
+
+describe('the four beam thruster examples', () => {
+  // Published figures; presets.ts names the source of each.
+  const published = [
+    { id: 'nstar', energy: 'ion', powerKW: 2.3, voltage: 1100, thrust: 0.092, isp: 3100 },
+    { id: 'next', energy: 'ion', powerKW: 6.9, voltage: 1800, thrust: 0.236, isp: 4190 },
+    { id: 'spt-100', energy: 'hall', powerKW: 1.35, voltage: 300, thrust: 0.083, isp: 1600 },
+    { id: 'xr-5', energy: 'hall', powerKW: 4.5, voltage: 300, thrust: 0.29, isp: 1790 },
+  ] as const;
+
+  it('are in the picker, after the twelve engines and the arcjet', () => {
+    expect(PRESETS.map((p) => p.id).slice(12)).toEqual(['mr-510', 'nstar', 'next', 'spt-100', 'xr-5']);
+  });
+
+  for (const want of published) {
+    it(`${want.id} gives its published thrust and efficiency on its published power and voltage`, () => {
+      const p = getPreset(want.id)!;
+      expect(p.config).toMatchObject({ energy: want.energy, propellant: 'xenon', powerKW: want.powerKW, voltage: want.voltage, exhaust: 'none' });
+      expect(sanitize(p.config)).toEqual(p.config);
+      const r = simulate(p.config, space);
+      expect(r.failure).toBeNull();
+      expect(Math.abs(r.thrust - want.thrust) / want.thrust, `thrust ${r.thrust}`).toBeLessThan(0.1);
+      expect(Math.abs(r.isp - want.isp) / want.isp, `isp ${r.isp}`).toBeLessThan(0.1);
+      expect(p.published).toMatchObject({ thrustKN: want.thrust / 1000, ispVac: want.isp, atVacuum: true });
+      // Each sits at a believable share of its one limit.
+      const load = Math.max(r.limits.structural, r.limits.heating);
+      expect(load, `load ${load}`).toBeGreaterThan(1 / 3);
+      expect(load, `load ${load}`).toBeLessThan(2 / 3);
+    });
+  }
+
+  it('keeps the Hall examples to about half their power as thrust, and the gridded ones to more', () => {
+    const eff = (id: string) => simulate(getPreset(id)!.config, space).electric!.thrustEfficiency;
+    expect(eff('spt-100')).toBeGreaterThan(0.4);
+    expect(eff('spt-100')).toBeLessThan(0.6);
+    expect(eff('nstar')).toBeGreaterThan(0.55);
+    expect(eff('next')).toBeGreaterThan(eff('nstar'));
+    expect(eff('next')).toBeLessThan(0.8);
   });
 });

@@ -368,6 +368,6 @@ describe("where the plume's look comes from", () => {
 describe('the examples that are not tabled', () => {
   it('are exactly the electric ones, and the twelve tabled examples are untouched', () => {
     expect(TABLED_EXAMPLES).toHaveLength(12);
-    expect(PRESETS.filter((p) => isElectric(p.config.energy)).map((p) => p.id)).toEqual(['mr-510']);
+    expect(PRESETS.filter((p) => isElectric(p.config.energy)).map((p) => p.id)).toEqual(['mr-510', 'nstar', 'next', 'spt-100', 'xr-5']);
   });
 });

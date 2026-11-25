@@ -1125,6 +1125,56 @@ exports[`example engine shapes > shape of nerva 1`] = `
 }
 `;
 
+exports[`example engine shapes > shape of next 1`] = `
+{
+  "exitX": 0.216,
+  "extension": null,
+  "frontSpace": 0,
+  "halfHeight": 0.234,
+  "length": 0.216,
+  "maxRadius": 0.18,
+  "offsets": [
+    0,
+  ],
+  "points": [
+    [
+      0,
+      0.18,
+    ],
+    [
+      0.216,
+      0.18,
+    ],
+  ],
+  "throatX": 0.216,
+}
+`;
+
+exports[`example engine shapes > shape of nstar 1`] = `
+{
+  "exitX": 0.18,
+  "extension": null,
+  "frontSpace": 0,
+  "halfHeight": 0.195,
+  "length": 0.18,
+  "maxRadius": 0.15,
+  "offsets": [
+    0,
+  ],
+  "points": [
+    [
+      0,
+      0.15,
+    ],
+    [
+      0.18,
+      0.15,
+    ],
+  ],
+  "throatX": 0.18,
+}
+`;
+
 exports[`example engine shapes > shape of nswr 1`] = `
 {
   "exitX": 12.13317164,
@@ -2706,6 +2756,56 @@ exports[`example engine shapes > shape of solid-booster 1`] = `
     ],
   ],
   "throatX": 6.794885833,
+}
+`;
+
+exports[`example engine shapes > shape of spt-100 1`] = `
+{
+  "exitX": 0.035,
+  "extension": null,
+  "frontSpace": 0,
+  "halfHeight": 0.065,
+  "length": 0.035,
+  "maxRadius": 0.05,
+  "offsets": [
+    0,
+  ],
+  "points": [
+    [
+      0,
+      0.05,
+    ],
+    [
+      0.035,
+      0.05,
+    ],
+  ],
+  "throatX": 0.035,
+}
+`;
+
+exports[`example engine shapes > shape of xr-5 1`] = `
+{
+  "exitX": 0.0595,
+  "extension": null,
+  "frontSpace": 0,
+  "halfHeight": 0.1105,
+  "length": 0.0595,
+  "maxRadius": 0.085,
+  "offsets": [
+    0,
+  ],
+  "points": [
+    [
+      0,
+      0.085,
+    ],
+    [
+      0.0595,
+      0.085,
+    ],
+  ],
+  "throatX": 0.0595,
 }
 `;
 

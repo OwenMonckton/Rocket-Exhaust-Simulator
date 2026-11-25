@@ -22,7 +22,11 @@ export function silhouettePath(config: EngineConfig): string {
     const r = profile.maxRadius * k;
     const x = (W - len) / 2;
     const y = H / 2;
-    const box = (bx: number, by: number, bw: number, bh: number) => `M${bx.toFixed(1)} ${by.toFixed(1)}h${bw.toFixed(1)}v${bh.toFixed(1)}h${(-bw).toFixed(1)}Z`;
+    // Absolute points throughout, as the engines' outlines are.
+    const box = (bx: number, by: number, bw: number, bh: number) => {
+      const [l, t, rt, b] = [bx, by, bx + bw, by + bh].map((n) => n.toFixed(1));
+      return `M${l} ${t}L${rt} ${t}L${rt} ${b}L${l} ${b}Z`;
+    };
     if (profile.beam === 'ion') return box(x, y - r, len, 2 * r) + box(x + len + 3, y - r, 2, 2 * r) + box(x + len + 8, y - r, 2, 2 * r);
     return box(x, y - r, len * 0.5, 2 * r) + box(x + len * 0.5, y - r, len * 0.5, 0.12 * r) + box(x + len * 0.5, y + 0.88 * r, len * 0.5, 0.12 * r) + box(x + len * 0.5, y - 0.55 * r, len * 0.5, 1.1 * r);
   }

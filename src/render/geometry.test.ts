@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isBeam } from '../physics/parts';
 import { sanitize, simulate } from '../physics/engine';
 import { destroys } from '../physics/limits';
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
@@ -6,8 +7,11 @@ import { PRESETS } from '../physics/presets';
 import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
 import { engineProfile, grainLabel, radiusAt, spikeJetRadius, spikeSurfaceRadius, viewTransform } from './geometry';
 
+/** The examples with a chamber, a throat and a bell or cone: not the aerospike, and not the beam thrusters, which have none of them. */
+const NOZZLED = PRESETS.filter((q) => q.config.exhaust !== 'aerospike' && !isBeam(q.config.energy));
+
 describe('engine profile', () => {
-  for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
+  for (const p of NOZZLED) {
     it(`${p.name} has a sane contour`, () => {
       const cfg = p.config;
       const prof = engineProfile(cfg);
@@ -28,7 +32,7 @@ describe('engine profile', () => {
     });
   }
   it('turns the wall out of the throat along an arc, with no corner', () => {
-    for (const p of PRESETS.filter((q) => q.config.exhaust !== 'aerospike')) {
+    for (const p of NOZZLED) {
       const cfg = p.config;
       const prof = engineProfile(cfg);
       const bell = prof.points.filter((q) => q.x >= prof.throatX - 1e-12);

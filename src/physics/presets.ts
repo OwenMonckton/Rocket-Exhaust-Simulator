@@ -2,7 +2,7 @@ import { FUEL_IDS, OXIDISER_IDS } from './chem/ingredients';
 import { sanitize, simulate } from './engine';
 import { ENERGY_SOURCES } from './parts';
 import { PROPELLANTS } from './propellants';
-import { chamberShape, wallFor } from './reshape';
+import { chamberShape, starterEngine, wallFor } from './reshape';
 import type { EngineConfig, ExhaustId, PropellantId } from './types';
 
 export interface Preset {
@@ -37,8 +37,13 @@ interface Spec {
   exhaust?: ExhaustId;
   /** Electrical power, kW, for an electric engine */
   powerKW?: number;
+  /** A beam thruster: its type, its voltage and the diameter of its face, m. The engine dimensions above are then unused. */
+  beam?: { type: 'ion' | 'hall'; voltage: number; diameterM: number };
   published: Preset['published'];
 }
+
+/** The engine dimensions a beam thruster's entry does not use. */
+const BEAM_SPEC = { propellant: 'xenon', pcBar: 100, of: 0, eps: 16, contraction: 1.7, lStar: 1, nozzleLenPct: 80, structural: 0.5 } as const;
 
 const SPECS: Spec[] = [
   {
@@ -150,6 +155,48 @@ const SPECS: Spec[] = [
     nozzleLenPct: 80, structural: 0.5, powerKW: 2,
     published: { thrustKN: 0.000258, atVacuum: true, ispVac: 585 },
   },
+  // Beam thrusters. Their thrust follows from their power and voltage, so nothing is sized to fit:
+  // the figures below are the published ones, and the formula's constants (electric.ts) are set
+  // once for all four.
+  {
+    id: 'nstar',
+    name: 'NSTAR ion thruster',
+    blurb: 'NASA gridded ion thruster that flew Deep Space 1 and took Dawn to Vesta and Ceres. Less push than the weight of a sheet of paper, kept up for years.',
+    // 0.5 to 2.3 kW, 92 mN and over 3,100 s at full power (NASA NEXT/NSTAR comparison tables,
+    // NTRS 20080010688; the Deep Space 1 report NTRS 20050237892 gives 92 mN and 2.9 mg/s). The
+    // screen grid stands at about 1,090 V at full power. A 30 cm thruster.
+    ...BEAM_SPEC, powerKW: 2.3, beam: { type: 'ion', voltage: 1100, diameterM: 0.3 },
+    published: { thrustKN: 0.000092, atVacuum: true, ispVac: 3100 },
+  },
+  {
+    id: 'next',
+    name: 'NEXT ion thruster',
+    blurb: 'NASA\u2019s successor to NSTAR, flown on the DART asteroid mission. Three times the power through grids only a little wider, at a higher voltage.',
+    // 6.9 kW, 1,800 V and 3.52 A of beam at full power; 236 mN and 4,190 s; a 36 cm beam (NASA
+    // NEXT long-duration test reports, NTRS 20130000079 and 20140016766).
+    ...BEAM_SPEC, powerKW: 6.9, beam: { type: 'ion', voltage: 1800, diameterM: 0.36 },
+    published: { thrustKN: 0.000236, atVacuum: true, ispVac: 4190 },
+  },
+  {
+    id: 'spt-100',
+    name: 'SPT-100 Hall thruster',
+    blurb: 'Russian Hall thruster from Fakel, flying since 1994 and the most-flown of its kind. Its name is the width of its channel: 100 mm.',
+    // 1,350 W at 300 V, 83 mN (80 mN in some tables), 1,600 s (the SPT-100 and Hall-effect
+    // thruster articles on Wikipedia, from Fakel's figures).
+    ...BEAM_SPEC, powerKW: 1.35, beam: { type: 'hall', voltage: 300, diameterM: 0.1 },
+    published: { thrustKN: 0.000083, atVacuum: true, ispVac: 1600 },
+  },
+  {
+    id: 'xr-5',
+    name: 'XR-5 Hall thruster',
+    blurb: 'Aerojet Rocketdyne\u2019s 4.5 kW Hall thruster, once called the BPT-4000. In 2010 it became the first American Hall thruster on a working satellite, and later rescued it by raising its orbit alone.',
+    // The 4.5 kW rating and 300 to 400 V range are confirmed (Wikipedia; University of Michigan
+    // PEPL). The thrust and Isp at 300 V, 290 mN and 1,790 s, are the commonly quoted data-sheet
+    // figures and were NOT confirmed against a source when this was written; nor was the channel
+    // width, taken as 170 mm. docs/future-work.md says so.
+    ...BEAM_SPEC, powerKW: 4.5, beam: { type: 'hall', voltage: 300, diameterM: 0.17 },
+    published: { thrustKN: 0.00029, atVacuum: true, ispVac: 1790 },
+  },
 ];
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
@@ -158,6 +205,20 @@ const fine = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /** Size the engine so the model reproduces the published thrust. Thrust is proportional to throat area. */
 function build(s: Spec): Preset {
+  if (s.beam) {
+    // No chamber, throat or nozzle to shape: sanitize gives the dimensions it does not have.
+    const config = sanitize({
+      ...starterEngine(),
+      presetId: s.id,
+      energy: s.beam.type,
+      exhaust: 'none',
+      propellant: s.propellant,
+      exitDia: s.beam.diameterM,
+      powerKW: s.powerKW ?? 2,
+      voltage: s.beam.voltage,
+    });
+    return { id: s.id, name: s.name, blurb: s.blurb, config, published: s.published };
+  }
   const electric = s.powerKW !== undefined;
   const tidy = electric ? fine : round;
   const shape = (throatDia: number): EngineConfig => {
