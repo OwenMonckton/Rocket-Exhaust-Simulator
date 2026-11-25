@@ -97,6 +97,23 @@ export function ringWallRadius(cfg: EngineConfig): number {
   return cfg.exhaust === 'expansionDeflection' ? rt / Math.sqrt(1 - cfg.plugShare ** 2) : rt;
 }
 
+/** How far the cap of an expansion-deflection nozzle's plug runs past the ring, in ring-wall radii. */
+export const ED_CAP_RADII = 0.6;
+/** The steepest the cap sends the gas outward, radians. */
+const ED_MAX_TILT = (30 * Math.PI) / 180;
+
+/**
+ * The angle the cap of an expansion-deflection nozzle's plug flares outward at, radians: the
+ * angle its bell leaves the ring at (1.8 times the bell's average slope, as the gas simulation
+ * fits it), so that cap and wall run side by side. This is what throws the gas onto the wall.
+ */
+export function edCapTilt(cfg: EngineConfig): number {
+  const rw = ringWallRadius(cfg);
+  const re = cfg.exitDia / 2;
+  const chord = (re - rw) / bellLength(cfg, rw, re);
+  return Math.min(Math.atan(1.8 * chord), ED_MAX_TILT);
+}
+
 /** True where the jet has left the nozzle wall before the exit, by tearing off or by being held at a kink. */
 export function jetLeftWall(state: ExpansionState): boolean {
   return state === 'separated' || state === 'held';

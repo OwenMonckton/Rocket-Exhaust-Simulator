@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { engineProfile, plugRadius } from '../render/geometry';
+import { SIM_NX, SIM_NY, SPIKE_SAMPLES, wallShape } from '../render/fluidSim';
+import { engineProfile, plugRadius, radiusAt } from '../render/geometry';
+import { ED_ENTRY_MACH, edGrid, edSimInputs } from '../render/plumeParams';
+import { areaRatio } from './nozzle';
 import { decodeState, encodeState } from '../state/share';
 import { shapeHidden } from '../ui/controls';
 import { expansionText, STATE_COPY } from '../ui/copy';
 import { RANGES, edBaseDrag, edCompensation, sanitize, simulate } from './engine';
-import { EXHAUSTS, EXHAUST_IDS, divergingWall, lipSlope, ringWallRadius } from './exhausts';
+import { ED_CAP_RADII, EXHAUSTS, EXHAUST_IDS, divergingWall, edCapTilt, lipSlope, ringWallRadius } from './exhausts';
 import { starterEngine, withExhaust } from './reshape';
 import type { EngineConfig } from './types';
 
@@ -33,7 +36,7 @@ describe('the expansion-deflection nozzle as a part', () => {
   });
 
   it('keeps the ring the size of the throat at every plug size', () => {
-    for (const plugShare of [0.4, 0.55, 0.7, 0.8]) {
+    for (const plugShare of [0.5, 0.55, 0.7, 0.8]) {
       const cfg = ed({ ...roomy, plugShare });
       expect(cfg.plugShare).toBe(plugShare);
       const wall = ringWallRadius(cfg);
@@ -65,15 +68,15 @@ describe('the expansion-deflection nozzle as a part', () => {
 
 describe('sanitize: the plug', () => {
   it('has the range the design gives it', () => {
-    expect(RANGES.plugShare).toEqual({ min: 0.4, max: 0.8, fallback: 0.7 });
+    expect(RANGES.plugShare).toEqual({ min: 0.5, max: 0.8, fallback: 0.7 });
   });
 
   it('clamps the plug to its range, on this exhaust and on any other', () => {
-    expect(ed({ ...roomy, plugShare: 0.1 }).plugShare).toBe(0.4);
+    expect(ed({ ...roomy, plugShare: 0.1 }).plugShare).toBe(0.5);
     expect(ed({ ...roomy, plugShare: Number.NaN }).plugShare).toBe(0.7);
     expect(ed({ ...roomy, plugShare: 0.99 }).plugShare).toBe(0.8);
     // Another exhaust keeps the setting for a swap back, and does nothing with it.
-    expect(sanitize({ ...starterEngine(), plugShare: 0.5 }).plugShare).toBe(0.5);
+    expect(sanitize({ ...starterEngine(), plugShare: 0.6 }).plugShare).toBe(0.6);
     expect(sanitize({ ...starterEngine(), plugShare: 7 }).plugShare).toBe(0.8);
     expect(sanitize({ ...starterEngine(), exitDia: starterEngine().throatDia * 1.05, plugShare: 0.8 }).plugShare).toBe(0.8);
   });
@@ -81,7 +84,7 @@ describe('sanitize: the plug', () => {
   it('shrinks the plug to its smallest, then widens the exit, when the exit is too small for it', () => {
     const throat = starterEngine().throatDia;
     const tight = ed({ ...roomy, plugShare: 0.8, exitDia: throat * 1.05 });
-    expect(tight.plugShare).toBe(0.4);
+    expect(tight.plugShare).toBe(0.5);
     expect(tight.exitDia).toBeGreaterThanOrEqual(2 * ringWallRadius(tight) * 1.15 - 1e-9);
     expect(tight.exitDia).toBeGreaterThan(throat * 1.05);
   });
@@ -106,11 +109,12 @@ describe('sanitize: the plug', () => {
 
   it('holds the plug at its smallest in the narrowest chamber, where the wall still fits inside', () => {
     // A chamber only 1.11 throats wide (the narrowest sanitize allows) cannot give the wall 5% of
-    // clearance even at the smallest plug. The plug stops at its smallest; the wall is still inside.
+    // clearance even at the smallest plug. The plug stops at its smallest, where the wall at the
+    // ring is 1.155 throats wide: a shade wider than the chamber, which then opens out to meet it.
     const base = starterEngine();
     const narrow = ed({ plugShare: 0.8, chamberDia: base.throatDia / 0.9, exitDia: base.throatDia * 6 });
-    expect(narrow.plugShare).toBe(0.4);
-    expect(ringWallRadius(narrow)).toBeLessThan(narrow.chamberDia / 2);
+    expect(narrow.plugShare).toBe(0.5);
+    expect(ringWallRadius(narrow)).toBeLessThan(1.05 * (narrow.chamberDia / 2));
   });
 
   it('leaves the same sizes alone on a bell', () => {
@@ -119,7 +123,7 @@ describe('sanitize: the plug', () => {
   });
 
   it('gives back the same engine when it is sanitized twice', () => {
-    for (const patch of [{}, roomy, { plugShare: 0.8, exitDia: starterEngine().throatDia * 1.05 }, { plugShare: 0.4 }]) {
+    for (const patch of [{}, roomy, { plugShare: 0.8, exitDia: starterEngine().throatDia * 1.05 }, { plugShare: 0.5 }]) {
       const once = ed(patch);
       expect(sanitize(once)).toEqual(once);
     }
@@ -225,7 +229,7 @@ describe('an expansion-deflection nozzle’s thrust', () => {
   });
 
   it('never beats an aerospike of the same throat and exit, at any plug size', () => {
-    for (const plugShare of [0.4, 0.7, 0.8]) {
+    for (const plugShare of [0.5, 0.7, 0.8]) {
       const nozzle = big({ plugShare });
       const spike = withExhaust(nozzle, 'aerospike');
       // The swap keeps the total throat and exit areas; check that it did before comparing.
@@ -238,14 +242,14 @@ describe('an expansion-deflection nozzle’s thrust', () => {
   });
 
   it('compensates better near the ground with a bigger plug, and drags more in vacuum', () => {
-    expect(at(big({ plugShare: 0.8 }), 0).thrust).toBeGreaterThan(at(big({ plugShare: 0.4 }), 0).thrust);
-    expect(at(big({ plugShare: 0.8 }), 100).thrust).toBeLessThan(at(big({ plugShare: 0.4 }), 100).thrust);
+    expect(at(big({ plugShare: 0.8 }), 0).thrust).toBeGreaterThan(at(big({ plugShare: 0.5 }), 0).thrust);
+    expect(at(big({ plugShare: 0.8 }), 100).thrust).toBeLessThan(at(big({ plugShare: 0.5 }), 100).thrust);
   });
 
   it('leaves the same engine with a bell, and an aerospike, exactly as they were', () => {
     // The rule is for this exhaust only: a plug setting on another exhaust changes nothing.
     for (const exhaust of ['bell', 'cone', 'dualBell', 'aerospike', 'none'] as const) {
-      const a = sanitize({ ...starterEngine(), exhaust, plugShare: 0.4 });
+      const a = sanitize({ ...starterEngine(), exhaust, plugShare: 0.5 });
       const b = sanitize({ ...starterEngine(), exhaust, plugShare: 0.8 });
       for (const km of [0, 20, 100]) expect(at(a, km).thrust, `${exhaust} at ${km} km`).toBe(at(b, km).thrust);
     }
@@ -277,7 +281,7 @@ describe('the plug in the picture', () => {
     }
   });
 
-  it('is the stalk’s width along the stalk, widens over the flare, and is gone past its base', () => {
+  it('is the stalk’s width along the stalk, widens over the flare and the cap, and is gone past the back of the cap', () => {
     const plug = engineProfile(ed({ ...roomy, plugShare: 0.7 })).plug!;
     expect(plugRadius(plug, plug.stalkX - 0.01)).toBe(0);
     expect(plugRadius(plug, (plug.stalkX + plug.flareX) / 2)).toBe(plug.stalkR);
@@ -285,20 +289,151 @@ describe('the plug in the picture', () => {
     expect(mid).toBeGreaterThan(plug.stalkR);
     expect(mid).toBeLessThan(plug.rimR);
     expect(plugRadius(plug, plug.baseX)).toBeCloseTo(plug.rimR, 12);
-    expect(plugRadius(plug, plug.baseX + 1e-6)).toBe(0);
+    // Past the ring the cap flares on outward, and ends in a flat back.
+    expect(plug.capX).toBeGreaterThan(plug.baseX);
+    expect(plug.capR).toBeGreaterThan(plug.rimR);
+    const onCap = plugRadius(plug, (plug.baseX + plug.capX) / 2);
+    expect(onCap).toBeGreaterThan(plug.rimR);
+    expect(onCap).toBeLessThan(plug.capR);
+    expect(plugRadius(plug, plug.capX)).toBeCloseTo(plug.capR, 12);
+    expect(plugRadius(plug, plug.capX + 1e-6)).toBe(0);
   });
 
   it('leaves the passage round the plug no narrower than the ring anywhere', () => {
-    for (const patch of [{ ...roomy, plugShare: 0.4 }, { ...roomy, plugShare: 0.7 }, { ...roomy, plugShare: 0.8 }, { plugShare: 0.8 }, { plugShare: 0.4, chamberDia: starterEngine().throatDia / 0.9 }]) {
+    for (const patch of [{ ...roomy, plugShare: 0.5 }, { ...roomy, plugShare: 0.7 }, { ...roomy, plugShare: 0.8 }, { plugShare: 0.8 }]) {
       const cfg = ed(patch);
       const p = engineProfile(cfg);
       const throatArea = Math.PI * (cfg.throatDia / 2) ** 2;
       for (const point of p.points) {
-        if (point.x > p.plug!.baseX) break;
+        if (point.x > p.plug!.capX) break;
         const inner = plugRadius(p.plug!, point.x);
         expect(point.r, `plug ${cfg.plugShare} at x ${point.x}`).toBeGreaterThan(inner);
-        expect(Math.PI * (point.r ** 2 - inner ** 2), `plug ${cfg.plugShare} at x ${point.x}`).toBeGreaterThanOrEqual(throatArea * (1 - 1e-9));
+        // Beside the cap the passage is checked between the cap's own points, hence the one percent.
+        const least = point.x <= p.plug!.baseX ? 1 - 1e-9 : 0.99;
+        expect(Math.PI * (point.r ** 2 - inner ** 2), `plug ${cfg.plugShare} at x ${point.x}`).toBeGreaterThanOrEqual(throatArea * least);
       }
     }
+  });
+});
+
+describe('the whole nozzle in the plume grid', () => {
+  /** An area ratio of 16: a bell short enough to simulate whole. */
+  const small = (patch: Partial<EngineConfig> = {}) => ed({ chamberDia: starterEngine().throatDia * 2.5, exitDia: starterEngine().throatDia * 4, ...patch });
+  const sea = { altitudeKm: 0, throttle: 1 };
+  const cellOf = (lengthRadii: number) => (lengthRadii + Math.min(2, 0.15 * lengthRadii)) / SIM_NX;
+
+  it('sizes the grid by the bell: 2.2 bell lengths, and tall enough for 1.25 mouth radii', () => {
+    const cfg = small();
+    const p = engineProfile(cfg);
+    const rw = ringWallRadius(cfg);
+    const g = edGrid(p, rw);
+    expect(g.fits).toBe(true);
+    expect(g.bellRadii).toBeCloseTo((p.exitX - p.throatX) / rw, 9);
+    expect(g.mouthRadii).toBeCloseTo(cfg.exitDia / 2 / rw, 9);
+    expect(g.lengthRadii).toBeGreaterThanOrEqual(2.2 * g.bellRadii - 1e-9);
+    expect(SIM_NY * cellOf(g.lengthRadii)).toBeGreaterThanOrEqual(1.25 * g.mouthRadii - 1e-9);
+    expect(g.lengthRadii).toBeLessThanOrEqual(24);
+  });
+
+  it('makes a short, wide bell\u2019s grid tall enough for its mouth', () => {
+    // 60% nozzle length: 2.2 bell lengths is not long enough for a grid 1.25 mouths tall, so the height decides.
+    const cfg = small({ nozzleLenPct: 60, exitDia: starterEngine().throatDia * 5 });
+    const g = edGrid(engineProfile(cfg), ringWallRadius(cfg));
+    expect(SIM_NY * cellOf(g.lengthRadii)).toBeGreaterThanOrEqual(1.25 * g.mouthRadii - 1e-9);
+  });
+
+  it('keeps the ring at least five cells wide at any plug size', () => {
+    for (const plugShare of [0.5, 0.7, 0.8]) {
+      const cfg = small({ plugShare });
+      const g = edGrid(engineProfile(cfg), ringWallRadius(cfg));
+      expect((1 - cfg.plugShare) / cellOf(g.lengthRadii), `plug ${plugShare}`).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it('does not simulate whole a nozzle too long for the grid', () => {
+    const big = ed({ ...roomy, exitDia: starterEngine().throatDia * 12 });
+    expect(edGrid(engineProfile(big), ringWallRadius(big)).fits).toBe(false);
+    expect(edSimInputs(big, simulate(big, sea), 1, engineProfile(big))).toBeNull();
+  });
+
+  it('gives no inputs for any other exhaust', () => {
+    const bell = sanitize({ ...small(), exhaust: 'bell' });
+    expect(edSimInputs(bell, simulate(bell, sea), 1, engineProfile(bell))).toBeNull();
+  });
+
+  it('sends the gas out through the ring past the speed of sound and heading outward along the wall', () => {
+    expect(ED_ENTRY_MACH).toBe(1.3);
+    const cfg = small();
+    const r = simulate(cfg, sea);
+    const { inputs, grid } = edSimInputs(cfg, r, 1, engineProfile(cfg))!;
+    expect(inputs.uExit).toBeCloseTo(1.3 * Math.sqrt(r.gamma), 9);
+    const spike = inputs.spike!;
+    // Outward is a negative tilt (an aerospike's cells fire inward), and no steeper than 30 degrees.
+    expect(spike.tilt).toBeCloseTo(-edCapTilt(cfg), 12);
+    expect(-spike.tilt).toBeGreaterThan((15 * Math.PI) / 180);
+    expect(-spike.tilt).toBeLessThanOrEqual((30 * Math.PI) / 180 + 1e-12);
+    // Its speed along the grid's axis is still past the speed of sound, so nothing downstream reaches back.
+    expect(1.3 * Math.cos(spike.tilt)).toBeGreaterThan(1.05);
+    expect(inputs.ed).toEqual({ ringInner: spike.radii[0], lengthRadii: grid.lengthRadii });
+  });
+
+  it('makes the ring wide enough to carry the throat\u2019s flow at that speed and heading, at any plug size', () => {
+    for (const plugShare of [0.5, 0.7, 0.8]) {
+      for (const nozzleLenPct of [60, 80, 100]) {
+        const cfg = small({ plugShare, nozzleLenPct });
+        const r = simulate(cfg, sea);
+        const { inputs } = edSimInputs(cfg, r, 1, engineProfile(cfg))!;
+        const spike = inputs.spike!;
+        const ringArea = 1 - spike.radii[0] ** 2;          // in units of pi x (ring wall radius)^2
+        const throatArea = (cfg.throatDia / 2 / ringWallRadius(cfg)) ** 2;
+        // Mass flow through the ring's plane is density x speed along the axis x area.
+        expect((ringArea * Math.cos(spike.tilt)) / throatArea, `plug ${plugShare}, length ${nozzleLenPct}`).toBeCloseTo(areaRatio(1.3, r.gamma), 9);
+        expect(spike.radii[0], `plug ${plugShare}, length ${nozzleLenPct}`).toBeGreaterThan(0.1);
+        expect(spike.radii[0]).toBeLessThan(cfg.plugShare);
+      }
+    }
+  });
+
+  it('stands the plug\u2019s cap in the grid, flaring outward beside the wall to a flat back', () => {
+    const cfg = small();
+    const { inputs, wall } = edSimInputs(cfg, simulate(cfg, sea), 1, engineProfile(cfg))!;
+    const spike = inputs.spike!;
+    expect(spike.radii).toHaveLength(SPIKE_SAMPLES);
+    expect(spike.length).toBe(ED_CAP_RADII);
+    for (let i = 1; i < SPIKE_SAMPLES; i++) expect(spike.radii[i]).toBeGreaterThan(spike.radii[i - 1]);
+    const last = spike.radii[SPIKE_SAMPLES - 1];
+    expect(last).toBeCloseTo(spike.radii[0] + Math.tan(-spike.tilt) * ED_CAP_RADII, 12);
+    // The passage between cap and wall never narrows: the gas is not squeezed again past the ring.
+    const { slope, curve } = wallShape(wall);
+    let area = 1 - spike.radii[0] ** 2;
+    for (let i = 1; i < SPIKE_SAMPLES; i++) {
+      const x = (i / (SPIKE_SAMPLES - 1)) * ED_CAP_RADII;
+      const next = (1 + slope * x + curve * x * x) ** 2 - spike.radii[i] ** 2;
+      expect(next, `sample ${i}`).toBeGreaterThanOrEqual(area * (1 - 1e-9));
+      area = next;
+    }
+  });
+
+  it('starts the wall at the ring and ends it at the mouth, close to the bell that is drawn', () => {
+    const cfg = small();
+    const p = engineProfile(cfg);
+    const rw = ringWallRadius(cfg);
+    const { wall, grid } = edSimInputs(cfg, simulate(cfg, sea), 1, p)!;
+    expect([wall.x0, wall.r0]).toEqual([0, 1]);
+    expect(wall.x1).toBeCloseTo(grid.bellRadii, 9);
+    expect(wall.r1).toBeCloseTo(grid.mouthRadii, 9);
+    const { slope, curve } = wallShape(wall);
+    for (let i = 1; i <= 10; i++) {
+      const x = (i / 10) * wall.x1;
+      const fitted = 1 + slope * x + curve * x * x;
+      const drawn = radiusAt(p, p.throatX + x * rw) / rw;
+      expect(Math.abs(fitted / drawn - 1), `at ${i}/10 of the bell`).toBeLessThan(0.05);
+    }
+  });
+
+  it('brings the gas in at full strength only once the engine is lit', () => {
+    const cfg = small();
+    const r = simulate(cfg, sea);
+    expect(edSimInputs(cfg, r, 0.25, engineProfile(cfg))!.inputs.fire).toBe(0.25);
   });
 });

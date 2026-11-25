@@ -1,6 +1,6 @@
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { gasFor } from '../physics/engine';
-import { EXHAUSTS, divergingWall, ringWallRadius } from '../physics/exhausts';
+import { ED_CAP_RADII, EXHAUSTS, divergingWall, edCapTilt, ringWallRadius } from '../physics/exhausts';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -53,14 +53,24 @@ export interface PlugGeometry {
   stalkR: number;
   /** Where the stalk begins to flare out to the rim */
   flareX: number;
+  /**
+   * The cap: past the ring the plug flares on outward beside the wall, throwing the gas onto it,
+   * and ends in a flat back at `capX` with radius `capR`.
+   */
+  capX: number;
+  capR: number;
+  /** The cap's surface from the rim to its back, a few points along */
+  cap: ProfilePoint[];
 }
 
-/** Radius of the plug at x: nothing ahead of the stalk or behind the flat back. */
+/** Radius of the plug at x: nothing ahead of the stalk or behind the cap's flat back. */
 export function plugRadius(plug: PlugGeometry, x: number): number {
-  if (x < plug.stalkX || x > plug.baseX) return 0;
+  if (x < plug.stalkX || x > plug.capX) return 0;
   if (x <= plug.flareX) return plug.stalkR;
-  const t = (x - plug.flareX) / (plug.baseX - plug.flareX);
-  return plug.stalkR + (plug.rimR - plug.stalkR) * t;
+  if (x <= plug.baseX) return plug.stalkR + ((plug.rimR - plug.stalkR) * (x - plug.flareX)) / (plug.baseX - plug.flareX);
+  const c = plug.cap;
+  const i = Math.min(c.length - 1, Math.max(1, c.findIndex((q) => q.x >= x)));
+  return c[i - 1].r + ((c[i].r - c[i - 1].r) * (x - c[i - 1].x)) / Math.max(1e-12, c[i].x - c[i - 1].x);
 }
 
 export interface SpikePoint extends ProfilePoint {
@@ -164,7 +174,34 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   if (cfg.exhaust === 'expansionDeflection') {
     const rimR = cfg.plugShare * rt;
     const flareX = Math.max(throatX - 1.5 * rimR, 0.5 * throatX);
-    plug = { baseX: throatX, rimR, stalkX: 0.3 * flareX, stalkR: 0.3 * rimR, flareX };
+    const capLen = ED_CAP_RADII * rt;
+    plug = {
+      baseX: throatX,
+      rimR,
+      stalkX: 0.3 * flareX,
+      stalkR: 0.3 * rimR,
+      flareX,
+      capX: throatX + capLen,
+      capR: rimR,
+      cap: [],
+    };
+    // The cap's surface, point by point. It flares at its angle, but never so fast that the
+    // passage between it and the wall (which is still coming round its throat arc there) is
+    // narrower than the throat: where the straight flare would pinch, the cap follows the wall.
+    const throatR2 = (cfg.throatDia / 2) ** 2;
+    const N_CAP = 12;
+    const cap: ProfilePoint[] = [];
+    for (let i = 0; i <= N_CAP; i++) {
+      const x = throatX + (capLen * i) / N_CAP;
+      const j = points.findIndex((q) => q.x >= x);
+      const a = points[Math.max(0, j - 1)];
+      const b = points[Math.max(0, j)];
+      const wallR = j <= 0 ? b.r : a.r + ((b.r - a.r) * (x - a.x)) / Math.max(1e-12, b.x - a.x);
+      const straight = rimR + Math.tan(edCapTilt(cfg)) * (x - throatX);
+      cap.push({ x, r: Math.min(straight, Math.sqrt(Math.max(rimR * rimR, wallR * wallR - throatR2))) });
+    }
+    plug.cap = cap;
+    plug.capR = cap[N_CAP].r;
   }
 
   // Chambers of a multi-chamber engine sit just far enough apart for their nozzles to clear.

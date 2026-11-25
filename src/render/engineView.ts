@@ -407,13 +407,13 @@ export function drawEngine(
     if (anim.fire > 0.01 && !anim.failure && !simGas) {
       const re = profile.points[profile.points.length - 1].r;
       const open = result.state === 'compensating';
-      const endX = open ? profile.exitX : plug.baseX + 2.2 * plug.rimR;
+      const endX = open ? profile.exitX : plug.capX + 2.2 * plug.capR;
       const endR = open ? Math.min(0.97 * re, Math.sqrt(Math.max(0, re * re - (result.effectiveExitDia / 2) ** 2))) : 0;
       ctx.beginPath();
-      ctx.moveTo(X(plug.baseX), cy - plug.rimR * ppm);
-      ctx.lineTo(X(endX), cy - endR * ppm);
-      ctx.lineTo(X(endX), cy + endR * ppm);
-      ctx.lineTo(X(plug.baseX), cy + plug.rimR * ppm);
+      ctx.moveTo(X(plug.capX), cy - plug.capR * ppm);
+      ctx.lineTo(X(endX), cy - Math.max(endR, open ? plug.capR : 0) * ppm);
+      ctx.lineTo(X(endX), cy + Math.max(endR, open ? plug.capR : 0) * ppm);
+      ctx.lineTo(X(plug.capX), cy + plug.capR * ppm);
       ctx.closePath();
       ctx.fillStyle = open ? '#0d0f14' : 'rgba(13,15,20,0.7)';
       ctx.fill();
@@ -426,8 +426,8 @@ export function drawEngine(
     ctx.beginPath();
     ctx.moveTo(X(plug.stalkX), cy - plug.stalkR * ppm);
     ctx.lineTo(X(plug.flareX), cy - plug.stalkR * ppm);
-    ctx.lineTo(X(plug.baseX), cy - plug.rimR * ppm);
-    ctx.lineTo(X(plug.baseX), cy + plug.rimR * ppm);
+    for (const q of plug.cap) ctx.lineTo(X(q.x), cy - q.r * ppm);
+    for (let i = plug.cap.length - 1; i >= 0; i--) ctx.lineTo(X(plug.cap[i].x), cy + plug.cap[i].r * ppm);
     ctx.lineTo(X(plug.flareX), cy + plug.stalkR * ppm);
     ctx.lineTo(X(plug.stalkX), cy + plug.stalkR * ppm);
     ctx.closePath();

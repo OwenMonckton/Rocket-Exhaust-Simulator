@@ -176,7 +176,11 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
         // Size the grid to cover the visible plume, whatever the zoom.
         const across = (canvas.width - target.exitX) / target.radiusPx;
         const up = (0.5 * canvas.height + Math.max(...target.offsetsPx.map(Math.abs))) / target.radiusPx;
-        const length = gridLength(Math.max(across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
+        // An expansion-deflection nozzle's grid is sized by its bell, so that its ring and plug
+        // span the same cells whatever the zoom.
+        const length = simInputs!.ed
+          ? simInputs!.ed.lengthRadii
+          : gridLength(Math.max(across * 1.05, (up * 1.05 * SIM_NX) / SIM_NY));
         // A strip beside the nozzle, upstream of its exit, for exhaust that curls back around the lip.
         upstream = Math.min(2, 0.15 * length);
         cell = (length + upstream) / SIM_NX;
@@ -274,7 +278,10 @@ export function createPlumeRenderer(canvas: HTMLCanvasElement): PlumeRenderer | 
       const spike = useSim ? simInputs!.spike : undefined;
       const spikeView = spike ? target.spikeView : null;
       gl.uniform1i(u.uSpikeView, spikeView ? (spikeView.mode === 'mach' ? 1 : 2) : 0);
-      if (spike && spikeView) gl.uniform3f(u.uSpikeScale, spike.length, spikeView.machMax, spikeView.exitTemp);
+      // The stretch of the grid whose gas is coloured: along the spike, or for an
+      // expansion-deflection nozzle, whose "spike" is only its plug, the whole length of its bell.
+      const viewLength = useSim && simInputs!.ed && target.wall ? target.wall.x1 : (spike?.length ?? 0);
+      if (spike && spikeView) gl.uniform3f(u.uSpikeScale, viewLength, spikeView.machMax, spikeView.exitTemp);
       gl.uniform1f(u.uInOn, useEngine ? 1 : 0);
       gl.uniform1i(u.uIn, 2);
       gl.uniform1i(u.uInRad, 3);

@@ -59,7 +59,7 @@ export const RANGES = {
   /** Diameter at a dual bell's kink, m; 0 means not set yet */
   innerExitDia: { min: 0, max: 25, fallback: 0 },
   /** An expansion-deflection nozzle's plug, as a share of the wall's diameter at the ring */
-  plugShare: { min: 0.4, max: 0.8, fallback: 0.7 },
+  plugShare: { min: 0.5, max: 0.8, fallback: 0.7 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },

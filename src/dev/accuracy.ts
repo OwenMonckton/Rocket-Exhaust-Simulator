@@ -22,6 +22,7 @@ import { simulate } from '../physics/engine';
 import { EXHAUSTS, jetLeftWall } from '../physics/exhausts';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { getPreset } from '../physics/presets';
+import { sanitize } from '../physics/engine';
 import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, SimResult } from '../physics/types';
 import { ENGINE_NX, ENGINE_NY, createEngineSim, type EngineSim, type EngineSimInputs } from '../render/engineSim';
@@ -29,7 +30,7 @@ import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type Sim
 import { stepGas } from '../render/gasSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt } from '../render/geometry';
 import { gridLength } from '../render/plume';
-import { engineRestPressure, fixedExitFlow, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { edSimInputs, engineRestPressure, fixedExitFlow, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 
 interface Context {
   gl: WebGL2RenderingContext;
@@ -577,4 +578,72 @@ export function fingerprints() {
     const second = fingerprint(name);
     return { case: name, fingerprint: first, repeats: first === second };
   });
+}
+
+// ---- An expansion-deflection nozzle, simulated whole in the plume grid ----
+
+/** The engine the app opens on with an expansion-deflection nozzle: area ratio 16, room for any plug. */
+export function edEngine(plugShare = 0.7, change: Partial<EngineConfig> = {}): EngineConfig {
+  const base = starterEngine();
+  return sanitize({ ...base, exhaust: 'expansionDeflection', chamberDia: base.throatDia * 2.5, exitDia: base.throatDia * 4, plugShare, ...change });
+}
+
+/** The plume grid after an expansion-deflection nozzle has run from cold, with what is needed to read it. */
+function edRun(cfg: EngineConfig, altitudeKm: number, throttle: number, frames: number, ramp: number) {
+  const { plume } = begin();
+  const r = simulate(cfg, { altitudeKm, throttle });
+  const profile = engineProfile(cfg);
+  const ed = edSimInputs(cfg, r, 1, profile);
+  if (!ed) throw new Error('This nozzle is not simulated whole');
+  const length = ed.grid.lengthRadii;
+  const upstream = Math.min(2, 0.15 * length);
+  const cell = (length + upstream) / SIM_NX;
+  plume.reset();
+  for (let frame = 0; frame < frames; frame++) {
+    const fire = frame < ramp ? (frame + 1) / ramp : 1;
+    plume.step({ ...ed.inputs, fire }, length + upstream, ed.wall, upstream);
+    pace(frame);
+  }
+  const state = read(plume.texture, SIM_NX, SIM_NY);
+  const scalar = read(plume.scalarTexture, SIM_NX, SIM_NY);
+  const g = r.gamma;
+  /** The gas in the cell at column i, row j. */
+  const at = (i: number, j: number) => {
+    const n = j * SIM_NX + i;
+    const rho = state[n * 4];
+    const u = state[n * 4 + 1] / rho;
+    const v = state[n * 4 + 2] / rho;
+    const p = (g - 1) * (state[n * 4 + 3] - 0.5 * rho * (u * u + v * v));
+    // The exhaust amount is read back four numbers a cell like the rest, with only the first used.
+    return { rho, u, v, p, mach: Math.sqrt((u * u + v * v) / ((g * p) / rho)), exhaust: scalar[n * 4] / rho };
+  };
+  /** Column of the cell at x ring radii from the ring's plane. */
+  const column = (x: number) => Math.min(SIM_NX - 1, Math.max(0, Math.floor((x + upstream) / cell)));
+  return { r, ed, cell, upstream, at, column, g };
+}
+
+/**
+ * The flow across the bell at four stations along it, a few points from the centreline to the
+ * wall: Mach number, pressure over the outside pressure, how much of the gas is exhaust, and
+ * which way it is heading (degrees outward from the axis). For seeing what the nozzle is doing.
+ */
+export function edProbe(altitudeKm = 0, plugShare = 0.7, exitThroats = 4, throttle = 1, frames = 420, ramp = 60) {
+  const run = edRun(edEngine(plugShare, { exitDia: starterEngine().throatDia * exitThroats }), altitudeKm, throttle, frames, ramp);
+  const { wall, grid, inputs } = run.ed;
+  const shape = { slope: Math.min(wall.slope0 ?? 0, (1.8 * (wall.r1 - wall.r0)) / wall.x1), chord: (wall.r1 - wall.r0) / wall.x1 };
+  const wallAt = (x: number) => wall.r0 + shape.slope * x + ((shape.chord - shape.slope) / wall.x1) * x * x;
+  const rows: Record<string, string | number>[] = [];
+  for (const share of [0.1, 0.3, 0.6, 1.0, 1.3]) {
+    const x = share * grid.bellRadii;
+    const edge = share <= 1 ? wallAt(x) : grid.mouthRadii * 1.2;
+    const row: Record<string, string | number> = { 'x / bell': share, 'wall r': +edge.toFixed(2) };
+    for (const f of [0.03, 0.2, 0.4, 0.6, 0.8, 0.95]) {
+      const j = Math.min(SIM_NY - 1, Math.floor((f * edge) / run.cell));
+      const c = run.at(run.column(x), j);
+      const heading = Math.round((Math.atan2(c.v, c.u) * 180) / Math.PI);
+      row[`r=${f}`] = `M${c.mach.toFixed(2)} p${(c.p / inputs.pAmb).toFixed(2)} e${c.exhaust.toFixed(2)} ${heading}°`;
+    }
+    rows.push(row);
+  }
+  return rows;
 }
