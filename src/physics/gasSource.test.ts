@@ -5,7 +5,7 @@ import { showsFigures } from '../ui/copy';
 import { sanitize, simulate } from './engine';
 import { mixRange, resolveGas, staticLook } from './gasSource';
 import { lookFromExhaust } from './plumeLook';
-import { propellantsFor } from './parts';
+import { isElectric, propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
 import { PROPELLANTS, gasProps } from './propellants';
 import { starterEngine } from './reshape';
@@ -15,6 +15,13 @@ const G0 = 9.80665;
 const sl = { altitudeKm: 0, throttle: 1 };
 const vac = { altitudeKm: 100, throttle: 1 };
 const TABLED = propellantsFor('combustion').filter((id) => id !== 'calculated');
+
+/**
+ * The examples whose gas comes from a hand-tuned table: all of them but the electric ones, whose
+ * gas is the solver's (an electric engine's temperature follows from its power and flow, which no
+ * table holds).
+ */
+const TABLED_EXAMPLES = PRESETS.filter((p) => !isElectric(p.config.energy));
 
 describe('the gas of a tabled propellant', () => {
   it('is its table, with no failure of its own', () => {
@@ -31,7 +38,7 @@ describe('the gas of a tabled propellant', () => {
   });
 
   it('leaves every example engine tabled, with no notes and no exhaust list', () => {
-    for (const preset of PRESETS) {
+    for (const preset of TABLED_EXAMPLES) {
       for (const flight of [sl, vac]) {
         const r = simulate(preset.config, flight);
         expect(r.calculated, preset.id).toBe(false);
@@ -274,7 +281,7 @@ describe("where the plume's look comes from", () => {
   const built = (fuel: string, oxidiser: string) => sanitize({ ...starterEngine(), propellant: 'calculated', fuel, oxidiser });
 
   it('leaves every example engine its hand-picked look', () => {
-    for (const p of PRESETS) {
+    for (const p of TABLED_EXAMPLES) {
       const src = resolveGas(p.config, p.config.chamberPressureBar, (p.config.exitDia / p.config.throatDia) ** 2);
       expect(src.look, p.name).toBe(PROPELLANTS[p.config.propellant as Exclude<PropellantId, 'calculated'>].look);
       expect(src.derivedLook, p.name).toBe(false);
@@ -355,5 +362,12 @@ describe("where the plume's look comes from", () => {
       }
       expect(steps, fuel).toBeGreaterThan(40);
     }
+  });
+});
+
+describe('the examples that are not tabled', () => {
+  it('are exactly the electric ones, and the twelve tabled examples are untouched', () => {
+    expect(TABLED_EXAMPLES).toHaveLength(12);
+    expect(PRESETS.filter((p) => isElectric(p.config.energy)).map((p) => p.id)).toEqual(['mr-510']);
   });
 });

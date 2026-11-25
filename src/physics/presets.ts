@@ -1,5 +1,5 @@
 import { FUEL_IDS, OXIDISER_IDS } from './chem/ingredients';
-import { simulate } from './engine';
+import { sanitize, simulate } from './engine';
 import { ENERGY_SOURCES } from './parts';
 import { PROPELLANTS } from './propellants';
 import { chamberShape, wallFor } from './reshape';
@@ -35,6 +35,8 @@ interface Spec {
   chambers?: number;
   /** How the gas leaves (default a bell) */
   exhaust?: ExhaustId;
+  /** Electrical power, kW, for an electric engine */
+  powerKW?: number;
   published: Preset['published'];
 }
 
@@ -137,12 +139,27 @@ const SPECS: Spec[] = [
     nozzleLenPct: 75, structural: 0.5,
     published: { thrustKN: 1200, atVacuum: false, ispSL: 240, ispVac: 265 },
   },
+  {
+    id: 'mr-510',
+    name: 'MR-510 arcjet',
+    blurb: 'Aerojet arcjet that keeps Lockheed Martin A2100 communications satellites on station. Two kilowatts of arc on hydrazine, for about twice the efficiency of a hydrazine thruster alone.',
+    // Published: 222 to 258 mN at 585 to 615 s on 1.53 to 2.04 kW (L3Harris electric propulsion data
+    // sheet; satcatalog.com gives the same thrust and Isp ranges). Taken here at the high-thrust end.
+    // The chamber pressure and nozzle are not published: 4 bar and an area ratio of 100 are typical.
+    propellant: 'aj-hydrazine', pcBar: 4, of: 0, eps: 100, contraction: 5, lStar: 2,
+    nozzleLenPct: 80, structural: 0.5, powerKW: 2,
+    published: { thrustKN: 0.000258, atVacuum: true, ispVac: 585 },
+  },
 ];
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
+/** An electric engine's dimensions are fractions of a millimetre, so they are kept to a thousandth of one. */
+const fine = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /** Size the engine so the model reproduces the published thrust. Thrust is proportional to throat area. */
 function build(s: Spec): Preset {
+  const electric = s.powerKW !== undefined;
+  const tidy = electric ? fine : round;
   const shape = (throatDia: number): EngineConfig => {
     const { chamberDia, chamberLen } = chamberShape(throatDia, s.contraction, s.lStar, PROPELLANTS[s.propellant].lStarRef);
     return {
@@ -155,8 +172,8 @@ function build(s: Spec): Preset {
       oxidiser: PROPELLANTS[s.propellant].pair?.oxidiser ?? OXIDISER_IDS[0],
       chamberDia,
       chamberLen,
-      throatDia: round(throatDia),
-      exitDia: round(throatDia * Math.sqrt(s.eps)),
+      throatDia: tidy(throatDia),
+      exitDia: tidy(throatDia * Math.sqrt(s.eps)),
       nozzleLenPct: s.nozzleLenPct,
       wall: round(wallFor(s.pcBar, chamberDia, s.structural)),
       chamberPressureBar: s.pcBar,
@@ -170,11 +187,26 @@ function build(s: Spec): Preset {
       coneAngleDeg: 15,
       innerExitDia: 0,
       plugShare: 0.7,
-      powerKW: 2,
+      powerKW: s.powerKW ?? 2,
       voltage: 300,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };
+  if (electric) {
+    // On a fixed power thrust does not simply go as throat area (more flow is cooler flow), but it
+    // does rise with it, so the throat that gives the published thrust is searched for.
+    const target = s.published.thrustKN * 1000;
+    let lo = 0.0003;
+    let hi = 0.01;
+    for (let i = 0; i < 40; i++) {
+      const mid = Math.sqrt(lo * hi);
+      const r = simulate(sanitize(shape(mid)), flight);
+      // Too little flow for the power overheats; too much will not boil.
+      if (r.failure === 'meltdown' || (r.failure !== 'underpowered' && r.thrust < target)) lo = mid;
+      else hi = mid;
+    }
+    return { id: s.id, name: s.name, blurb: s.blurb, config: sanitize(shape(Math.sqrt(lo * hi))), published: s.published };
+  }
   const trial = simulate(shape(0.3), flight).thrust;
   const throatDia = 0.3 * Math.sqrt((s.published.thrustKN * 1000) / trial);
   return { id: s.id, name: s.name, blurb: s.blurb, config: shape(throatDia), published: s.published };

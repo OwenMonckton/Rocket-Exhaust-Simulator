@@ -105,6 +105,41 @@ exports[`example engines > figures for merlin-vac 1`] = `
 }
 `;
 
+exports[`example engines > figures for mr-510 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 2.33922653,
+    "failure": null,
+    "heating": 0.6268209249,
+    "instability": 1.639517986e-7,
+    "isp": 226.5511018,
+    "ispSeaLevel": 226.5511018,
+    "ispVacuum": 574.2480254,
+    "massFlow": 0.000045792285,
+    "pe": 28717.46694,
+    "state": "separated",
+    "structural": 0.01066666667,
+    "tc": 3760.925549,
+    "thrust": 0.1017370567,
+  },
+  "vacuum": {
+    "exitMach": 4.548814058,
+    "failure": null,
+    "heating": 0.6268209249,
+    "instability": 1.639517986e-7,
+    "isp": 574.2480254,
+    "ispSeaLevel": 226.5511018,
+    "ispVacuum": 574.2480254,
+    "massFlow": 0.000045792285,
+    "pe": 323.2169168,
+    "state": "under",
+    "structural": 0.01066666667,
+    "tc": 3760.925549,
+    "thrust": 0.2578769358,
+  },
+}
+`;
+
 exports[`example engines > figures for nerva 1`] = `
 {
   "seaLevel": {

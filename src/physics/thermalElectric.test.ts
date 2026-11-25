@@ -3,6 +3,7 @@ import { solveHeated } from './chem/pair';
 import { rangesFor, sanitize, simulate } from './engine';
 import { destroys } from './limits';
 import { ENERGY_SOURCES, isBeam, isElectric, propellantsFor } from './parts';
+import { getPreset } from './presets';
 import { PROPELLANTS } from './propellants';
 import { starterEngine, withEnergy, withPropellant } from './reshape';
 import type { EngineConfig, PropellantId } from './types';
@@ -176,5 +177,31 @@ describe('swapping to and from a heated-gas electric source', () => {
 
   it('leaves every other source without electric figures', () => {
     expect(simulate(starterEngine(), space).electric).toBeUndefined();
+  });
+});
+
+describe('the MR-510 arcjet example', () => {
+  const p = getPreset('mr-510')!;
+  const r = simulate(p.config, space);
+
+  it('gives its published thrust and efficiency on its published power', () => {
+    expect(p.config).toMatchObject({ energy: 'arcjet', propellant: 'aj-hydrazine', powerKW: 2 });
+    expect(Math.abs(r.thrust - 0.258) / 0.258).toBeLessThan(0.02);
+    expect(Math.abs(r.ispVacuum - 585) / 585).toBeLessThan(0.03);
+    // The maker quotes 39 to 40% of the power ending up as thrust.
+    expect(r.electric!.thrustEfficiency).toBeGreaterThan(0.33);
+    expect(r.electric!.thrustEfficiency).toBeLessThan(0.42);
+  });
+
+  it('runs well inside its limits, with the arc the nearest of them', () => {
+    expect(r.failure).toBeNull();
+    expect(r.limits.heating).toBeGreaterThan(0.3);
+    expect(r.limits.heating).toBeLessThan(0.9);
+    expect(r.limits.structural).toBeLessThan(0.5);
+  });
+
+  it('has a throat well under a millimetre', () => {
+    expect(p.config.throatDia).toBeGreaterThan(0.0003);
+    expect(p.config.throatDia).toBeLessThan(0.001);
   });
 });
