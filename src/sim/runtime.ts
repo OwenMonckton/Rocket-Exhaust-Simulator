@@ -15,6 +15,8 @@ import { edSimInputs, engineRestPressure, fixedExitFlow, plumeParams, simInputs,
 import { simulatedFigures, type SimulatedFigures } from '../render/simFigures';
 import { isModified, type AppState, type Store } from '../state/store';
 import { engineAfterRebuild, latchesNow } from './rebuild';
+import { rumbleShare, simulationOffered, skyOnly } from './stageRules';
+import { starterEngine } from '../physics/reshape';
 
 export interface FrameInfo {
   result: SimResult;
@@ -100,6 +102,8 @@ const SOLID_BURN_S = 60;
  * of: hot hydrogen (2), helium (4) and a salt-water engine's gas (6). No flame is this light.
  */
 const LIGHT_EXHAUST_MOLAR_MASS = 7;
+/** The engine whose unlit plume stands in where there is only sky to draw. */
+const SKY_ENGINE = starterEngine();
 export const ZOOM_MIN = 0.3;
 export const ZOOM_MAX = 1.4;
 
@@ -210,9 +214,15 @@ export function createRuntime(
       };
     }
 
-    const params = plumeParams(state.config, result, state.flight, fire);
+    // A beam thruster has no hot gas, so the plume layer draws only the sky behind it: the sky of
+    // an ordinary engine at this altitude, unlit.
+    const sky = skyOnly(state.config);
+    const params = sky
+      ? plumeParams(SKY_ENGINE, simulate(SKY_ENGINE, state.flight), state.flight, 0)
+      : plumeParams(state.config, result, state.flight, fire);
     const pixelsPerMetre = view.ppm * dpr;
-    const useSim = plumeMode === 'sim' && (plume?.simAvailable ?? false);
+    const simulable = simulationOffered(state.config);
+    const useSim = simulable && plumeMode === 'sim' && (plume?.simAvailable ?? false);
 
     // A nozzle extension is a separate part. Until it seats, the gas leaves the engine at the end
     // of the fixed nozzle and the extension is just a wall in its way. The simulated plume always
@@ -237,7 +247,7 @@ export function createRuntime(
     // stands in the plume's grid as a solid body, the gas enters as a ring at the lip, and the
     // grid works out the flow along the spike along with the plume. (With the plume drawn, the
     // aerospike's own view draws the gas on the spike from a formula.)
-    const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike && !profile.plug;
+    const engineSimOn = simulable && engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike && !profile.plug;
     // A dual bell's jet held at its kink has left the wall as surely as a torn-off one has.
     const leftWall = jetLeftWall(result.state);
     const wholeNozzle = useSim && engineSimOn && !(lightExhaust && leftWall);
@@ -420,6 +430,8 @@ export function createRuntime(
     if (!gas) {
       simulatedNote = failure
         ? ''
+        : !simulable
+          ? 'not for beam thrusters'
         : profile.spike
           ? 'not for aerospikes'
           : profile.plug
@@ -484,7 +496,7 @@ export function createRuntime(
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawEngine(ctx, state.config, result, view, { fire, timeS, overlay, failure, failT, flowExitX: gas ? engineExitX : flowExitX, simGas: gas !== null || spikeSim !== null || edSim !== null, wholeNozzle, burnt }, w, h);
     const throttle = ENERGY_SOURCES[state.config.energy].throttleable ? state.flight.throttle : 1;
-    rumble.setLevel(fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
+    rumble.setLevel(rumbleShare(state.config) * fire * (0.45 + 0.55 * throttle), result.pa / SEA_LEVEL_PRESSURE);
 
     // The readouts don't need to update every frame.
     if (frameCount++ % 4 === 0) {

@@ -4,7 +4,8 @@ import { jetLeftWall } from '../physics/exhausts';
 import { destroys } from '../physics/limits';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { drawAerospike } from './aerospikeView';
-import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3, rand, scaleBarLabel } from './drawUtil';
+import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, drawScaleBar, heatMap, lerp3, rand } from './drawUtil';
+import { drawBeamThruster } from './beamView';
 import { GRAIN_END, engineProfile, grainBore, grainLabel, radiusAt, type EngineProfile, type View } from './geometry';
 
 export type FlowOverlay = 'none' | 'mach' | 'temp';
@@ -30,12 +31,6 @@ export interface EngineAnim {
 function localMach(profile: EngineProfile, x: number, throatR: number, g: number): number {
   const ratio = (radiusAt(profile, x) / throatR) ** 2;
   return x < profile.throatX ? subsonicMachFromAreaRatio(ratio, g) : machFromAreaRatio(ratio, g);
-}
-
-function niceLength(target: number): number {
-  const pow = Math.pow(10, Math.floor(Math.log10(target)));
-  const m = target / pow;
-  return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * pow;
 }
 
 /** Unreacted nuclear salt water. */
@@ -163,6 +158,11 @@ export function drawEngine(
 ): void {
   ctx.clearRect(0, 0, widthPx, heightPx);
   const profile = engineProfile(cfg);
+  // A beam thruster has none of an engine's parts: it has a picture of its own.
+  if (profile.beam) {
+    drawBeamThruster(ctx, cfg, result, view, { fire: anim.fire }, widthPx, heightPx);
+    return;
+  }
   const isSolid = cfg.energy === 'solid';
   const isNuclear = cfg.energy === 'reactor';
   // Engines fed a single propellant: hydrogen for nuclear thermal, uranium salt water otherwise.
@@ -702,22 +702,7 @@ export function drawEngine(
   ctx.restore();
 
   // --- Scale bar and overlay legend (not shaken) ---------------------------
-  const barM = niceLength(110 / ppm);
-  const barPx = barM * ppm;
-  const bx = 18;
-  const by = heightPx - 20;
-  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(bx, by - 5);
-  ctx.lineTo(bx, by);
-  ctx.lineTo(bx + barPx, by);
-  ctx.lineTo(bx + barPx, by - 5);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  ctx.font = '12px system-ui, sans-serif';
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(scaleBarLabel(barM), bx + barPx + 8, by + 4);
+  drawScaleBar(ctx, ppm, heightPx);
 
   if (anim.overlay !== 'none') {
     const lx = 18;

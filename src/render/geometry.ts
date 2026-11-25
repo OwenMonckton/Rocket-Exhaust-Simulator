@@ -1,6 +1,8 @@
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { gasFor } from '../physics/engine';
 import { EXHAUSTS, divergingWall, edCapRadii, edCapTilt, ringWallRadius } from '../physics/exhausts';
+import type { BeamType } from '../physics/electric';
+import { isBeam } from '../physics/parts';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -37,6 +39,38 @@ export interface EngineProfile {
   kink: ProfilePoint | null;
   /** The plug in the throat of an expansion-deflection nozzle; null for every other exhaust */
   plug: PlugGeometry | null;
+  /**
+   * Set for a beam thruster, which has no chamber, throat or nozzle. `points` is then the plain
+   * body it is drawn as, and the throat and exit are both its face.
+   */
+  beam?: BeamType;
+}
+
+/** A beam thruster's body as a share of its diameter: a gridded thruster's discharge chamber is deep, a Hall thruster is a flat disc. */
+const BEAM_BODY: Record<BeamType, number> = { ion: 0.6, hall: 0.35 };
+
+/** The outline a beam thruster is laid out by: a body as wide as its diameter, with its small neutraliser beside it. */
+function beamProfile(cfg: EngineConfig): EngineProfile {
+  const beam: BeamType = cfg.energy === 'hall' ? 'hall' : 'ion';
+  const r = cfg.exitDia / 2;
+  const length = BEAM_BODY[beam] * cfg.exitDia;
+  return {
+    points: [{ x: 0, r }, { x: length, r }],
+    chamberEndX: length,
+    throatX: length,
+    exitX: length,
+    length,
+    maxRadius: r,
+    offsets: [0],
+    // Room for the neutraliser that sits beside the body.
+    halfHeight: 1.3 * r,
+    frontSpace: 0,
+    extension: null,
+    spike: null,
+    kink: null,
+    plug: null,
+    beam,
+  };
 }
 
 /**
@@ -142,6 +176,7 @@ const DEG = Math.PI / 180;
 
 /** Inner wall contour: cylinder, smooth converging section, then the exhaust's diverging wall. */
 export function engineProfile(cfg: EngineConfig): EngineProfile {
+  if (isBeam(cfg.energy)) return beamProfile(cfg);
   if (cfg.exhaust === 'aerospike') return aerospikeProfile(cfg);
   const rc = cfg.chamberDia / 2;
   // The wall's radius at the throat: wider than a plain throat where a plug fills its middle.

@@ -17,6 +17,33 @@ export function scaleBarLabel(m: number): string {
   return `${Number((m * 1000).toPrecision(2))} mm`;
 }
 
+/** A round length (1, 2 or 5 times a power of ten) no longer than `target`. */
+export function niceLength(target: number): number {
+  const pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const m = target / pow;
+  return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * pow;
+}
+
+/** The scale bar at the foot of the picture. */
+export function drawScaleBar(ctx: CanvasRenderingContext2D, ppm: number, heightPx: number): void {
+  const barM = niceLength(110 / ppm);
+  const barPx = barM * ppm;
+  const bx = 18;
+  const by = heightPx - 20;
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx, by - 5);
+  ctx.lineTo(bx, by);
+  ctx.lineTo(bx + barPx, by);
+  ctx.lineTo(bx + barPx, by - 5);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(scaleBarLabel(barM), bx + barPx + 8, by + 4);
+}
+
 /** Blue → cyan → green → yellow → red. */
 export function heatMap(t: number): RGB {
   const stops: RGB[] = [
