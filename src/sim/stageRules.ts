@@ -20,6 +20,14 @@ export function simulationOffered(cfg: EngineConfig): boolean {
 export const NO_SIMULATION_NOTE = 'A beam of charged atoms is not a gas the simulation can follow.';
 
 /**
+ * True when picking a thruster has just taken the altitude up to a vacuum: a beam thruster is on
+ * the stand and the altitude jumped to the top from below where one can run.
+ */
+export function movedToVacuum(before: { beam: boolean; altitude: number }, now: { beam: boolean; altitude: number }): boolean {
+  return now.beam && now.altitude >= 100 && before.altitude < 86 && now.altitude - before.altitude > 1;
+}
+
+/**
  * The share of an ordinary engine's rumble this one makes: none from a beam thruster, which is
  * silent, and little from a heated-gas electric engine, whose push is a fraction of a newton.
  */

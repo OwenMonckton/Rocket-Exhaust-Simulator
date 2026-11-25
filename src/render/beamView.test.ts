@@ -3,7 +3,7 @@ import { sanitize, simulate } from '../physics/engine';
 import { starterEngine, withEnergy } from '../physics/reshape';
 import type { EngineConfig } from '../physics/types';
 import type { StageLayout } from '../sim/runtime';
-import { rumbleShare, simulationOffered, skyOnly } from '../sim/stageRules';
+import { movedToVacuum, rumbleShare, simulationOffered, skyOnly } from '../sim/stageRules';
 import { silhouettePath } from '../ui/picker';
 import { calloutsFor } from '../ui/stand';
 import { BEAM_BODY_LENGTH, beamAlpha, beamColour, beamShape } from './beamView';
@@ -111,5 +111,17 @@ describe('what the stage does for a beam thruster', () => {
     expect(skyOnly(starterEngine())).toBe(false);
     expect(simulationOffered(starterEngine())).toBe(true);
     expect(rumbleShare(starterEngine())).toBe(1);
+  });
+});
+
+describe('the note that a thruster was taken to space', () => {
+  it('is written when picking a beam thruster lifted the altitude, and at no other time', () => {
+    expect(movedToVacuum({ beam: false, altitude: 0 }, { beam: true, altitude: 100 })).toBe(true);
+    expect(movedToVacuum({ beam: true, altitude: 5 }, { beam: true, altitude: 100 })).toBe(true);
+    // Already in space, dragged there by hand a little at a time, or not a beam thruster.
+    expect(movedToVacuum({ beam: false, altitude: 100 }, { beam: true, altitude: 100 })).toBe(false);
+    expect(movedToVacuum({ beam: true, altitude: 99.5 }, { beam: true, altitude: 100 })).toBe(false);
+    expect(movedToVacuum({ beam: false, altitude: 0 }, { beam: false, altitude: 100 })).toBe(false);
+    expect(movedToVacuum({ beam: true, altitude: 0 }, { beam: true, altitude: 50 })).toBe(false);
   });
 });

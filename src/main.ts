@@ -1,11 +1,12 @@
-import { destroys } from './physics/limits';
+import { isBeam } from './physics/parts';
 import { getPreset } from './physics/presets';
 import type { FlowOverlay } from './render/engineView';
 import { createRuntime, type FrameInfo, type PlumeMode } from './sim/runtime';
+import { NO_SIMULATION_NOTE, movedToVacuum, simulationOffered } from './sim/stageRules';
 import { decodeState, encodeState } from './state/share';
 import { createStore, defaultState, isModified } from './state/store';
 import { createControls } from './ui/controls';
-import { STATE_COPY, TIPS, failureCopy } from './ui/copy';
+import { STATE_COPY, TIPS, failureCopy, restartLabel } from './ui/copy';
 import { NEW_ENGINE, createPicker } from './ui/picker';
 import { createReadouts, fmtThrust } from './ui/readouts';
 import { createStand } from './ui/stand';
@@ -132,13 +133,15 @@ const record = (info: FrameInfo) => {
   const altitude = store.get().flight.altitudeKm;
   if (info.firing && !seen.firing) {
     log.ignite();
-    log.add('Ignition.', 'fire');
+    // A beam thruster is switched on: nothing is lit, and nothing flashes or shakes.
+    const beam = isBeam(store.get().config.energy);
+    log.add(beam ? 'Switched on.' : 'Ignition.', 'fire');
     seen.full = false;
     seen.state = '';
     // The flash and the shake of the stand as it lights.
     stage.classList.remove('ignite');
     void stage.offsetWidth;
-    stage.classList.add('ignite');
+    if (!beam) stage.classList.add('ignite');
     if (muted && !seen.soundAsked) {
       seen.soundAsked = true;
       showToast('Sound is off. Use the Sound button to hear the engine.');
@@ -148,7 +151,7 @@ const record = (info: FrameInfo) => {
     seen.full = true;
     log.add(`Full power: ${fmtThrust(info.result.thrust)}.`, 'fire');
   }
-  if (info.firing && seen.full && info.result.state !== seen.state) {
+  if (info.firing && seen.full && info.result.state !== seen.state && !isBeam(store.get().config.energy)) {
     seen.state = info.result.state;
     const calm = info.result.state === 'ideal' || info.result.state === 'compensating';
     log.add(`Nozzle: ${STATE_COPY[info.result.state].label.toLowerCase()}.`, calm ? 'note' : 'warn');
@@ -207,8 +210,7 @@ const runtime = createRuntime(store, stage, $<HTMLCanvasElement>('gl'), $<HTMLCa
     failureBox.querySelector('p')!.textContent = copy.text;
     // A flame that went out leaves the engine whole: it only needs lighting again.
     // Nothing is lit in a reactor: it is started again, not relit.
-    const relight = store.get().config.energy === 'combustion' ? 'Relight engine' : 'Restart engine';
-    rebuildBtn.textContent = destroys(info.failure) ? 'Rebuild engine' : relight;
+    rebuildBtn.textContent = restartLabel(store.get().config.energy, info.failure);
   }
   failureBox.hidden = info.failure === null;
 });
@@ -256,6 +258,34 @@ if (runtime.hasEngineSim) {
   engineGas.title = "This browser can't run the gas simulation, so the gas inside the engine is drawn instead.";
 }
 engineGas.addEventListener('change', () => runtime.setEngineGas(engineGas.value as PlumeMode));
+
+// A beam thruster has no gas to simulate or to look inside, so those three menus stand idle
+// while one is on the stand, and say why. They come back as they were with any other engine.
+const overlayMenu = $<HTMLSelectElement>('overlay');
+const gasMenus = [
+  { el: plumeMode, able: runtime.hasSim, title: plumeMode.title },
+  { el: engineGas, able: runtime.hasEngineSim, title: engineGas.title },
+  { el: overlayMenu, able: true, title: overlayMenu.title },
+];
+const syncGasMenus = () => {
+  const offered = simulationOffered(store.get().config);
+  for (const m of gasMenus) {
+    m.el.disabled = !offered || !m.able;
+    m.el.title = offered ? m.title : NO_SIMULATION_NOTE;
+  }
+};
+store.subscribe(syncGasMenus);
+syncGasMenus();
+
+// Picking a beam thruster takes it to space, where it can run. The log says so, once.
+let wasBeamAt = { beam: isBeam(store.get().config.energy), altitude: store.get().flight.altitudeKm };
+store.subscribe((s) => {
+  const beam = isBeam(s.config.energy);
+  if (movedToVacuum(wasBeamAt, { beam, altitude: s.flight.altitudeKm })) {
+    log.add('Altitude set to 100 km: this thruster only runs in a vacuum.');
+  }
+  wasBeamAt = { beam, altitude: s.flight.altitudeKm };
+});
 
 $('zoom-out').addEventListener('click', () => runtime.setZoom(runtime.getZoom() / 1.25));
 $('zoom-in').addEventListener('click', () => runtime.setZoom(runtime.getZoom() * 1.25));

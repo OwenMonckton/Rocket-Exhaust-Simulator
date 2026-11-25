@@ -1,5 +1,5 @@
 import { RANGES, sanitize, sanitizeFlight } from '../physics/engine';
-import { ENERGY_SOURCES, isEnergyId } from '../physics/parts';
+import { ENERGY_SOURCES, isBeam, isEnergyId } from '../physics/parts';
 import { getPreset } from '../physics/presets';
 import { starterEngine, withEnergy, withExhaust, withPair, withPropellant } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, FlightState } from '../physics/types';
@@ -31,6 +31,14 @@ export function isModified(cfg: EngineConfig): boolean {
     'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers', 'extFixedDia', 'extDeploy',
   ];
   return keys.some((k) => !close(cfg[k] as number, stock[k] as number));
+}
+
+/**
+ * Where an engine just picked stands: a beam thruster only runs in a vacuum, so picking one takes
+ * it to the top of the altitude range. Every other engine stays where the last one was.
+ */
+export function flightFor(config: EngineConfig, flight: FlightState): FlightState {
+  return isBeam(config.energy) ? { ...flight, altitudeKm: RANGES.altitudeKm.max } : flight;
 }
 
 export function defaultState(): AppState {
@@ -89,7 +97,7 @@ export function createStore(initial: AppState): Store {
     loadPreset(id) {
       const preset = getPreset(id);
       if (!preset) return;
-      state = { config: { ...preset.config }, flight: state.flight };
+      state = { config: { ...preset.config }, flight: flightFor(preset.config, state.flight) };
       emit();
     },
     newEngine() {
@@ -103,7 +111,7 @@ export function createStore(initial: AppState): Store {
       // own, so the throttle goes back to full: left where it was, it would be applied a second
       // time on the way back.
       const baked = ENERGY_SOURCES[state.config.energy].throttleable && !ENERGY_SOURCES[id].throttleable;
-      state = { config, flight: baked ? { ...state.flight, throttle: 1 } : state.flight };
+      state = { config, flight: flightFor(config, baked ? { ...state.flight, throttle: 1 } : state.flight) };
       emit();
     },
     setExhaust(id) {

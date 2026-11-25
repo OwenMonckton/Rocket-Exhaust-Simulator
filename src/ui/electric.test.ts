@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { sanitize } from '../physics/engine';
+import { sanitize, simulate } from '../physics/engine';
 import { starterEngine, withEnergy } from '../physics/reshape';
 import { scaleBarLabel } from '../render/drawUtil';
-import { formatLength, formatPower, mixtureShown, powerShown, pressureStep } from './controls';
-import { LIMIT_COPY, TIPS, failureCopy, limitCopy } from './copy';
-import { fmtFlow, fmtPush, fmtThrust, gaugesFor } from './readouts';
+import { formatLength, formatPower, formatVoltage, hiddenForBeam, mixtureShown, powerShown, pressureStep, voltageShown } from './controls';
+import { LIMIT_COPY, TIPS, failureCopy, limitCopy, restartLabel } from './copy';
+import { beamReadout, fmtFlow, fmtPush, fmtThrust, gaugesFor, rowsHidden } from './readouts';
 
 const flight = { altitudeKm: 100, throttle: 1 };
-const state = (energy: 'combustion' | 'reactor' | 'solid' | 'resistojet' | 'arcjet') => ({ config: withEnergy(starterEngine(), energy), flight });
+const state = (energy: 'combustion' | 'reactor' | 'solid' | 'resistojet' | 'arcjet' | 'ion' | 'hall') => ({ config: withEnergy(starterEngine(), energy), flight });
 
 describe('small figures', () => {
   it('gives lengths under a centimetre in millimetres', () => {
@@ -107,5 +107,83 @@ describe('the gauges and failures of an electrically heated engine', () => {
         expect(copy.text, `${e} ${f}`).not.toMatch(/core temperature|mixture ratio|—/);
       }
     }
+  });
+});
+
+describe('the controls a beam thruster shows', () => {
+  const beam = (energy: 'ion' | 'hall') => ({ config: withEnergy(starterEngine(), energy), flight });
+
+  it('has power, voltage and diameter, and none of the parts of an engine', () => {
+    for (const e of ['ion', 'hall'] as const) {
+      const s = beam(e);
+      expect(powerShown(s)).toBe(true);
+      expect(voltageShown(s)).toBe(true);
+      expect(mixtureShown(s)).toBe(false);
+      for (const id of ['exhaust', 'scale', 'chambers', 'chamberDia', 'chamberLen', 'throatDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia', 'plugShare', 'chamberPressureBar', 'mixtureRatio']) {
+        expect(hiddenForBeam(id), id).toBe(true);
+      }
+      for (const id of ['energy', 'propellant', 'exitDia', 'powerKW', 'voltage', 'altitudeKm', 'throttle']) expect(hiddenForBeam(id), id).toBe(false);
+    }
+    expect(voltageShown(state('arcjet'))).toBe(false);
+    expect(voltageShown(state('combustion'))).toBe(false);
+  });
+
+  it('has tips for voltage and diameter, and prints a voltage plainly', () => {
+    expect(TIPS.voltage.length).toBeGreaterThan(30);
+    expect(TIPS.beamDia.length).toBeGreaterThan(30);
+    expect(formatVoltage(1100)).toBe('1,100 V');
+    expect(formatVoltage(300)).toBe('300 V');
+  });
+});
+
+describe('what a beam thruster reads out', () => {
+  const ion = withEnergy(starterEngine(), 'ion');
+  const lit = simulate(ion, flight);
+
+  it('shows one gauge each: the current through the grids, or the heat of the channel', () => {
+    expect(gaugesFor('ion')).toEqual(['structural']);
+    expect(gaugesFor('hall')).toEqual(['heating']);
+    expect(limitCopy('structural', 'ion').label).toBe('Grid current');
+    expect(limitCopy('heating', 'hall').label).toBe('Channel heat');
+  });
+
+  it('leaves out every figure that belongs to hot gas in a nozzle', () => {
+    expect(rowsHidden('ion')).toEqual(['ispBothRow', 'nozzleRow', 'pressRow', 'simRow']);
+    expect(rowsHidden('hall')).toEqual(rowsHidden('ion'));
+    expect(rowsHidden('arcjet')).toEqual([]);
+    expect(rowsHidden('combustion')).toEqual([]);
+    const text = Object.values(beamReadout(lit, 'xenon', 1)).join(' | ');
+    expect(text).not.toMatch(/bar|Mach|Sea level|Nozzle|chamber| K\b/);
+    expect(text).not.toMatch(/NaN|undefined/);
+  });
+
+  it('gives its own figures', () => {
+    const out = beamReadout(lit, 'xenon', 1);
+    expect(out.run).toBe('Running');
+    expect(out.power).toMatch(/^2\.30 kW \/ \d+%$/);
+    expect(out.volts).toMatch(/^1,100 V \/ 1\.\d\d A$/);
+    expect(out.temp).toMatch(/^\d+\.\d km\/s$/);
+    expect(out.tempLabel).toBe('Exhaust speed');
+    expect(out.exhaust).toBe('Xenon ions');
+    expect(out.colour).toBe('Colour: xenon glowing blue-violet.');
+    expect(beamReadout(lit, 'argon', 1).colour).toBe('Colour: argon glowing pink-violet.');
+  });
+
+  it('says where it stands: off, running up, running, or no use in air', () => {
+    expect(beamReadout(lit, 'xenon', 0).run).toBe('Forecast: the thruster is off');
+    expect(beamReadout(lit, 'xenon', 0.4).run).toBe('Running up');
+    const inAir = simulate(ion, { altitudeKm: 0, throttle: 1 });
+    expect(beamReadout(inAir, 'xenon', 0).run).toBe('Will not light in air');
+  });
+
+  it('words its failures and its restart for a thruster', () => {
+    expect(failureCopy('noVacuum', 'ion').title).toBe('Needs a vacuum');
+    expect(failureCopy('gridOverload', 'ion').title).toBe('Grids overloaded');
+    expect(failureCopy('channelOverheat', 'hall').title).toBe('Channel overheated');
+    expect(restartLabel('ion', 'noVacuum')).toBe('Switch on again');
+    expect(restartLabel('arcjet', 'underpowered')).toBe('Restart engine');
+    expect(restartLabel('combustion', 'flameout')).toBe('Relight engine');
+    expect(restartLabel('combustion', 'burst')).toBe('Rebuild engine');
+    expect(restartLabel('reactor', 'meltdown')).toBe('Rebuild engine');
   });
 });

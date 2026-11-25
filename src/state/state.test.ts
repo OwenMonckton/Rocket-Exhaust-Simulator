@@ -336,3 +336,46 @@ describe('power and voltage in links (electric thrusters, task 1)', () => {
     expect(RANGES.voltage).toEqual({ min: 100, max: 5000, fallback: 300 });
   });
 });
+
+describe('a beam thruster and the altitude (electric thrusters, task 8)', () => {
+  it('is taken to space when it is picked, because it cannot run anywhere else', () => {
+    for (const energy of ['ion', 'hall'] as const) {
+      const store = createStore(defaultState());
+      expect(store.get().flight.altitudeKm).toBe(0);
+      store.setEnergy(energy);
+      expect(store.get().config.energy).toBe(energy);
+      expect(store.get().flight.altitudeKm).toBe(100);
+      // It can then be brought down, to see it refuse.
+      store.set({ flight: { altitudeKm: 20 } });
+      expect(store.get().flight.altitudeKm).toBe(20);
+      store.set({ config: { voltage: 900 } });
+      expect(store.get().flight.altitudeKm).toBe(20);
+    }
+  });
+
+  it('leaves the altitude alone for every other source, and on the way back', () => {
+    for (const energy of ['arcjet', 'resistojet', 'reactor', 'solid'] as const) {
+      const store = createStore(defaultState());
+      store.set({ flight: { altitudeKm: 12 } });
+      store.setEnergy(energy);
+      expect(store.get().flight.altitudeKm, energy).toBe(12);
+    }
+    const store = createStore(defaultState());
+    store.setEnergy('ion');
+    store.setEnergy('combustion');
+    expect(store.get().flight.altitudeKm).toBe(100);
+    store.setEnergy('ion');
+    store.set({ flight: { altitudeKm: 5 } });
+    store.setEnergy('hall');
+    expect(store.get().flight.altitudeKm).toBe(100);
+  });
+
+  it('keeps the altitude of an ordinary example', () => {
+    const store = createStore(defaultState());
+    store.set({ flight: { altitudeKm: 7 } });
+    store.loadPreset('rs-25');
+    expect(store.get().flight.altitudeKm).toBe(7);
+    store.loadPreset('mr-510');
+    expect(store.get().flight.altitudeKm).toBe(7);
+  });
+});

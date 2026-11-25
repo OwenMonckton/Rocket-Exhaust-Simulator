@@ -1,4 +1,5 @@
 import { jetLeftWall } from '../physics/exhausts';
+import { destroys } from '../physics/limits';
 import { ENERGY_SOURCES } from '../physics/parts';
 import type { EnergyId, ExhaustId, ExpansionState, Failure, SimResult } from '../physics/types';
 
@@ -13,6 +14,8 @@ export const TIPS = {
   innerExitDia: 'Width of the nozzle at the kink, where the short inner bell opens into the outer one. Near the ground only the inner bell works, so size it for the ground: the closer it is to the right size there, the less thrust is wasted low down.',
   plugShare: 'How much of the throat the plug fills. A bigger plug leaves a thinner ring further out: it adjusts better to the thick air near the ground, but its wide flat back drags more once the engine is in space.',
   powerKW: 'The electrical power the engine draws. More power heats the propellant further, for a faster exhaust, until the heater or the arc cannot take it.',
+  voltage: 'The voltage that throws the charged atoms out. More volts means a faster exhaust and better efficiency, but on the same power fewer atoms can be thrown, so the thrust falls.',
+  beamDia: 'Width of the thruster\u2019s face. A wider thruster spreads the same power over more area, which keeps it further inside its limit. It does not change the thrust.',
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
   energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
   exhaust: 'How the hot gas is turned into a jet. Changing it keeps the same total throat size, so as much propellant flows through.',
@@ -157,8 +160,8 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
     text: 'The electrical power could not turn this much propellant into gas, so the engine never started. The engine is unharmed. Raise the power, or pass less propellant by lowering the chamber pressure or narrowing the throat. Restarting with nothing changed goes back to the last setup that ran.',
   },
   noVacuum: {
-    title: 'Will not light in air',
-    text: 'This thruster makes a thin glow of charged gas and throws it out with a voltage, and that only works in a vacuum: in air the voltage simply arcs across. The thruster is unharmed. Take it above about 80 km and switch it on again. Real ones need an even harder vacuum than that.',
+    title: 'Needs a vacuum',
+    text: 'This thruster makes a thin glow of charged gas and throws it out with a voltage, and that only works in a vacuum: in air the voltage simply arcs across. The thruster is unharmed. Take it above about 80 km and switch it on again. Real ones need an even harder vacuum than that. Switching on with nothing changed goes back to the last setup that ran.',
   },
   gridOverload: {
     title: 'Grids overloaded',
@@ -457,6 +460,12 @@ export const LIMIT_COPY = {
 
 /** A limit gauge's name and tip, with wording specific to an energy source where the general wording would mislead. */
 export function limitCopy(key: keyof typeof LIMIT_COPY, energy: EnergyId): { label: string; tip: string } {
+  if (key === 'structural' && energy === 'ion') {
+    return { label: 'Grid current', tip: 'How close the two grids are to the most current they can pull through. It rises with power and with a narrower thruster, and falls steeply as the voltage rises.' };
+  }
+  if (key === 'heating' && energy === 'hall') {
+    return { label: 'Channel heat', tip: 'How close the channel walls are to the most waste heat they can shed. The power that does not become thrust ends up here. It rises with power and falls with a wider thruster.' };
+  }
   if (key === 'heating' && energy === 'resistojet') {
     return { label: LIMIT_COPY.heating.label, tip: 'How close the hottest part is to failing: the heater, which must run hotter than the gas it heats, or the throat. Heat rises with power and falls with more propellant flow.' };
   }
@@ -464,4 +473,14 @@ export function limitCopy(key: keyof typeof LIMIT_COPY, energy: EnergyId): { lab
     return { label: LIMIT_COPY.heating.label, tip: 'How close the hottest part is to failing: the electrodes the arc strikes between, or the throat. Heat rises with power and falls with more propellant flow.' };
   }
   return LIMIT_COPY[key];
+}
+
+/**
+ * What the button under a failure says. An engine torn open is rebuilt; one that went out or never
+ * started is lit, started or switched on again, whichever suits what it is.
+ */
+export function restartLabel(energy: EnergyId, failure: Exclude<Failure, null>): string {
+  if (destroys(failure)) return 'Rebuild engine';
+  if (energy === 'combustion') return 'Relight engine';
+  return ENERGY_SOURCES[energy].kind === 'beam' ? 'Switch on again' : 'Restart engine';
 }

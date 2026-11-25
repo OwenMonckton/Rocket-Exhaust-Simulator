@@ -30,6 +30,11 @@ describe('when a failure shows', () => {
   it('at once for an engine that never lit, as Fire is pressed', () => {
     expect(latchesNow('inert', 0.01)).toBe(true);
     expect(latchesNow('unsolved', 0.01)).toBe(true);
+    // An electric engine that cannot start says so at once, too: there is nothing to see first.
+    expect(latchesNow('underpowered', 0.01)).toBe(true);
+    expect(latchesNow('noVacuum', 0.01)).toBe(true);
+    expect(latchesNow('gridOverload', 0.3)).toBe(false);
+    expect(latchesNow('gridOverload', 0.7)).toBe(true);
   });
   it('once the flame is well up for one that lit and then failed', () => {
     expect(latchesNow('flameout', 0.3)).toBe(false);

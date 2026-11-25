@@ -35,7 +35,7 @@ export function beamColour(cfg: EngineConfig): RGB {
 export function beamAlpha(result: SimResult, cfg: EngineConfig, fire: number): number {
   if (!(fire > 0) || result.failure === 'noVacuum' || !result.electric || !(result.thrust > 0)) return 0;
   const density = result.electric.power / ((Math.PI / 4) * cfg.exitDia ** 2);
-  return Math.min(1, fire) * Math.min(1, 0.25 + 0.5 * Math.min(1, density / BRIGHT_W_PER_M2));
+  return Math.min(1, fire) * Math.min(1, 0.45 + 0.55 * Math.min(1, density / BRIGHT_W_PER_M2));
 }
 
 const METAL = '#5b6670';
