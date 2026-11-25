@@ -35,6 +35,32 @@ export interface EngineProfile {
   spike: SpikeGeometry | null;
   /** Where a dual bell's wall kinks; null for every other exhaust */
   kink: ProfilePoint | null;
+  /** The plug in the throat of an expansion-deflection nozzle; null for every other exhaust */
+  plug: PlugGeometry | null;
+}
+
+/**
+ * The plug of an expansion-deflection nozzle: a stalk down the middle of the chamber that flares
+ * out to a flat-backed rim at the throat. The gas passes through the ring between rim and wall.
+ */
+export interface PlugGeometry {
+  /** x of the plug's flat back, which is the plane of the ring (the profile's `throatX`) */
+  baseX: number;
+  /** Radius of the rim, m */
+  rimR: number;
+  /** Where the stalk starts, back in the chamber, and its radius */
+  stalkX: number;
+  stalkR: number;
+  /** Where the stalk begins to flare out to the rim */
+  flareX: number;
+}
+
+/** Radius of the plug at x: nothing ahead of the stalk or behind the flat back. */
+export function plugRadius(plug: PlugGeometry, x: number): number {
+  if (x < plug.stalkX || x > plug.baseX) return 0;
+  if (x <= plug.flareX) return plug.stalkR;
+  const t = (x - plug.flareX) / (plug.baseX - plug.flareX);
+  return plug.stalkR + (plug.rimR - plug.stalkR) * t;
 }
 
 export interface SpikePoint extends ProfilePoint {
@@ -132,6 +158,15 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   // With no nozzle the engine ends at its throat.
   const lipR = EXHAUSTS[cfg.exhaust].hasNozzle ? re : rt;
 
+  // An expansion-deflection nozzle's plug: its rim fills the middle of the throat, and it flares
+  // out to there over a length of about its own width from a thin stalk.
+  let plug: PlugGeometry | null = null;
+  if (cfg.exhaust === 'expansionDeflection') {
+    const rimR = cfg.plugShare * rt;
+    const flareX = Math.max(throatX - 1.5 * rimR, 0.5 * throatX);
+    plug = { baseX: throatX, rimR, stalkX: 0.3 * flareX, stalkR: 0.3 * rimR, flareX };
+  }
+
   // Chambers of a multi-chamber engine sit just far enough apart for their nozzles to clear.
   const multi = cfg.chambers > 1;
   const pitch = 1.18 * 2 * Math.max(rc, lipR);
@@ -173,6 +208,7 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
     frontSpace: Math.max(multi ? 0.75 * pitch : 0, stowedOverhang),
     spike: null,
     kink,
+    plug,
   };
 }
 
@@ -295,6 +331,7 @@ function aerospikeProfile(cfg: EngineConfig): EngineProfile {
     frontSpace: 0,
     extension: null,
     kink: null,
+    plug: null,
     spike: {
       lip,
       contour: moved,

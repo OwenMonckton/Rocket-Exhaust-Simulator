@@ -398,6 +398,46 @@ export function drawEngine(
     }
   }
 
+  // An expansion-deflection nozzle: the plug in its throat, and the hollow behind the plug.
+  const plug = profile.plug;
+  if (plug) {
+    // With the gas drawn, the hollow is drawn too. While the outside air fills it, it runs the
+    // length of the bell and leaves the gas a band along the wall as wide as the jet the figures
+    // describe. Once it has closed, it is a short cone of dead gas behind the plug.
+    if (anim.fire > 0.01 && !anim.failure && !simGas) {
+      const re = profile.points[profile.points.length - 1].r;
+      const open = result.state === 'compensating';
+      const endX = open ? profile.exitX : plug.baseX + 2.2 * plug.rimR;
+      const endR = open ? Math.min(0.97 * re, Math.sqrt(Math.max(0, re * re - (result.effectiveExitDia / 2) ** 2))) : 0;
+      ctx.beginPath();
+      ctx.moveTo(X(plug.baseX), cy - plug.rimR * ppm);
+      ctx.lineTo(X(endX), cy - endR * ppm);
+      ctx.lineTo(X(endX), cy + endR * ppm);
+      ctx.lineTo(X(plug.baseX), cy + plug.rimR * ppm);
+      ctx.closePath();
+      ctx.fillStyle = open ? '#0d0f14' : 'rgba(13,15,20,0.7)';
+      ctx.fill();
+    }
+    // The plug itself: a stalk that flares out to a flat-backed rim, in the wall's metal.
+    const steel = ctx.createLinearGradient(0, cy - plug.rimR * ppm, 0, cy + plug.rimR * ppm);
+    steel.addColorStop(0, '#a9b1bd');
+    steel.addColorStop(0.5, '#565d69');
+    steel.addColorStop(1, '#8f97a3');
+    ctx.beginPath();
+    ctx.moveTo(X(plug.stalkX), cy - plug.stalkR * ppm);
+    ctx.lineTo(X(plug.flareX), cy - plug.stalkR * ppm);
+    ctx.lineTo(X(plug.baseX), cy - plug.rimR * ppm);
+    ctx.lineTo(X(plug.baseX), cy + plug.rimR * ppm);
+    ctx.lineTo(X(plug.flareX), cy + plug.stalkR * ppm);
+    ctx.lineTo(X(plug.stalkX), cy + plug.stalkR * ppm);
+    ctx.closePath();
+    ctx.fillStyle = steel;
+    ctx.fill();
+    ctx.strokeStyle = '#23262d';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   // Nuclear salt water: a film of plain water runs down the inside of the nozzle wall to keep
   // the reaction off it.
   if (isSaltwater && !anim.failure) {

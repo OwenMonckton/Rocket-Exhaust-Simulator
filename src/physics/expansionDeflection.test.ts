@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { engineProfile, plugRadius } from '../render/geometry';
 import { decodeState, encodeState } from '../state/share';
 import { shapeHidden } from '../ui/controls';
 import { expansionText, STATE_COPY } from '../ui/copy';
@@ -255,5 +256,49 @@ describe('an expansion-deflection nozzle’s thrust', () => {
     expect(expansionText(r, 'expansionDeflection')).toMatch(/plug/);
     expect(expansionText(r, 'expansionDeflection')).not.toMatch(/spike/);
     expect(expansionText(r, 'aerospike')).toBe(STATE_COPY.compensating.text);
+  });
+});
+
+describe('the plug in the picture', () => {
+  it('gives an expansion-deflection nozzle a plug at its throat, and no other type one', () => {
+    const cfg = ed({ ...roomy, plugShare: 0.6 });
+    const p = engineProfile(cfg);
+    expect(p.plug).not.toBeNull();
+    const plug = p.plug!;
+    expect(plug.baseX).toBeCloseTo(p.throatX, 9);
+    expect(plug.rimR).toBeCloseTo(0.6 * ringWallRadius(cfg), 9);
+    expect(plug.stalkR).toBeLessThan(plug.rimR);
+    expect(plug.stalkR).toBeGreaterThan(0);
+    expect(plug.stalkX).toBeGreaterThanOrEqual(0);
+    expect(plug.stalkX).toBeLessThan(plug.flareX);
+    expect(plug.flareX).toBeLessThan(plug.baseX);
+    for (const id of EXHAUST_IDS) {
+      if (id !== 'expansionDeflection') expect(engineProfile(sanitize({ ...starterEngine(), exhaust: id })).plug, id).toBeNull();
+    }
+  });
+
+  it('is the stalk’s width along the stalk, widens over the flare, and is gone past its base', () => {
+    const plug = engineProfile(ed({ ...roomy, plugShare: 0.7 })).plug!;
+    expect(plugRadius(plug, plug.stalkX - 0.01)).toBe(0);
+    expect(plugRadius(plug, (plug.stalkX + plug.flareX) / 2)).toBe(plug.stalkR);
+    const mid = plugRadius(plug, (plug.flareX + plug.baseX) / 2);
+    expect(mid).toBeGreaterThan(plug.stalkR);
+    expect(mid).toBeLessThan(plug.rimR);
+    expect(plugRadius(plug, plug.baseX)).toBeCloseTo(plug.rimR, 12);
+    expect(plugRadius(plug, plug.baseX + 1e-6)).toBe(0);
+  });
+
+  it('leaves the passage round the plug no narrower than the ring anywhere', () => {
+    for (const patch of [{ ...roomy, plugShare: 0.4 }, { ...roomy, plugShare: 0.7 }, { ...roomy, plugShare: 0.8 }, { plugShare: 0.8 }, { plugShare: 0.4, chamberDia: starterEngine().throatDia / 0.9 }]) {
+      const cfg = ed(patch);
+      const p = engineProfile(cfg);
+      const throatArea = Math.PI * (cfg.throatDia / 2) ** 2;
+      for (const point of p.points) {
+        if (point.x > p.plug!.baseX) break;
+        const inner = plugRadius(p.plug!, point.x);
+        expect(point.r, `plug ${cfg.plugShare} at x ${point.x}`).toBeGreaterThan(inner);
+        expect(Math.PI * (point.r ** 2 - inner ** 2), `plug ${cfg.plugShare} at x ${point.x}`).toBeGreaterThanOrEqual(throatArea * (1 - 1e-9));
+      }
+    }
   });
 });

@@ -235,7 +235,7 @@ export function createRuntime(
     // stands in the plume's grid as a solid body, the gas enters as a ring at the lip, and the
     // grid works out the flow along the spike along with the plume. (With the plume drawn, the
     // aerospike's own view draws the gas on the spike from a formula.)
-    const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike;
+    const engineSimOn = engineGas === 'sim' && (plume?.engineSimAvailable ?? false) && !failure && !profile.spike && !profile.plug;
     // A dual bell's jet held at its kink has left the wall as surely as a torn-off one has.
     const leftWall = jetLeftWall(result.state);
     const wholeNozzle = useSim && engineSimOn && !(lightExhaust && leftWall);
