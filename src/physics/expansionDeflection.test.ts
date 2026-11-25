@@ -6,7 +6,7 @@ import { areaRatio } from './nozzle';
 import { decodeState, encodeState } from '../state/share';
 import { shapeHidden } from '../ui/controls';
 import { expansionText, STATE_COPY } from '../ui/copy';
-import { RANGES, edBaseDrag, edCompensation, sanitize, simulate } from './engine';
+import { RANGES, edBaseDrag, edCompensation, edWakeSeals, sanitize, simulate } from './engine';
 import { ED_CAP_RADII, EXHAUSTS, EXHAUST_IDS, divergingWall, edCapTilt, lipSlope, ringWallRadius } from './exhausts';
 import { starterEngine, withExhaust } from './reshape';
 import type { EngineConfig } from './types';
@@ -185,65 +185,91 @@ describe('links', () => {
   });
 });
 
-describe('an expansion-deflection nozzle’s thrust', () => {
-  /** A nozzle big enough to be over-expanded at sea level: an area ratio of 36. */
+describe('an expansion-deflection nozzle\u2019s thrust', () => {
+  /** A nozzle with an area ratio of 36, at 100 bar: the hollow behind its plug is sealed even at sea level. */
   const big = (patch: Partial<EngineConfig> = {}) => ed({ ...roomy, ...patch });
+  /** The same nozzle on a low-pressure engine (15 bar), where the outside air can reach into the hollow. */
+  const low = (patch: Partial<EngineConfig> = {}) => big({ chamberPressureBar: 15, ...patch });
   const at = (cfg: EngineConfig, altitudeKm: number, throttle = 1) => simulate(cfg, { altitudeKm, throttle });
 
   it('has the stated constants', () => {
     expect(edBaseDrag(0.7)).toBeCloseTo(1 - 0.02 * 0.49, 12);
     expect(edCompensation(0.7)).toBeCloseTo(0.59, 12);
     expect(edCompensation(0.8)).toBeLessThan(0.7); // always short of an aerospike's
+    // The outside pressure, over chamber pressure, below which the hollow seals: as measured in the gas simulation.
+    expect(edWakeSeals(0.5)).toBeCloseTo(0.04, 12);
+    expect(edWakeSeals(0.7)).toBeCloseTo(0.022, 12);
+    expect(edWakeSeals(0.8)).toBeCloseTo(0.022, 12);
   });
 
-  it('compensates near the ground and runs as a bell once the air is thin', () => {
-    expect(at(big(), 0).state).toBe('compensating');
-    expect(['ideal', 'under']).toContain(at(big(), 100).state);
+  it('compensates near the ground on a low-pressure engine, and runs as a bell once the air is thin', () => {
+    expect(at(low(), 0).state).toBe('compensating');
+    expect(['ideal', 'under']).toContain(at(low(), 100).state);
   });
 
-  it('never separates, at any altitude or throttle', () => {
-    for (let km = 0; km <= 100; km += 2) {
-      for (const throttle of [0.4, 1]) expect(at(big(), km, throttle).state, `${km} km at ${throttle}`).not.toBe('separated');
+  it('has its hollow sealed at sea level on a high-pressure engine, and says the nozzle is too big, not that it compensates', () => {
+    // 1 bar outside is 1% of 100 bar: under the 2.2% the hollow seals at.
+    expect(at(big(), 0).state).toBe('over');
+    // 40 bar: 2.5%, just open.
+    expect(at(big({ chamberPressureBar: 40 }), 0).state).toBe('compensating');
+    expect(at(big({ chamberPressureBar: 40 }), 5).state).not.toBe('compensating');
+  });
+
+  it('never separates, at any altitude, throttle or chamber pressure', () => {
+    for (const cfg of [big(), low(), big({ chamberPressureBar: 40 })]) {
+      for (let km = 0; km <= 100; km += 2) {
+        for (const throttle of [0.4, 1]) expect(at(cfg, km, throttle).state, `${cfg.chamberPressureBar} bar, ${km} km at ${throttle}`).not.toBe('separated');
+      }
     }
   });
 
-  it('gains thrust steadily as it climbs, with no step where the wake closes', () => {
-    let last = 0;
-    let biggestGain = 0;
-    for (let km = 0; km <= 100; km += 0.25) {
-      const t = at(big(), km).thrust;
-      expect(t, `${km} km`).toBeGreaterThanOrEqual(last * (1 - 1e-9));
-      biggestGain = Math.max(biggestGain, last > 0 ? t / last - 1 : 0);
-      last = t;
+  it('gains thrust steadily as it climbs, with no step where the hollow seals', () => {
+    for (const cfg of [big(), low(), big({ chamberPressureBar: 40 }), low({ plugShare: 0.5 })]) {
+      let last = 0;
+      let biggestGain = 0;
+      for (let km = 0; km <= 100; km += 0.25) {
+        const t = at(cfg, km).thrust;
+        expect(t, `${cfg.chamberPressureBar} bar, ${km} km`).toBeGreaterThanOrEqual(last * (1 - 1e-9));
+        biggestGain = Math.max(biggestGain, last > 0 ? t / last - 1 : 0);
+        last = t;
+      }
+      // No quarter-kilometre adds more than 3%: nothing jumps.
+      expect(biggestGain, `${cfg.chamberPressureBar} bar`).toBeLessThan(0.03);
     }
-    // No quarter-kilometre adds more than 2%: nothing jumps.
-    expect(biggestGain).toBeLessThan(0.02);
   });
 
-  it('beats the same bell near the ground and loses a little to it in vacuum', () => {
-    const bell = sanitize({ ...big(), exhaust: 'bell' });
-    expect(at(big(), 0).thrust).toBeGreaterThan(at(bell, 0).thrust * 1.02);
-    const ratio = at(big(), 100).thrust / at(bell, 100).thrust;
+  it('beats the same bell near the ground while its hollow is open, and loses a little to it in vacuum', () => {
+    const bell = sanitize({ ...low(), exhaust: 'bell' });
+    expect(at(low(), 0).thrust).toBeGreaterThan(at(bell, 0).thrust * 1.02);
+    const ratio = at(low(), 100).thrust / at(bell, 100).thrust;
     expect(ratio).toBeLessThan(1);
     expect(ratio).toBeGreaterThan(0.96);
   });
 
-  it('never beats an aerospike of the same throat and exit, at any plug size', () => {
-    for (const plugShare of [0.5, 0.7, 0.8]) {
-      const nozzle = big({ plugShare });
-      const spike = withExhaust(nozzle, 'aerospike');
-      // The swap keeps the total throat and exit areas; check that it did before comparing.
-      expect(spike.chambers * spike.throatDia ** 2).toBeCloseTo(nozzle.throatDia ** 2, 6);
-      expect(spike.chambers * spike.exitDia ** 2).toBeCloseTo(nozzle.exitDia ** 2, 6);
-      for (let km = 0; km <= 100; km += 5) {
-        expect(at(nozzle, km).isp, `plug ${plugShare} at ${km} km`).toBeLessThanOrEqual(at(spike, km).isp * 1.0005);
+  it('gains nothing over the same bell at sea level once its hollow is sealed', () => {
+    const bell = sanitize({ ...big(), exhaust: 'bell' });
+    expect(at(big(), 0).thrust).toBeLessThan(at(bell, 0).thrust);
+    expect(at(big(), 0).thrust).toBeGreaterThan(at(bell, 0).thrust * 0.97);
+  });
+
+  it('never beats an aerospike of the same throat and exit, at any plug size or chamber pressure', () => {
+    for (const chamberPressureBar of [15, 100]) {
+      for (const plugShare of [0.5, 0.7, 0.8]) {
+        const nozzle = big({ plugShare, chamberPressureBar });
+        const spike = withExhaust(nozzle, 'aerospike');
+        // The swap keeps the total throat and exit areas; check that it did before comparing.
+        expect(spike.chambers * spike.throatDia ** 2).toBeCloseTo(nozzle.throatDia ** 2, 6);
+        expect(spike.chambers * spike.exitDia ** 2).toBeCloseTo(nozzle.exitDia ** 2, 6);
+        for (let km = 0; km <= 100; km += 5) {
+          expect(at(nozzle, km).isp, `${chamberPressureBar} bar, plug ${plugShare} at ${km} km`).toBeLessThanOrEqual(at(spike, km).isp * 1.0005);
+        }
       }
     }
   });
 
   it('compensates better near the ground with a bigger plug, and drags more in vacuum', () => {
-    expect(at(big({ plugShare: 0.8 }), 0).thrust).toBeGreaterThan(at(big({ plugShare: 0.5 }), 0).thrust);
-    expect(at(big({ plugShare: 0.8 }), 100).thrust).toBeLessThan(at(big({ plugShare: 0.5 }), 100).thrust);
+    expect(at(low({ plugShare: 0.8 }), 0).thrust).toBeGreaterThan(at(low({ plugShare: 0.5 }), 0).thrust);
+    expect(at(low({ plugShare: 0.8 }), 100).thrust).toBeLessThan(at(low({ plugShare: 0.5 }), 100).thrust);
   });
 
   it('leaves the same engine with a bell, and an aerospike, exactly as they were', () => {
@@ -256,10 +282,17 @@ describe('an expansion-deflection nozzle’s thrust', () => {
   });
 
   it('says what the air does behind the plug, and leaves the aerospike its own words', () => {
-    const r = at(big(), 0);
+    const r = at(low(), 0);
     expect(expansionText(r, 'expansionDeflection')).toMatch(/plug/);
     expect(expansionText(r, 'expansionDeflection')).not.toMatch(/spike/);
     expect(expansionText(r, 'aerospike')).toBe(STATE_COPY.compensating.text);
+  });
+
+  it('says the hollow has sealed when the nozzle is too big and it has', () => {
+    const r = at(big(), 0);
+    expect(r.state).toBe('over');
+    expect(expansionText(r, 'expansionDeflection')).toMatch(/sealed/);
+    expect(expansionText(r, 'bell')).toBe(STATE_COPY.over.text);
   });
 });
 

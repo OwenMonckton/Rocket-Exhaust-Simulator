@@ -90,6 +90,17 @@ export function edCompensation(plugShare: number): number {
   return 0.1 + 0.7 * plugShare;
 }
 
+/**
+ * The outside pressure, over chamber pressure, below which the hollow behind an
+ * expansion-deflection nozzle's plug seals itself off from the outside air. It is the pressure
+ * the sealed hollow settles to, as measured in the gas simulation (docs/future-work.md): 2.2% of
+ * chamber pressure at a plug of 0.7 or more, rising to 4% at the smallest plug. So at sea level
+ * the hollow is open on an engine below about 46 bar and sealed on one above it.
+ */
+export function edWakeSeals(plugShare: number): number {
+  return 0.022 + 0.09 * Math.max(0, 0.7 - plugShare);
+}
+
 function clampTo(v: unknown, r: Range): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return r.fallback;
   return Math.min(r.max, Math.max(r.min, v));
@@ -310,10 +321,19 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     // How far the outside air makes up for a nozzle too big for it. An aerospike's jet has only
     // air round its outside; an expansion-deflection nozzle's has only air in the hollow behind
     // its plug, which drags on the plug's back, so it makes up less.
+    // The hollow behind an expansion-deflection nozzle's plug is open to the outside air only
+    // while that air's pressure is above what the hollow settles to when sealed, which is a fixed
+    // share of chamber pressure. From four times that pressure down to it, the help the air gives fades to nothing,
+    // so thrust does not step as the hollow seals.
+    const wakeOpen =
+      cfg.exhaust === 'expansionDeflection' ? Math.min(1, Math.max(0, (pa / (edWakeSeals(cfg.plugShare) * pc) - 1) / 3)) : 0;
     const compensation =
       cfg.exhaust === 'aerospike' ? AEROSPIKE_COMPENSATION
-      : cfg.exhaust === 'expansionDeflection' ? edCompensation(cfg.plugShare)
+      : cfg.exhaust === 'expansionDeflection' ? edCompensation(cfg.plugShare) * wakeOpen
       : 0;
+    // Sealed, the nozzle runs as a plain bell this size, but its jet does not tear off the wall:
+    // it is thrown onto the wall at the ring and stays there. It reads as too big, not as separated.
+    if (cfg.exhaust === 'expansionDeflection' && state === 'separated') state = 'over';
     if (compensation > 0 && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
       // aerospike's jet (or the inside of an expansion-deflection nozzle's), so below its design
