@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from '../physics/engine';
 import { starterEngine, withEnergy } from '../physics/reshape';
 import { scaleBarLabel } from '../render/drawUtil';
-import { formatLength, formatPower, formatVoltage, hiddenForBeam, mixtureShown, powerShown, pressureStep, voltageShown } from './controls';
+import { formatLength, formatPower, formatVoltage, hiddenForBeam, mixtureShown, powerShown, pressureLog, roundPressure, voltageShown } from './controls';
 import { LIMIT_COPY, TIPS, failureCopy, limitCopy, restartLabel } from './copy';
-import { beamReadout, fmtFlow, fmtPush, fmtThrust, gaugesFor, rowsHidden } from './readouts';
+import { getPreset } from '../physics/presets';
+import { beamReadout, delta, fmtFlow, fmtIntoThrust, fmtPush, fmtThrust, gaugesFor, rowsHidden } from './readouts';
 
 const flight = { altitudeKm: 100, throttle: 1 };
 const state = (energy: 'combustion' | 'reactor' | 'solid' | 'resistojet' | 'arcjet' | 'ion' | 'hall') => ({ config: withEnergy(starterEngine(), energy), flight });
@@ -67,13 +68,6 @@ describe('the controls an electrically heated engine shows', () => {
       expect(powerShown(state(e)), e).toBe(false);
       expect(mixtureShown(state(e)), e).toBe(true);
     }
-  });
-
-  it('steps a low chamber pressure by a tenth of a bar', () => {
-    expect(pressureStep(state('arcjet'))).toBe(0.1);
-    expect(pressureStep(state('combustion'))).toBe(1);
-    const high = { config: sanitize({ ...state('arcjet').config, chamberPressureBar: 60 }), flight };
-    expect(pressureStep(high)).toBe(0.1);
   });
 
   it('has tips for the new settings', () => {
@@ -185,5 +179,36 @@ describe('what a beam thruster reads out', () => {
     expect(restartLabel('combustion', 'flameout')).toBe('Relight engine');
     expect(restartLabel('combustion', 'burst')).toBe('Rebuild engine');
     expect(restartLabel('reactor', 'meltdown')).toBe('Rebuild engine');
+  });
+});
+
+describe('final review', () => {
+  it('says nothing against a stock figure of nothing, where a percentage would be nonsense', () => {
+    expect(delta(0, 0)).toBe('');
+    expect(delta(5, 0)).toBe('');
+    expect(delta(110, 100)).toBe('+10.0% vs stock');
+    expect(delta(100, 100)).toBe('same as stock');
+    // The path that showed it: a changed beam example brought down into air, where both thrusts are 0.
+    const stock = getPreset('nstar')!.config;
+    const changed = sanitize({ ...stock, exitDia: 0.4 });
+    const air = { altitudeKm: 10, throttle: 1 };
+    expect(delta(simulate(changed, air).thrust, simulate(stock, air).thrust)).toBe('');
+  });
+
+  it('spreads a small electric engine\'s chamber pressure by ratio, so a few bar can be set by hand', () => {
+    expect(pressureLog(state('arcjet'))).toBe(true);
+    expect(pressureLog(state('resistojet'))).toBe(true);
+    expect(pressureLog(state('combustion'))).toBe(false);
+    expect(pressureLog(state('reactor'))).toBe(false);
+    expect(roundPressure(3.7449, state('arcjet'))).toBe(3.7);
+    expect(roundPressure(57.3, state('arcjet'))).toBe(57);
+    expect(roundPressure(97.4, state('combustion'))).toBe(97);
+  });
+
+  it('does not print a share of the power above all of it as a figure', () => {
+    expect(fmtIntoThrust(0.334)).toBe('33%');
+    expect(fmtIntoThrust(1)).toBe('100%');
+    expect(fmtIntoThrust(4.83)).toBe('over 100%');
+    expect(fmtIntoThrust(3444969.37)).toBe('over 100%');
   });
 });

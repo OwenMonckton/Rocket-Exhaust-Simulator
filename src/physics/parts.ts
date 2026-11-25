@@ -118,7 +118,7 @@ export const ENERGY_SOURCES: Record<EnergyId, EnergySource> = {
     // Much of an arc's power goes into its electrodes and into gas that leaves torn into atoms
     // without giving that energy back. The solver assumes the atoms recombine, so this share
     // covers that loss too. Tuned to the MR-510: at 0.41 the example gives its published 258 mN
-    // at 2 kW with an Isp within 1% of its published 585 s.
+    // at 2 kW with an Isp of 574 s against its published 585 s (0.40 gave 567 s).
     heatingShare: 0.41,
     // The average gas temperature at which the electrodes erode away.
     coreTempLimit: 6000,

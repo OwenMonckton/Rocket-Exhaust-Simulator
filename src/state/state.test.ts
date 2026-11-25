@@ -379,3 +379,16 @@ describe('a beam thruster and the altitude (electric thrusters, task 8)', () => 
     expect(store.get().flight.altitudeKm).toBe(7);
   });
 });
+
+describe('an electric example that has been changed (final review)', () => {
+  it('is noticed as modified when its power or voltage is changed', () => {
+    for (const id of ['mr-510', 'nstar', 'next', 'spt-100', 'xr-5']) {
+      const stock = getPreset(id)!.config;
+      expect(isModified(stock), id).toBe(false);
+      expect(isModified(sanitize({ ...stock, powerKW: stock.powerKW * 2 })), `${id} power`).toBe(true);
+    }
+    const nstar = getPreset('nstar')!.config;
+    expect(isModified(sanitize({ ...nstar, voltage: 2000 }))).toBe(true);
+    for (const p of PRESETS) expect(isModified(p.config), p.id).toBe(false);
+  });
+});

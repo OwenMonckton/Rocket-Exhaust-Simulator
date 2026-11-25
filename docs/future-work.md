@@ -1354,8 +1354,8 @@ of the engine builder.
   neutraliser beside it, and a faint steady beam coloured by the propellant. It is drawn on the 2D
   layer. The plume layer draws only the sky. None of the gas simulation's shaders was changed.
 - **Their controls** are Power, Voltage and Thruster diameter. Everything to do with a chamber,
-  throat or nozzle is hidden, as are the gas simulation menus and "Show inside", with a note
-  saying why.
+  throat or nozzle is hidden. The gas simulation menus and "Show inside" stand greyed out, with
+  a note saying why.
 - **Five examples** joined the twelve: the MR-510 arcjet, the NSTAR and NEXT ion thrusters, and
   the SPT-100 and XR-5 Hall thrusters.
 
@@ -1460,6 +1460,20 @@ Where the published figures came from:
 10. **A heated-gas electric engine rumbles at 15% of an ordinary engine's volume**, and a beam
     thruster makes no sound. A quarter of a newton does not roar.
 11. **The beam is drawn as a wedge in 32 overlaid layers**, on the 2D canvas, so no shader changed.
+12. **An electric example counts as changed when its power or voltage is changed.** (Found in the
+    final review: the header went on calling a 10 kW thruster "NSTAR" with no "Undo changes".)
+13. **No "vs stock" line against a stock figure of nothing.** A changed beam example brought down
+    into air has no thrust, and neither has its stock: the line read "NaN% vs stock". (Final
+    review.)
+14. **A small electric engine's chamber pressure is spread by ratio along its slider**, in tenths
+    of a bar below ten. Spread evenly, the few bar these engines run at were a sliver at the end
+    of a track that reaches 400. (Final review.)
+15. **Changing a heated-gas engine's propellant raises the power to the least that starts it.**
+    Ammonia, hydrogen and water all take more to boil than hydrazine, and each refused to start at
+    the resistojet's starting power. Where no power in range would do, the power is left alone.
+    (Final review.)
+16. **"Power into thrust" reads "over 100%"**, not a figure, when hydrazine's own heat puts more
+    into the jet than the electricity supplied. At 50 W it had read 483%. (Final review.)
 
 ### Proof that nothing else moved
 
@@ -1499,3 +1513,21 @@ SPT-100 example lit. No console errors.
 - **An altitude sweep with a beam thruster** starts on the ground and so stops at once with
   "Needs a vacuum".
 - **`src/dev/accuracy.ts`** still lists only the four original energy sources.
+- **The grid limit is xenon's.** The law it comes from lets a lighter atom carry more current
+  (by one over the square root of its mass), so an argon thruster's grid gauge reads about 1.8
+  times too high. (Final review, left.)
+- **The altitude log line can be written falsely**: it is inferred from any jump to 100 km with a
+  beam thruster on the stand, so clicking the far end of the altitude slider writes it too.
+  (Final review, left.)
+- **In air a beam thruster's panel shows zeros** (0.0 mN, 0 s, 0.00 A). They are true, but dashes
+  might read better. (Final review, left.)
+- **Small wording changes reached existing engines.** The log's "Full power" line now picks its
+  unit by size, so the salt-water example reads "12.90 MN" where it read "12900 kN". A custom
+  engine under a kilonewton, a kilogram a second or a tonne of push now reads in N, g/s and kg.
+  None of the twelve examples' figures moved. (Final review; the owner may want them back.)
+- **The search for the gas temperature assumes more heat per kilogram always means more heat
+  taken up.** Where boiling or breaking down dominates that is not quite so, and the temperature
+  can jump (ammonia goes from 795 K to 1,031 K in one step of the power slider). No wrong failure
+  was found from it. (Final review, not judged.)
+- **Water in a resistojet has a narrow window**: on the starter it goes from "not enough power"
+  at 0.56 kW to a burnt-out heater at 0.70 kW.

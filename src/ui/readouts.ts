@@ -49,7 +49,7 @@ export function beamReadout(r: SimResult, propellant: PropellantId, fire: number
   const beam = BEAM_PROPELLANTS[isBeamPropellant(propellant) ? propellant : 'xenon'];
   return {
     run: fire <= 0 ? (r.failure === 'noVacuum' ? 'Will not light in air' : 'Forecast: the thruster is off') : fire < 1 ? 'Running up' : 'Running',
-    power: e ? `${fmtWatts(e.power)} / ${(e.thrustEfficiency * 100).toFixed(0)}%` : '',
+    power: e ? `${fmtWatts(e.power)} / ${fmtIntoThrust(e.thrustEfficiency)}` : '',
     volts: e ? `${Math.round(e.voltage ?? 0).toLocaleString('en-US')} V / ${(e.beamCurrent ?? 0).toFixed(2)} A` : '',
     temp: `${(r.exitVelocity / 1000).toFixed(1)} km/s`,
     tempLabel: 'Exhaust speed',
@@ -102,12 +102,23 @@ export function fmtPush(n: number): string {
   return kg >= 0.01 ? `${(kg * 1000).toFixed(0)} grams of push` : `${(kg * 1000).toFixed(1)} grams of push`;
 }
 
+/**
+ * The share of the electrical power that ends up as thrust. Hydrazine brings heat of its own, so
+ * on little power its jet carries more than the electricity supplied: that is said, not given as
+ * a figure, which would be a ratio to almost nothing.
+ */
+export function fmtIntoThrust(share: number): string {
+  return share > 1 ? 'over 100%' : `${(share * 100).toFixed(0)}%`;
+}
+
 function fmtWatts(w: number): string {
   if (w < 1000) return `${w.toFixed(0)} W`;
   return w < 10000 ? `${(w / 1000).toFixed(2)} kW` : `${(w / 1000).toFixed(1)} kW`;
 }
 
-function delta(now: number, stock: number): string {
+/** How far a figure is from the stock engine's. Nothing, where the stock figure is nothing: a beam thruster in air. */
+export function delta(now: number, stock: number): string {
+  if (!(stock > 0)) return '';
   const pct = ((now - stock) / stock) * 100;
   if (Math.abs(pct) < 0.05) return 'same as stock';
   return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}% vs stock`;
@@ -140,13 +151,13 @@ const html = `
     <div class="stat" title="How much propellant the engine burns every second.">
       <span class="k">Propellant flow</span><span class="v small" data-r="flow"></span><span class="d" data-r="flowSub"></span>
     </div>
-    <div class="stat" data-r="powerRow" title="The electrical power the engine is drawing, and the share of it that ends up as thrust. The rest leaves as heat. With hydrazine the share can pass 100%, because hydrazine gives off heat of its own as it breaks down.">
+    <div class="stat" data-r="powerRow" title="The electrical power the engine is drawing, and the share of it that ends up as thrust. The rest leaves as heat. With hydrazine on little power it can be more than all of it, because hydrazine gives off heat of its own as it breaks down.">
       <span class="k">Power / into thrust</span><span class="v small" data-r="power"></span>
     </div>
     <div class="stat" data-r="voltsRow" title="The voltage that throws the charged atoms out, and the current they carry away as a beam.">
       <span class="k">Voltage / beam current</span><span class="v small" data-r="volts"></span>
     </div>
-    <div class="stat" title="Temperature of the gas inside the chamber, and how fast the exhaust leaves the engine.">
+    <div class="stat" data-r="tempRow" title="Flame temperature inside the chamber, and how fast the exhaust leaves the nozzle.">
       <span class="k" data-r="tempLabel">Flame temp / exhaust speed</span><span class="v small" data-r="temp"></span><span class="d" data-r="tempSub"></span>
     </div>
     <div class="stat" data-r="simRow" title="${SIMULATED_TIP}">
@@ -198,6 +209,8 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   const gasFigures = ['thrust', 'thrustSub', 'isp', 'ispSub', 'ispBoth', 'ispBothSub', 'flow', 'flowSub', 'temp', 'tempSub', 'press', 'state', 'stateText'];
 
   const voltsRow = get('voltsRow');
+  const tempRow = get('tempRow');
+  const TEMP_TIP = tempRow.title;
   const hideable = ['ispBothRow', 'nozzleRow', 'pressRow', 'simRow'];
 
   return ({ result: r, exhaust: exhaustId, energy = 'combustion', propellant, stock, stockName, simulated: sim, simulatedNote, fire = 1 }) => {
@@ -206,6 +219,8 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     const hidden = rowsHidden(energy);
     for (const name of hideable) get(name).hidden = hidden.includes(name);
     voltsRow.hidden = !beam;
+    const tempTip = beam ? 'How fast the charged atoms leave the thruster.' : r.electric ? 'Temperature the gas is heated to, and how fast the exhaust leaves the nozzle.' : TEMP_TIP;
+    if (tempRow.title !== tempTip) tempRow.title = tempTip;
     powerRow.hidden = !r.electric;
     set('tempLabel', r.electric ? 'Gas temp / exhaust speed' : 'Flame temp / exhaust speed');
     // Unlit, the figures are what the engine would do; they run up with it as it lights.
@@ -243,7 +258,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     // One line says what every figure below it is: a forecast for a cold engine, or readings from a lit one.
     set('run', fire <= 0 ? 'Forecast: the engine is unlit' : fire < 1 ? 'Running up' : 'Live readings');
     set('thrustSub', stock ? delta(r.thrust, stock.thrust) : fmtPush(thrustNow));
-    set('power', r.electric ? `${fmtWatts(r.electric.power)} / ${(r.electric.thrustEfficiency * 100).toFixed(0)}%` : '');
+    set('power', r.electric ? `${fmtWatts(r.electric.power)} / ${fmtIntoThrust(r.electric.thrustEfficiency)}` : '');
     set('isp', `${r.isp.toFixed(0)} s`);
     set('ispSub', stock ? delta(r.isp, stock.isp) : stockName ? `stock ${stockName}` : 'custom engine');
     set('ispBoth', `${r.ispSeaLevel.toFixed(0)} s / ${r.ispVacuum.toFixed(0)} s`);

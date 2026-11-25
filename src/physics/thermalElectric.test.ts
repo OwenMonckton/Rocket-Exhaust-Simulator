@@ -205,3 +205,26 @@ describe('the MR-510 arcjet example', () => {
     expect(p.config.throatDia).toBeLessThan(0.001);
   });
 });
+
+describe('picking another propellant for a heated-gas engine (final review)', () => {
+  it('gives an engine that starts: the power is raised to what the new propellant needs to boil', () => {
+    for (const energy of ['resistojet', 'arcjet'] as const) {
+      const from = energy === 'arcjet' ? arcjet() : resistojet();
+      for (const propellant of propellantsFor(energy)) {
+        const next = withPropellant(from, propellant as PropellantId);
+        const r = simulate(next, space);
+        expect(r.failure, `${energy} ${propellant}`).toBeNull();
+        expect(next.powerKW, `${energy} ${propellant}`).toBeGreaterThanOrEqual(from.powerKW);
+        expect(next.throatDia).toBe(from.throatDia);
+      }
+    }
+  });
+
+  it('leaves the power alone where the engine already runs, or where no power in range would start it', () => {
+    const a = arcjet();
+    expect(withPropellant(a, 'aj-ammonia').powerKW).toBe(a.powerKW);
+    // A throat a thousand times the area: no power on the slider boils that much water.
+    const flood = resistojet({ throatDia: 0.03, chamberDia: 0.1, exitDia: 0.3 });
+    expect(withPropellant(flood, 'rj-water').powerKW).toBe(flood.powerKW);
+  });
+});

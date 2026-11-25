@@ -29,6 +29,8 @@ export function isModified(cfg: EngineConfig): boolean {
   const keys: (keyof EngineConfig)[] = [
     'chamberDia', 'chamberLen', 'throatDia', 'exitDia', 'nozzleLenPct',
     'wall', 'chamberPressureBar', 'mixtureRatio', 'scale', 'chambers', 'extFixedDia', 'extDeploy',
+    // What an electric example is set by. Every other example carries the same two figures as its stock.
+    'powerKW', 'voltage',
   ];
   return keys.some((k) => !close(cfg[k] as number, stock[k] as number));
 }

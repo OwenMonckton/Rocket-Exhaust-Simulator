@@ -211,8 +211,21 @@ export function withPair(cfg: EngineConfig, part: { fuel?: string; oxidiser?: st
 
 /** An engine on a new propellant, turned down if it now runs hotter than its throat can take. */
 function settled(next: EngineConfig, heatBefore: number): EngineConfig {
-  // An electric engine's heat is set by its power, which is the builder's to turn down.
-  if (isElectric(next.energy)) return next;
+  // An electric engine's heat is set by its power, which is the builder's to turn down. But a
+  // propellant that takes more to boil than the last one did would leave an engine that will not
+  // start, so the power is raised, a twentieth at a time, to the least that starts it.
+  if (isElectric(next.energy)) {
+    const flight = { altitudeKm: 0, throttle: 1 };
+    if (simulate(next, flight).failure !== 'underpowered') return next;
+    for (let kW = next.powerKW * 1.05; kW <= RANGES.powerKW.max; kW *= 1.05) {
+      const raised = sanitize({ ...next, powerKW: Number(kW.toPrecision(3)) });
+      const failure = simulate(raised, flight).failure;
+      if (failure === null) return raised;
+      // Past boiling and straight into overheating: no power suits this much flow.
+      if (failure !== 'underpowered') break;
+    }
+    return next;
+  }
   return ENERGY_SOURCES[next.energy].mixKind === 'temperature' ? cooled(next, heatBefore) : eased(next, heatBefore);
 }
 

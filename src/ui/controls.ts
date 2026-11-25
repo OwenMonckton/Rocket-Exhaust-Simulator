@@ -119,8 +119,14 @@ export const hiddenForBeam = (id: string) => BEAM_HIDES.has(id);
 export function formatVoltage(v: number): string {
   return `${Math.round(v).toLocaleString('en-US')} V`;
 }
-/** One step of the chamber pressure: a tenth of a bar for the small electric engines, which run at a few bar. */
-export const pressureStep = (s: AppState) => (ENERGY_SOURCES[s.config.energy].kind === 'thermal' ? 0.1 : 1);
+
+/** True where the chamber pressure is spread by ratio: the small electric engines run at a few bar of a range that reaches 400. */
+export const pressureLog = (s: AppState) => ENERGY_SOURCES[s.config.energy].kind === 'thermal';
+/** A chamber pressure as the slider sets it: whole bars, or tenths below ten bar on a small electric engine. */
+export function roundPressure(v: number, s: AppState): number {
+  const step = pressureLog(s) && v < 10 ? 0.1 : 1;
+  return Math.round(v / step) * step;
+}
 
 /** Electrical power, in watts below a kilowatt. */
 export function formatPower(kW: number): string {
@@ -354,14 +360,14 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           id: 'chamberPressureBar',
           label: 'Chamber pressure',
           tip: TIPS.chamberPressureBar,
-          step: pressureStep,
+          // Whole bars for an ordinary engine; spread by ratio over a thousand positions for a small
+          // electric one, whose few bar would otherwise be a sliver at the end of the track.
+          log: pressureLog,
+          step: (s) => (pressureLog(s) ? null : 1),
           range: (s) => rangesFor(s.config.energy).chamberPressureBar,
           get: (s) => s.config.chamberPressureBar,
-          set: (v) => {
-            const step = pressureStep(store.get());
-            store.set({ config: { chamberPressureBar: Math.round(v / step) * step } });
-          },
-          format: (v, s) => (pressureStep(s) < 1 ? `${v.toFixed(1)} bar` : `${Math.round(v)} bar`),
+          set: (v) => store.set({ config: { chamberPressureBar: Number(roundPressure(v, store.get()).toFixed(1)) } }),
+          format: (v, s) => (pressureLog(s) && v < 10 ? `${v.toFixed(1)} bar` : `${Math.round(v)} bar`),
         },
         {
           id: 'powerKW',
