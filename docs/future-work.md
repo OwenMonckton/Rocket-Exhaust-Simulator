@@ -867,5 +867,130 @@ km the simulated thrust had settled 2% under the readout. No console errors.
   - `PlumeParams.separated` in `src/render/plumeParams.ts` is set but nothing reads it.
   - No unit test pins the steady, unwobbled clip of a held jet in the engine view, or the wall-curve
     fit for no nozzle.
-  - `src/physics/chem/pair.test.ts`, "quickly enough for a click" (600 ms limit), fails now and then
-    when the machine is busy (see the chemistry piece's small things).
+  - `src/physics/chem/pair.test.ts`, "quickly enough for a click" (600 ms limit), failed now and then
+    when the machine was busy. Fixed on 24 November 2026: see "The page that publishes the site"
+    under the interface redesign below.
+
+## Interface redesign (the test-stand control room): what was built and what was left
+
+Who the simulator is for is written down in `PRODUCT.md`, and the look as built in `DESIGN.md`. The
+direction that was agreed is in `.impeccable/surfaces/index-html.md`. The simulation, the physics
+and every figure were left alone: this piece is the page round the picture.
+
+### Why it was done
+
+A review of the old page scored it 26 out of 40. Its findings, in short: it was a general-purpose
+dark dashboard that any tool could have worn; firing the engine and climbing to space, the two
+best moments, were worked like settings (Fire was a small button in a corner, altitude the eleventh
+of twelve sliders); the example engines were hidden in a dropdown with their descriptions cut off;
+every explanation was a hover tooltip, so there was none on a touch screen or from the keyboard;
+and on a phone the picture was 160 pixels wide.
+
+The owner then settled four things. The audience is tinkerers and builders, on a desktop first,
+with a phone that must work. The look is a test-stand control room. Every figure shown must come
+from the physics. Every control that existed must stay reachable.
+
+### Words used below
+
+- **The stage**: the picture of the engine and its plume.
+- **The console row**: the strip under the stage with Fire, throttle and altitude.
+- **Run state**: whether the engine is unlit, running up, or running. The figures are a forecast
+  for an unlit engine and readings from a lit one.
+- **Callout**: a numbered disc on the engine that matches a numbered part picker.
+
+### What was built
+
+- **A stand and the ground.** The engine sits on a braced steel tower with a strut back to a thrust
+  wall at the picture's left edge, over solid ground. Both fade and drop away over the first 2 km of
+  altitude. They are drawn in an SVG layer between the plume and the engine (`src/ui/stand.ts`),
+  from the engine's place on screen, which `src/sim/runtime.ts` now reports with each frame
+  (`layout`). No solver file was touched.
+- **The console row.** A large red Fire button on the picture's centreline, with a label above it
+  reading Armed, Firing or Failed. Throttle is to its left. Altitude is to its right, with marks at
+  sea level, 10 km, 40 km and vacuum, and Ascend and Descend under it.
+- **A curved altitude scale.** The slider's range and values are unchanged, but its track is spread
+  by the square of its position, so the first 10 km take about a third of the travel
+  (`curvePosition` and `curveValue` in `src/ui/controls.ts`).
+- **Test data.** Three redline gauges for wall stress, heat load and instability, ticked every
+  tenth with the last 15% marked red. Thrust is the largest thing on the page. Efficiency and the
+  nozzle state follow. The less-used figures fold under "Engineer's numbers".
+- **One run state for every figure.** A line at the head of the test data reads "Forecast: the
+  engine is unlit", "Running up" or "Live readings". Unlit, the figures, gauges and nozzle state all
+  sit back at half strength.
+- **A clock on the stage**: Standby, then Hot-fire with the time since ignition, then Test ended.
+- **A test log** (`src/ui/testlog.ts`): timestamped lines for ignition, full power, each change in
+  what the nozzle is doing, passing 10 km, vacuum, shutdown and failures.
+- **Numbered parts.** The part pickers are numbered, and callouts with the same numbers sit on the
+  engine: the energy source on the chamber, the exhaust on the nozzle, and what the engine is fed
+  at the injector. Clicking a callout goes to its picker.
+- **An engine picker** (`src/ui/picker.ts`). "Change engine" opens cards with each example's
+  outline, name and description. The outline is drawn from the same wall the picture uses. The page
+  opens on Merlin 1D unless a link carries another engine.
+- **Tune the engine.** The size, pressure and mixture sliders fold away under one heading, which
+  remembers whether it was left open.
+- **Tips on focus and touch** (`src/ui/tips.ts`). Anything with a tooltip now shows it on hover, on
+  keyboard focus and on a tap.
+- **Ignition.** One flash from the nozzle exit and a short shudder of the whole stand. Neither plays
+  for someone who has asked their device for reduced motion.
+- **Phones and narrow windows** (900 pixels wide and under): the picture and console row stay on
+  screen and the test data, log and Build panel scroll under them.
+- **Fonts.** Barlow and Barlow Condensed, kept in `assets/fonts` (SIL Open Font License).
+
+### Decisions made during the build, in order
+
+1. **Unlit figures are shown, dimmed, and called a forecast.** The first plan was to show dashes
+   until the engine was lit, so a cold engine could not be mistaken for a running one. That would
+   have hidden the numbers from someone tuning a cold engine, which is most of what a builder does.
+2. **Thrust runs up with the engine.** While the engine lights, the thrust shown is full thrust
+   times the simulation's own ignition ramp (`fire`, 0 to 1), and "tonnes of push" follows it. This
+   is the one figure on the page that is not the formula's steady answer, and it is labelled
+   "Running up" while it happens.
+3. **The stand is a tower with a thrust wall, not a wall alone.** The engine sits about 45 pixels
+   from the picture's left edge, so there is no room ahead of it for a free-standing wall.
+4. **The sweeps sit under the altitude scale.** They were tried beside throttle, to make room, and
+   read as throttle controls there.
+5. **Red is for Fire and the redline only.** "Rebuild engine" was red and is now outlined in yellow.
+6. **A phone stacks its sections; it has no tabs.** Simpler, and nothing is hidden behind a tab.
+7. **The ignition flash is a deliberate exception to the design checker**, which flags a glow drawn
+   with a gradient. It is recorded in `.impeccable/config.json`.
+
+### How it was checked
+
+- 452 tests, 14 of them new (`src/ui/console.test.ts`): the altitude scale, the stand's fade, where
+  the callouts go, the log's clock, and that every example's outline fits its card.
+- Driven in a browser at 1440, 950, 910, 768 and 390 pixels wide, unlit and firing, with Merlin 1D,
+  RS-25 in vacuum, the solid booster, the aerospike, and NERVA pushed until its chamber burst.
+- An independent design review, in two rounds of fixes. Its last finding (the clock overlapping the
+  view switch between 901 and 943 pixels wide) was fixed afterwards and checked in a 910-pixel
+  capture, but the reviewer did not score that fix.
+
+### What was left
+
+- **The motion was never captured.** The flash, the shudder, the thrust running up and the stand
+  dropping away were reviewed from the code and watched in a browser, not recorded.
+- **The second review of the whole page was not run**, so there is no new score to set against 26.
+- **A thrust trace.** The reviewer suggested a small chart of thrust against time or altitude during
+  a run, with ignition marked. The data is there; nothing draws it.
+- **Other engines on the first screen.** Nothing but the "Change engine" button says there are
+  eleven more. The Build panel is empty below "Tune the engine" when that is folded.
+- **The aerospike's outline in the picker is a plain rectangle.** An aerospike's wall points are the
+  outline of its jet, not of its spike, so the card does not look like the engine.
+- **The stand under a long engine.** The solid booster's case runs off the left of the picture, so
+  its tower is wide and low and its front saddle is out of sight.
+- **Small things**
+  - Four pop-over shadows with slightly different numbers do the same job.
+  - Small text uses many near-identical sizes (12, 12.5, 13, 13.5, 14 and 15 pixels).
+  - Spacing is set element by element, not from a scale.
+  - A few colours are typed in where a variable exists (the ground, its line, the Fire hover).
+  - The chevrons' turn and the readouts' fade still play under reduced motion.
+- **Not part of this piece, but seen in it:** the plume shows hard vertical seams and a rectangular
+  "curtain" at sea level on some engines, where the gas simulation's regions meet.
+
+### The page that publishes the site
+
+Publishing runs the tests first, and stops if one fails. One test timed a single cold chemistry
+solve against 600 ms. On the shared machine that publishes the site it took 1,034 ms after the
+exhaust-types merge and 787 ms after this one, so neither was published and the site stayed on the
+chemistry piece from 21 to 24 November 2026. The test now takes the best of three cold runs and
+allows a build machine three times as long (1,800 ms); a person's own machine is still held to
+600 ms.
