@@ -121,14 +121,21 @@ is a simplification and is recorded as one.
 In the thrust block of `simulate` (`src/physics/engine.ts`):
 
 - **Base drag, at every altitude.** The plug's flat base drags on the flow whether the wake is open
-  or closed, so the momentum term is always multiplied by `1 - 0.04 * plugShare^2` (0.98 at the
-  default plug). Applying it at every altitude keeps thrust from stepping down as the wake closes.
+  or closed, so the momentum term is always multiplied by `1 - 0.02 * plugShare^2` (0.99 at the
+  default plug; first proposed as `1 - 0.04 * plugShare^2`, see the note below). Applying it at every altitude keeps thrust from stepping down as the wake closes.
 - **Wake open** (the outside pressure is above what the full bell would expand the gas to): the
   state is `'compensating'`, as an aerospike's is. The rule has the aerospike's shape, at the same
   place in the code: start from the figure the same bell would give at this altitude (its
   separation included, exactly as the aerospike's rule starts), take the gas to leave at the
   outside pressure, and pull thrust part of the way toward a matched nozzle's. The share is
-  `0.3 + 0.3 * plugShare` (0.51 at the default plug; an aerospike's is 0.7).
+  `0.1 + 0.7 * plugShare` (0.59 at the default plug, 0.66 at the biggest; an aerospike's is 0.7;
+  first proposed as `0.3 + 0.3 * plugShare`).
+- **Why the first numbers were changed during the build.** In this simulator a bell that has torn
+  its jet off the wall loses little: at an area ratio of 36 at sea level a matched nozzle beats it
+  by only about 6%. With the first numbers the plug's drag ate nearly all of what the open wake
+  won back (the nozzle beat the same bell by 1.4% at sea level), and a bigger plug was worse at
+  every altitude, so the slider offered no choice. With these the default nozzle beats the same
+  bell by about 3% at sea level and gives up about 1% in vacuum.
 - **Wake closed**: it runs as the bell it is, with the base drag above.
 - It never reads `'separated'`.
 - **So the plug size is a real choice.** A bigger plug compensates better near the ground and drags

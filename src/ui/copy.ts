@@ -95,6 +95,10 @@ export const STATE_COPY: Record<ExpansionState, { label: string; text: string }>
   },
 };
 
+/** What the air does for an expansion-deflection nozzle too big for the altitude. */
+const ED_COMPENSATING_TEXT =
+  'The outside air reaches up into the hollow behind the plug, so the gas hugs the wall and leaves at the outside pressure. A plain bell this size would be over-expanded here.';
+
 /** What the gas does as it leaves an engine with no nozzle, which can be in only these three states. */
 const NO_NOZZLE_TEXT: Partial<Record<ExpansionState, string>> = {
   under: 'There is no nozzle, so the gas leaves the throat at well above the outside pressure and balloons outward.',
@@ -108,6 +112,7 @@ const NO_NOZZLE_TEXT: Partial<Record<ExpansionState, string>> = {
  */
 export function expansionText(result: SimResult, exhaust: ExhaustId): string {
   if (exhaust === 'none' && NO_NOZZLE_TEXT[result.state]) return NO_NOZZLE_TEXT[result.state]!;
+  if (exhaust === 'expansionDeflection' && result.state === 'compensating') return ED_COMPENSATING_TEXT;
   const text = STATE_COPY[result.state].text;
   return exhaust === 'dualBell' && !jetLeftWall(result.state) ? `${text} The jet fills the outer bell.` : text;
 }

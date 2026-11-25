@@ -72,6 +72,24 @@ export const RANGES = {
 const ED_CHAMBER_SHARE = 0.95;
 const ED_EXIT_RATIO = 1.15;
 
+/**
+ * The share of its momentum an expansion-deflection nozzle keeps after the drag of its plug's flat
+ * back, which grows with the back's area. A proposal, to be set beside the gas simulation.
+ */
+export function edBaseDrag(plugShare: number): number {
+  return 1 - 0.02 * plugShare ** 2;
+}
+
+/**
+ * How far an expansion-deflection nozzle's open wake makes up for a bell too big for the altitude:
+ * the share of the way from that bell's thrust to a matched nozzle's. A bigger plug leaves a
+ * thinner ring further out, which holds to the wall better and leaves a bigger hollow for the air
+ * to fill. Always short of an aerospike's. A proposal, to be set beside the gas simulation.
+ */
+export function edCompensation(plugShare: number): number {
+  return 0.1 + 0.7 * plugShare;
+}
+
 function clampTo(v: unknown, r: Range): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return r.fallback;
   return Math.min(r.max, Math.max(r.min, v));
@@ -270,6 +288,8 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     }
     let eff = nozzleEff;
     let suction = 0;
+    // The flat back of an expansion-deflection nozzle's plug drags on the flow at every altitude.
+    if (cfg.exhaust === 'expansionDeflection') eff = nozzleEff * edBaseDrag(cfg.plugShare);
     if (cfg.exhaust === 'dualBell') {
       if (state !== 'separated') {
         // High mode: the jet fills the big bell.
@@ -287,10 +307,18 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
     }
     let ve = exitVelocity(mach, g, gas.R, gas.tc);
     let thrust = ispScale * eff * idealFlow * ve + (ispScale * pExit - pa) * area - suction;
-    if (cfg.exhaust === 'aerospike' && pa > 0 && pe < pa) {
+    // How far the outside air makes up for a nozzle too big for it. An aerospike's jet has only
+    // air round its outside; an expansion-deflection nozzle's has only air in the hollow behind
+    // its plug, which drags on the plug's back, so it makes up less.
+    const compensation =
+      cfg.exhaust === 'aerospike' ? AEROSPIKE_COMPENSATION
+      : cfg.exhaust === 'expansionDeflection' ? edCompensation(cfg.plugShare)
+      : 0;
+    if (compensation > 0 && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
-      // aerospike's jet, so below its design altitude the air squeezes the jet in until it leaves
-      // at the outside pressure: it never over-expands and never separates.
+      // aerospike's jet (or the inside of an expansion-deflection nozzle's), so below its design
+      // altitude the air squeezes the jet until it leaves at the outside pressure: it never
+      // over-expands and never separates.
       state = 'compensating';
       mach = Math.max(1, machFromPressureRatio(pa / pc, g));
       pExit = pa;
@@ -299,8 +327,8 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       // Air is a poor wall, and some of the expansion is lost in waves along the spike and in
       // drag on its flat base. Measuring the loss from what a real bell manages, separation
       // included, keeps it to a few percent however large the spike is.
-      const matched = ispScale * nozzleEff * idealFlow * ve + (ispScale - 1) * pa * area;
-      thrust += AEROSPIKE_COMPENSATION * Math.max(0, matched - thrust);
+      const matched = ispScale * eff * idealFlow * ve + (ispScale - 1) * pa * area;
+      thrust += compensation * Math.max(0, matched - thrust);
     }
     return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve, eff };
   };

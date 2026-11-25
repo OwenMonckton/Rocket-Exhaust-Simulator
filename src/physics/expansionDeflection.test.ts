@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { decodeState, encodeState } from '../state/share';
 import { shapeHidden } from '../ui/controls';
-import { RANGES, sanitize } from './engine';
+import { expansionText, STATE_COPY } from '../ui/copy';
+import { RANGES, edBaseDrag, edCompensation, sanitize, simulate } from './engine';
 import { EXHAUSTS, EXHAUST_IDS, divergingWall, lipSlope, ringWallRadius } from './exhausts';
 import { starterEngine, withExhaust } from './reshape';
 import type { EngineConfig } from './types';
@@ -176,5 +177,83 @@ describe('links', () => {
   it('are refused when a v5 link is the wrong length', () => {
     const a = payload(encodeState({ config: ed(), flight }));
     expect(decodeState(relink('v5', a.slice(0, 22)))).toBeNull();
+  });
+});
+
+describe('an expansion-deflection nozzle’s thrust', () => {
+  /** A nozzle big enough to be over-expanded at sea level: an area ratio of 36. */
+  const big = (patch: Partial<EngineConfig> = {}) => ed({ ...roomy, ...patch });
+  const at = (cfg: EngineConfig, altitudeKm: number, throttle = 1) => simulate(cfg, { altitudeKm, throttle });
+
+  it('has the stated constants', () => {
+    expect(edBaseDrag(0.7)).toBeCloseTo(1 - 0.02 * 0.49, 12);
+    expect(edCompensation(0.7)).toBeCloseTo(0.59, 12);
+    expect(edCompensation(0.8)).toBeLessThan(0.7); // always short of an aerospike's
+  });
+
+  it('compensates near the ground and runs as a bell once the air is thin', () => {
+    expect(at(big(), 0).state).toBe('compensating');
+    expect(['ideal', 'under']).toContain(at(big(), 100).state);
+  });
+
+  it('never separates, at any altitude or throttle', () => {
+    for (let km = 0; km <= 100; km += 2) {
+      for (const throttle of [0.4, 1]) expect(at(big(), km, throttle).state, `${km} km at ${throttle}`).not.toBe('separated');
+    }
+  });
+
+  it('gains thrust steadily as it climbs, with no step where the wake closes', () => {
+    let last = 0;
+    let biggestGain = 0;
+    for (let km = 0; km <= 100; km += 0.25) {
+      const t = at(big(), km).thrust;
+      expect(t, `${km} km`).toBeGreaterThanOrEqual(last * (1 - 1e-9));
+      biggestGain = Math.max(biggestGain, last > 0 ? t / last - 1 : 0);
+      last = t;
+    }
+    // No quarter-kilometre adds more than 2%: nothing jumps.
+    expect(biggestGain).toBeLessThan(0.02);
+  });
+
+  it('beats the same bell near the ground and loses a little to it in vacuum', () => {
+    const bell = sanitize({ ...big(), exhaust: 'bell' });
+    expect(at(big(), 0).thrust).toBeGreaterThan(at(bell, 0).thrust * 1.02);
+    const ratio = at(big(), 100).thrust / at(bell, 100).thrust;
+    expect(ratio).toBeLessThan(1);
+    expect(ratio).toBeGreaterThan(0.96);
+  });
+
+  it('never beats an aerospike of the same throat and exit, at any plug size', () => {
+    for (const plugShare of [0.4, 0.7, 0.8]) {
+      const nozzle = big({ plugShare });
+      const spike = withExhaust(nozzle, 'aerospike');
+      // The swap keeps the total throat and exit areas; check that it did before comparing.
+      expect(spike.chambers * spike.throatDia ** 2).toBeCloseTo(nozzle.throatDia ** 2, 6);
+      expect(spike.chambers * spike.exitDia ** 2).toBeCloseTo(nozzle.exitDia ** 2, 6);
+      for (let km = 0; km <= 100; km += 5) {
+        expect(at(nozzle, km).isp, `plug ${plugShare} at ${km} km`).toBeLessThanOrEqual(at(spike, km).isp * 1.0005);
+      }
+    }
+  });
+
+  it('compensates better near the ground with a bigger plug, and drags more in vacuum', () => {
+    expect(at(big({ plugShare: 0.8 }), 0).thrust).toBeGreaterThan(at(big({ plugShare: 0.4 }), 0).thrust);
+    expect(at(big({ plugShare: 0.8 }), 100).thrust).toBeLessThan(at(big({ plugShare: 0.4 }), 100).thrust);
+  });
+
+  it('leaves the same engine with a bell, and an aerospike, exactly as they were', () => {
+    // The rule is for this exhaust only: a plug setting on another exhaust changes nothing.
+    for (const exhaust of ['bell', 'cone', 'dualBell', 'aerospike', 'none'] as const) {
+      const a = sanitize({ ...starterEngine(), exhaust, plugShare: 0.4 });
+      const b = sanitize({ ...starterEngine(), exhaust, plugShare: 0.8 });
+      for (const km of [0, 20, 100]) expect(at(a, km).thrust, `${exhaust} at ${km} km`).toBe(at(b, km).thrust);
+    }
+  });
+
+  it('says what the air does behind the plug, and leaves the aerospike its own words', () => {
+    const r = at(big(), 0);
+    expect(expansionText(r, 'expansionDeflection')).toMatch(/plug/);
+    expect(expansionText(r, 'expansionDeflection')).not.toMatch(/spike/);
+    expect(expansionText(r, 'aerospike')).toBe(STATE_COPY.compensating.text);
   });
 });
