@@ -22,6 +22,37 @@ function reactorFluid(id: PropellantId, name: string, tip: string, fuel: string,
   };
 }
 
+/**
+ * The look an electrically heated fluid has until the solver has worked one out from its exhaust:
+ * a faint warm glow.
+ */
+const HEATED_LOOK: PlumeLook = {
+    core: [0.98, 0.94, 0.95], mid: [0.9, 0.8, 0.85], edge: [0.8, 0.65, 0.75], richTint: [0.8, 0.65, 0.75],
+    opacity: 0.35, soot: 0, smoke: 0, afterburn: [1.0, 0.7, 0.4], afterburnStrength: 0.5, particles: 0,
+  };
+
+/**
+ * A fluid an electric heater or arc heats, its gas worked out by the solver from thermo reactant
+ * `fluid` and the energy the engine's power gives each kilogram. There is no mixture setting.
+ */
+function heatedFluid(id: PropellantId, energy: 'resistojet' | 'arcjet', name: string, tip: string, fuel: string, fluid: string): Propellant {
+  return {
+    id,
+    energy,
+    name,
+    tip,
+    fuel,
+    oxidiser: energy === 'arcjet' ? 'an electric arc to heat it' : 'an electric heater to warm it',
+    ofMin: 0,
+    ofMax: 0,
+    ofDefault: 0,
+    lStarRef: 0,
+    table: [],
+    look: HEATED_LOOK,
+    fluid,
+  };
+}
+
 const KEROLOX_LOOK: PlumeLook = {
   core: [1.0, 0.93, 0.72],
   mid: [1.0, 0.62, 0.2],
@@ -343,6 +374,29 @@ export const PROPELLANTS: Record<PropellantId, Propellant> = {
       particles: 1.0,
     },
   },
+  // What an electric heater or arc can heat. Hydrazine breaks down by itself and gives off heat,
+  // so it leaves hot before the electricity adds anything.
+  'rj-hydrazine': heatedFluid('rj-hydrazine', 'resistojet', 'Hydrazine',
+    'Breaks down into hot gas by itself; the heater makes that gas hotter still. What most real ones use.',
+    'hydrazine', 'N2H4(L)'),
+  'rj-ammonia': heatedFluid('rj-ammonia', 'resistojet', 'Ammonia',
+    'Easy to store, and breaks into light gases as it is heated. It has to be boiled first.',
+    'liquid ammonia', 'NH3(L)'),
+  'rj-hydrogen': heatedFluid('rj-hydrogen', 'resistojet', 'Hydrogen',
+    'The lightest gas, so the most efficient, but it takes a great deal of power to heat each gram.',
+    'liquid hydrogen', 'H2(L)'),
+  'rj-water': heatedFluid('rj-water', 'resistojet', 'Water',
+    'Safe and found everywhere, but boiling it uses up much of the power before it gets hot.',
+    'water', 'H2O(L)'),
+  'aj-hydrazine': heatedFluid('aj-hydrazine', 'arcjet', 'Hydrazine',
+    'Breaks down into hot gas by itself, and the arc heats that gas much further. What flown arcjets use.',
+    'hydrazine', 'N2H4(L)'),
+  'aj-ammonia': heatedFluid('aj-ammonia', 'arcjet', 'Ammonia',
+    'Easy to store. The arc tears it into nitrogen and hydrogen.',
+    'liquid ammonia', 'NH3(L)'),
+  'aj-hydrogen': heatedFluid('aj-hydrogen', 'arcjet', 'Hydrogen',
+    'The most efficient choice by far, and the hardest to store.',
+    'liquid hydrogen', 'H2(L)'),
 };
 
 export const PROPELLANT_IDS = Object.keys(PROPELLANTS) as PropellantId[];

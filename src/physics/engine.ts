@@ -10,10 +10,10 @@ import {
 } from './nozzle';
 import { FUEL_IDS, OXIDISER_IDS, isFuelId, isOxidiserId } from './chem/ingredients';
 import { mixRange, resolveGas, type GasSource } from './gasSource';
-import { ENERGY_SOURCES, isEnergyId, propellantsFor } from './parts';
+import { ENERGY_SOURCES, isElectric, isEnergyId, propellantsFor } from './parts';
 import { EXHAUSTS, defaultInnerExitDia, isExhaustId } from './exhausts';
 import { PROPELLANTS, isPropellantId } from './propellants';
-import type { EngineConfig, ExpansionState, FlightState, SimResult } from './types';
+import type { EnergyId, EngineConfig, ExpansionState, FlightState, SimResult } from './types';
 
 const G0 = 9.80665;
 /** Baseline combustion efficiency of a well-sized chamber. */
@@ -70,6 +70,23 @@ export const RANGES = {
 } satisfies Record<string, Range>;
 
 /**
+ * A heated-gas electric engine runs on a few kilowatts, so it may be far smaller than any engine
+ * that burns: a real arcjet's throat is well under a millimetre.
+ */
+const SMALL: Partial<Record<keyof typeof RANGES, Range>> = {
+  chamberDia: { min: 0.002, max: 8, fallback: 0.4 },
+  chamberLen: { min: 0.002, max: 40, fallback: 0.5 },
+  throatDia: { min: 0.0003, max: 5, fallback: 0.2 },
+  exitDia: { min: 0.0005, max: 25, fallback: 0.8 },
+  chamberPressureBar: { min: 0.5, max: 400, fallback: 100 },
+};
+
+/** The span of every setting for an engine built round `energy`. */
+export function rangesFor(energy: EnergyId): typeof RANGES {
+  return ENERGY_SOURCES[energy]?.kind === 'thermal' ? { ...RANGES, ...SMALL } : RANGES;
+}
+
+/**
  * How wide the wall at an expansion-deflection nozzle's ring may be: this share of the chamber's
  * width, and the exit must be this many times wider than it for the bell to open at all.
  */
@@ -123,9 +140,10 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const fuel = pair ? pair.fuel : isFuelId(cfg.fuel) ? cfg.fuel : FUEL_IDS[0];
   const oxidiser = pair ? pair.oxidiser : isOxidiserId(cfg.oxidiser) ? cfg.oxidiser : OXIDISER_IDS[0];
   const mix = mixRange({ ...cfg, propellant, fuel, oxidiser });
-  const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
-  const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
-  let exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
+  const R = rangesFor(energy);
+  const chamberDia = clampTo(cfg.chamberDia, R.chamberDia);
+  const throatDia = Math.min(clampTo(cfg.throatDia, R.throatDia), 0.9 * chamberDia);
+  let exitDia = Math.max(clampTo(cfg.exitDia, R.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
   // Only a bell has one to extend.
   const exhaust = isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
@@ -160,12 +178,12 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     fuel,
     oxidiser,
     chamberDia,
-    chamberLen: clampTo(cfg.chamberLen, RANGES.chamberLen),
+    chamberLen: clampTo(cfg.chamberLen, R.chamberLen),
     throatDia,
     exitDia,
     nozzleLenPct: clampTo(cfg.nozzleLenPct, RANGES.nozzleLenPct),
     wall: clampTo(cfg.wall, RANGES.wall),
-    chamberPressureBar: clampTo(cfg.chamberPressureBar, RANGES.chamberPressureBar),
+    chamberPressureBar: clampTo(cfg.chamberPressureBar, R.chamberPressureBar),
     mixtureRatio: Number.isFinite(cfg.mixtureRatio)
       ? Math.min(mix.ofMax, Math.max(mix.ofMin, cfg.mixtureRatio))
       : mix.ofDefault,
@@ -374,7 +392,14 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const sl = thrustAt(SEA_LEVEL_PRESSURE);
   const vac = thrustAt(0);
 
+  // An electric engine's own figures. `throttle` turns its power down with its flow.
+  const power = cfg.powerKW * 1000 * throttle;
+  const electric = isElectric(cfg.energy)
+    ? { power, thrustEfficiency: now.thrust ** 2 / (2 * massFlow * power), heatedTo: gas.tc }
+    : undefined;
+
   return {
+    ...(electric ? { electric } : {}),
     thrust: now.thrust,
     isp: now.thrust / (massFlow * G0),
     ispSeaLevel: sl.thrust / (massFlow * G0),

@@ -34,7 +34,7 @@ export function failureFor(cfg: EngineConfig, pcBar: number, tc: number): Failur
   return null;
 }
 
-/** True when the failure tears the engine open; false when the flame simply goes out or never lights. */
+/** True when the failure tears the engine open; false when the flame simply goes out or the engine never starts. */
 export function destroys(f: Failure): boolean {
-  return f !== null && f !== 'flameout' && f !== 'inert' && f !== 'unsolved';
+  return f !== null && f !== 'flameout' && f !== 'inert' && f !== 'unsolved' && f !== 'underpowered';
 }

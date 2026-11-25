@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pairRange } from './chem/pair';
 import { defaultInnerExitDia } from './exhausts';
 import { sanitize, simulate } from './engine';
-import { ENERGY_IDS, propellantsFor } from './parts';
+import { ENERGY_IDS, isElectric, propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
 import { DEFAULT_CELLS, starterEngine, withEnergy, withExhaust, withPropellant } from './reshape';
 import type { EngineConfig } from './types';
@@ -42,6 +42,9 @@ describe('changing the energy source', () => {
   });
 
   for (const e of ENERGY_IDS) {
+    // An electric engine is nothing like the size of one that burns, so it starts from a small
+    // engine of its own kind instead of keeping the throat: thermalElectric.test.ts covers those.
+    if (isElectric(e)) continue;
     it(`gives a ${e} engine that runs, as stressed as the engine it came from`, () => {
       const from = starterEngine();
       const next = withEnergy(from, e);

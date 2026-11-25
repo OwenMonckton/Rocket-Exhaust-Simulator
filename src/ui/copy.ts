@@ -151,6 +151,10 @@ export const FAILURE_COPY: Record<Exclude<Failure, null>, { title: string; text:
     title: 'Detonation',
     text: 'One of these propellants explodes when it is pumped or jolted, and it went off in the engine instead of burning steadily. Pick a different fuel or oxidiser.',
   },
+  underpowered: {
+    title: 'Not enough power to boil the propellant',
+    text: 'The electrical power could not turn this much propellant into gas, so the engine never started. The engine is unharmed. Raise the power, or pass less propellant by lowering the chamber pressure or narrowing the throat. Restarting with nothing changed goes back to the last setup that ran.',
+  },
   unsolved: {
     title: 'No answer',
     text: 'The chemistry would not settle for this mixture, so there is no way to say how the engine runs, and no figures are shown. Try a different mixture ratio or chamber pressure. Relighting with nothing changed goes back to the last setup that ran.',
@@ -168,6 +172,7 @@ const FAILURE_NOTE: Partial<Record<Exclude<Failure, null>, string>> = {
   inert: 'Nothing here will burn.',
   detonation: 'A propellant here would explode in the engine.',
   unsolved: 'No figures: the chemistry would not settle.',
+  underpowered: 'Not enough power to turn the propellant into gas.',
 };
 
 /** The line under the limit bars about the engine's failure, or '' when it has none. */

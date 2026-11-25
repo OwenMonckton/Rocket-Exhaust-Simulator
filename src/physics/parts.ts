@@ -11,12 +11,20 @@ export interface EnergySource {
   /**
    * What the engine's `mixtureRatio` setting means with this source:
    * 'ratio' is oxidiser-to-fuel mass ratio, 'temperature' is the temperature in K the propellant
-   * is heated to (nuclear engines: nothing burns), 'none' is fixed.
+   * is heated to (nuclear engines: nothing burns), 'none' is fixed, and 'power' means there is no
+   * such setting: the engine's electrical power and its flow set the temperature between them.
    */
-  mixKind: 'ratio' | 'temperature' | 'none';
+  mixKind: 'ratio' | 'temperature' | 'none' | 'power';
+  /** An electric engine: 'thermal' heats a gas and sends it through a nozzle. Absent for every other source. */
+  kind?: 'thermal' | 'beam';
+  /**
+   * Heated-gas electric engines: the share of the electrical power that ends up in the gas as heat
+   * the nozzle can turn into speed.
+   */
+  heatingShare?: number;
   /** Name and one-line explanation of the temperature setting, for 'temperature' sources */
   mixLabel?: { label: string; tip: string };
-  /** Temperature (K) at which a solid reactor core fails; absent where there is no core to melt */
+  /** Temperature (K) at which a solid reactor core, a heater or an arc's electrodes fail; absent where there is none */
   coreTempLimit?: number;
   /**
    * Fraction of the gas temperature the nozzle wall is exposed to (default 1). Far below 1 where
@@ -84,7 +92,51 @@ export const ENERGY_SOURCES: Record<EnergyId, EnergySource> = {
     // No combustion chamber: a feed pipe barely wider than the throat opens straight into the nozzle.
     starter: { contraction: 1.12, lStar: 4.0 },
   },
+  resistojet: {
+    id: 'resistojet',
+    name: 'Resistojet',
+    tip: 'An electric heater warms the propellant, which leaves through an ordinary nozzle. Gentle, simple, and limited by how hot a heater can get.',
+    throttleable: true,
+    mixKind: 'power',
+    kind: 'thermal',
+    // Most of a heater's power reaches the gas; the rest is lost as the body's own glow. A textbook
+    // figure (Sutton, Rocket Propulsion Elements, gives 65 to 90%), not tuned: there is no example.
+    heatingShare: 0.8,
+    // The heater must be hotter than the gas it heats, and a heater fails a little above this.
+    coreTempLimit: 2400,
+    // Nothing burns, so there is nothing to shake.
+    instabilityRefDia: 100,
+    starter: { contraction: 5, lStar: 2 },
+  },
+  arcjet: {
+    id: 'arcjet',
+    name: 'Arcjet',
+    tip: 'An electric arc heats the propellant far hotter than any heater could. Better efficiency than a flame, on a few kilowatts.',
+    throttleable: true,
+    mixKind: 'power',
+    kind: 'thermal',
+    // Much of an arc's power goes into its electrodes and into gas that leaves torn into atoms
+    // without giving that energy back. The solver assumes the atoms recombine, so this share
+    // covers that loss too.
+    heatingShare: 0.4,
+    // The average gas temperature at which the electrodes erode away.
+    coreTempLimit: 6000,
+    // The wall sees a cooler layer of gas than the arc's core.
+    wallHeatFactor: 0.4,
+    instabilityRefDia: 100,
+    starter: { contraction: 5, lStar: 2 },
+  },
 };
+
+/** True for an engine that runs on electrical power. */
+export function isElectric(energy: EnergyId): boolean {
+  return ENERGY_SOURCES[energy]?.kind !== undefined;
+}
+
+/** True for a thruster that throws out charged atoms with a voltage: no chamber, throat or hot gas. */
+export function isBeam(energy: EnergyId): boolean {
+  return ENERGY_SOURCES[energy]?.kind === 'beam';
+}
 
 export const ENERGY_IDS = Object.keys(ENERGY_SOURCES) as EnergyId[];
 

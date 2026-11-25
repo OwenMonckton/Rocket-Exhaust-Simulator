@@ -104,7 +104,7 @@ export function propellantNote(s: AppState): string {
   return [made, ...warnings].filter(Boolean).join(' · ');
 }
 
-type MixKind = 'ratio' | 'temperature' | 'none';
+type MixKind = 'ratio' | 'temperature' | 'none' | 'power';
 
 /**
  * The mixture setting a slider position stands for, in round numbers. Temperatures step by an amount
