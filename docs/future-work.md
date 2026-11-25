@@ -1581,10 +1581,22 @@ same day; its three P2 issues were left (below).
   that Space is its shortcut, in its tip and to a screen reader.
 - **When a failure notice opens, the keyboard's focus moves to its button.**
 
-### Left from that critique
+### Its three P2 issues, fixed after
 
-- The test log is squeezed when "Engineer's numbers" is open (P2).
-- The engine picker is 18 equal cards, ungrouped, with text cut mid-word (P2).
-- On a phone the thrust figure is below the fold, and the numbered marks crowd the left edge (P2).
+- **The test log keeps room for about six lines** (182px) whatever else is open; the readings
+  above it scroll first. With "Engineer's numbers" open at 1440 by 900 it had shrunk to 107px.
+- **The engine picker is grouped**: "Build your own" as its own row first, then Liquid-fuelled,
+  Solid, Nuclear and Electric. Each card shows the description's first sentence whole (the full
+  description is its tooltip) and the engine's thrust and efficiency from the physics, at sea
+  level or in vacuum as the engine is meant to run. (`pickerGroups`, `firstSentence` and
+  `cardFigure` in `src/ui/picker.ts`.)
+- **On a phone, thrust and efficiency stay in view**: a line of the two sits at the top of the
+  pinned console, and the picture is a little shorter (32% of the screen's height, from 36%) to
+  make room. The pinned part ends at 586 of 812 pixels.
+- **The engine stands far enough in from the left edge** for the numbered marks of its feeds to
+  clear the thrust wall at every size, phone to desktop.
+
+### Still left
+
 - Fire is still the 32nd of 33 tab stops; Space is the way to it from the keyboard.
 - Thrust and the gauges are not read out as they change; only the log is.

@@ -467,8 +467,9 @@ export function radiusAt(profile: EngineProfile, x: number): number {
 
 /** Fit the engine into the left part of the stage, leaving room for the plume. Zoom below 1 shrinks the engine to show more plume. */
 export function viewTransform(profile: EngineProfile, widthPx: number, heightPx: number, zoom = 1): View {
-  // The injector head and feed lines sit behind x = 0, so reserve some margin for them.
-  const margin = 0.06 * widthPx;
+  // The injector head and feed lines sit behind x = 0, so reserve some margin for them, and enough
+  // for the numbered marks of the feeds to stand ahead of the engine clear of the thrust wall.
+  const margin = Math.max(0.06 * widthPx, 76);
   const fit =
     zoom * Math.min((0.34 * widthPx) / (profile.length + profile.frontSpace), (0.55 * heightPx) / (2 * profile.halfHeight));
   // A long engine with a small nozzle (a solid booster) would leave the plume only a few

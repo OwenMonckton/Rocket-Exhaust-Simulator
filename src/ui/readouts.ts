@@ -96,6 +96,17 @@ export function fmtFlow(kgs: number): string {
   return kgs >= 100 ? `${kgs.toFixed(0)} kg/s` : `${kgs.toFixed(1)} kg/s`;
 }
 
+/**
+ * The two figures pinned under the picture on a phone, where the readings column has scrolled
+ * away: thrust (run up with the engine, as the column has it) and efficiency. Dashes where no
+ * figure would be real.
+ */
+export function glanceFor(r: SimResult, fire: number): { thrust: string; isp: string } {
+  if (!showsFigures(r)) return { thrust: '\u2014', isp: '\u2014' };
+  const thrust = fire > 0 && fire < 1 ? r.thrust * fire : r.thrust;
+  return { thrust: fmtThrust(thrust), isp: `${r.isp.toFixed(0)} s` };
+}
+
 /** What a thrust would hold up against gravity, in words. */
 export function fmtPush(n: number): string {
   const kg = n / 9.80665;

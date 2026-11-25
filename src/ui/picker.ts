@@ -1,4 +1,7 @@
-import { PRESETS } from '../physics/presets';
+import { simulate } from '../physics/engine';
+import { ENERGY_SOURCES } from '../physics/parts';
+import { PRESETS, type Preset } from '../physics/presets';
+import { fmtThrust } from './readouts';
 import type { EngineConfig } from '../physics/types';
 import { engineProfile } from '../render/geometry';
 
@@ -42,6 +45,35 @@ export function silhouettePath(config: EngineConfig): string {
   return `M${top.join('L')}L${bottom.join('L')}Z`;
 }
 
+/** The picker's groups, by what drives the engine, in the order they are listed. */
+const GROUPS: { title: string; holds: (p: Preset) => boolean }[] = [
+  { title: 'Liquid-fuelled', holds: (p) => p.config.energy === 'combustion' },
+  { title: 'Solid', holds: (p) => p.config.energy === 'solid' },
+  { title: 'Nuclear', holds: (p) => p.config.energy === 'reactor' || p.config.energy === 'saltwater' },
+  { title: 'Electric', holds: (p) => ENERGY_SOURCES[p.config.energy].kind !== undefined },
+];
+
+/** Every example, in its group, in the order the examples are listed within each. */
+export function pickerGroups(): { title: string; presets: Preset[] }[] {
+  return GROUPS.map((g) => ({ title: g.title, presets: PRESETS.filter(g.holds) })).filter((g) => g.presets.length > 0);
+}
+
+/**
+ * The first sentence of a description, whole: a card shows that and no more, so nothing is cut
+ * off mid-word. A full stop inside a figure (2.3 kW) is not the end of a sentence.
+ */
+export function firstSentence(text: string): string {
+  return text.match(/^.*?[.!?](?=\s+[A-Z\u2018\u201C"']|$)/)?.[0] ?? text;
+}
+
+/** A card's figure: its thrust and efficiency from the physics, where the engine is meant to run. */
+export function cardFigure(p: Preset): string {
+  const space = p.published.atVacuum;
+  const r = simulate(p.config, { altitudeKm: space ? 100 : 0, throttle: 1 });
+  const thrust = r.thrust >= 1000 ? `${Math.round(r.thrust / 1000)} kN` : fmtThrust(r.thrust);
+  return `${thrust} \u00b7 ${Math.round(r.isp).toLocaleString('en-US')} s ${space ? 'in vacuum' : 'at sea level'}`;
+}
+
 export interface Picker {
   /** Mark the engine in use; an empty id is the user's own engine */
   setCurrent(id: string): void;
@@ -58,24 +90,49 @@ export function createPicker(
   choose: (id: string) => void,
 ): Picker {
   const buttons = new Map<string, HTMLButtonElement>();
-  const add = (id: string, name: string, blurb: string, path: string | null) => {
+  const button = (id: string, className: string, html: string, parent: HTMLElement) => {
     const b = document.createElement('button');
-    b.className = 'engine-card';
-    const art = path
-      ? `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${path}" /></svg>`
-      : `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><path class="blank" d="M${W / 2} 14v28M${W / 2 - 14} 28h28" /></svg>`;
-    b.innerHTML = `${art}<span class="engine-name"></span><span class="engine-blurb"></span>`;
-    b.querySelector('.engine-name')!.textContent = name;
-    b.querySelector('.engine-blurb')!.textContent = blurb;
+    b.className = className;
+    b.innerHTML = html;
     b.addEventListener('click', () => {
       choose(id);
       close();
     });
-    list.append(b);
+    parent.append(b);
     buttons.set(id, b);
+    return b;
   };
-  for (const p of PRESETS) add(p.id, p.name, p.blurb, silhouettePath(p.config));
-  add(NEW_ENGINE, 'Build your own', 'Start from a blank engine and pick every part yourself.', null);
+  // Starting from nothing is its own action, ahead of the examples, not one more of them.
+  const blank = button(
+    NEW_ENGINE,
+    'build-own',
+    `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" /></svg><span class="engine-name">Build your own</span><span class="engine-blurb"></span>`,
+    list,
+  );
+  blank.querySelector('.engine-blurb')!.textContent = 'Start from a blank engine and pick every part yourself.';
+  for (const group of pickerGroups()) {
+    const section = document.createElement('section');
+    section.className = 'engine-group';
+    const heading = document.createElement('h3');
+    heading.textContent = group.title;
+    const cards = document.createElement('div');
+    cards.className = 'engine-cards';
+    section.append(heading, cards);
+    list.append(section);
+    for (const p of group.presets) {
+      const b = button(
+        p.id,
+        'engine-card',
+        `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${silhouettePath(p.config)}" /></svg><span class="engine-name"></span><span class="engine-blurb"></span><span class="engine-figure"></span>`,
+        cards,
+      );
+      b.querySelector('.engine-name')!.textContent = p.name;
+      b.querySelector('.engine-blurb')!.textContent = firstSentence(p.blurb);
+      b.querySelector('.engine-figure')!.textContent = cardFigure(p);
+      // The whole description, for anyone who wants it before choosing.
+      b.title = p.blurb;
+    }
+  }
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') close();

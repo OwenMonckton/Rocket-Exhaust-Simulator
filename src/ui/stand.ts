@@ -47,7 +47,8 @@ export function calloutsFor(ids: string[], l: StageLayout): Callout[] {
     const side = feeds.length > 1 ? (n === 0 ? -1 : 1) : 0;
     return {
       id,
-      x: Math.max(16, l.originX - l.frontSpace - FEED_GAP),
+      // Never over the thrust wall at the picture's edge, even where the engine runs off it.
+      x: Math.max(WALL + 4 + 12, l.originX - l.frontSpace - FEED_GAP),
       y: l.centreY + side * 15,
       toX: l.originX - l.frontSpace,
       toY: l.centreY + side * Math.min(chamberEdge * 0.5, 15),

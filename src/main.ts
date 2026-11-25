@@ -9,7 +9,7 @@ import { createStore, defaultState, isModified } from './state/store';
 import { createControls } from './ui/controls';
 import { STATE_COPY, TIPS, failureCopy, restartLabel } from './ui/copy';
 import { NEW_ENGINE, createPicker } from './ui/picker';
-import { createReadouts, fmtThrust } from './ui/readouts';
+import { createReadouts, fmtThrust, glanceFor } from './ui/readouts';
 import { nextLive, readingsFor, restoreLine, spaceFires, type LiveFrame } from './ui/runState';
 import { createStand } from './ui/stand';
 import { createTestLog, stamp } from './ui/testlog';
@@ -178,11 +178,18 @@ const record = (info: FrameInfo) => {
   seen.altitude = altitude;
 };
 
+const glanceThrust = document.querySelector<HTMLElement>('#glance [data-g="thrust"]')!;
+const glanceIsp = document.querySelector<HTMLElement>('#glance [data-g="isp"]')!;
 // The engine's last frame while lit, held so the readings can show the moment a failure came.
 let lastLive: LiveFrame | null = null;
 const runtime = createRuntime(store, stage, $<HTMLCanvasElement>('gl'), $<HTMLCanvasElement>('overlay-canvas'), (info) => {
   lastLive = nextLive(lastLive, info);
-  updateReadouts({ ...info, ...readingsFor(info, lastLive) });
+  const shown = readingsFor(info, lastLive);
+  updateReadouts({ ...info, ...shown });
+  // On a phone the readings column scrolls away under the picture; these two stay pinned with it.
+  const glance = glanceFor(shown.result, shown.fire);
+  if (glanceThrust.textContent !== glance.thrust) glanceThrust.textContent = glance.thrust;
+  if (glanceIsp.textContent !== glance.isp) glanceIsp.textContent = glance.isp;
   record(info);
   const ids = partIds();
   stand.update(info.layout, store.get().flight.altitudeKm, ids);
