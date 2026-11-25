@@ -170,6 +170,8 @@ function build(s: Spec): Preset {
       coneAngleDeg: 15,
       innerExitDia: 0,
       plugShare: 0.7,
+      powerKW: 2,
+      voltage: 300,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };

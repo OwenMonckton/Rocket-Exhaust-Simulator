@@ -10,10 +10,16 @@ export interface AppState {
   flight: FlightState;
 }
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 
 /** The plug a link made before plugs existed is given. */
 const DEFAULT_PLUG = RANGES.plugShare.fallback;
+
+/** The power and voltage a link made before electric engines existed is given. */
+const DEFAULT_ELECTRIC = [RANGES.powerKW.fallback, RANGES.voltage.fallback];
+
+/** How many entries a link of each version that names its exhaust freely carries. */
+const LENGTHS: Record<string, number> = { v4: 22, v5: 23, v6: 25 };
 
 /** What the propellant names in links made before engines had separate parts are called now. */
 const OLD_PROPELLANTS: Record<string, PropellantId> = { nuclear: 'ntr-hydrogen' };
@@ -54,6 +60,8 @@ export function encodeState(s: AppState): string {
     c.coneAngleDeg,
     c.innerExitDia,
     c.plugShare,
+    c.powerKW,
+    c.voltage,
   ];
   return `${VERSION}.${toBase64Url(JSON.stringify(packed))}`;
 }
@@ -62,20 +70,21 @@ const allNumbers = (a: unknown[]): a is number[] => a.every((n) => typeof n === 
 
 /**
  * The parts and numbers of a link, whichever version wrote it. The numbers are always in the
- * current order: nine of the engine, altitude, throttle, chambers, extension size and travel, cone angle, dual bell kink and plug.
+ * current order: nine of the engine, altitude, throttle, chambers, extension size and travel, cone
+ * angle, dual bell kink, plug, power and voltage.
  */
 function unpack(
   version: string,
   a: unknown[],
 ): { parts: Pick<EngineConfig, 'energy' | 'exhaust' | 'propellant'>; fuel: unknown; oxidiser: unknown; n: number[] } | null {
-  // v4 adds the cone angle and the dual bell's kink at the end, and v5 the plug of an
-  // expansion-deflection nozzle after them. An exhaust either does not know opens as a bell
-  // rather than refusing the link.
-  if (version === VERSION || version === 'v4') {
-    if (a.length !== (version === VERSION ? 23 : 22)) return null;
+  // v4 adds the cone angle and the dual bell's kink at the end, v5 the plug of an
+  // expansion-deflection nozzle after them, and v6 an electric engine's power and voltage. An
+  // exhaust any of them does not know opens as a bell rather than refusing the link.
+  if (version in LENGTHS) {
+    if (a.length !== LENGTHS[version]) return null;
     const [, energy, exhaust, propellant, fuel, oxidiser, ...n] = a;
     if (!isEnergyId(energy) || typeof exhaust !== 'string' || !isPropellantId(propellant) || !allNumbers(n)) return null;
-    const numbers = version === VERSION ? n : [...n, DEFAULT_PLUG];
+    const numbers = version === 'v6' ? n : version === 'v5' ? [...n, ...DEFAULT_ELECTRIC] : [...n, DEFAULT_PLUG, ...DEFAULT_ELECTRIC];
     return { parts: { energy, exhaust: isExhaustId(exhaust) ? exhaust : 'bell', propellant }, fuel, oxidiser, n: numbers };
   }
   // v3 adds the fuel and oxidiser after the propellant. An unknown one is not a reason to refuse
@@ -84,13 +93,13 @@ function unpack(
     if (a.length !== 20) return null;
     const [, energy, exhaust, propellant, fuel, oxidiser, ...n] = a;
     if (!isEnergyId(energy) || !isExhaustId(exhaust) || !isPropellantId(propellant) || !allNumbers(n)) return null;
-    return { parts: { energy, exhaust, propellant }, fuel, oxidiser, n: [...n, 15, 0, DEFAULT_PLUG] };
+    return { parts: { energy, exhaust, propellant }, fuel, oxidiser, n: [...n, 15, 0, DEFAULT_PLUG, ...DEFAULT_ELECTRIC] };
   }
   if (version === 'v2') {
     if (a.length !== 18) return null;
     const [, energy, exhaust, propellant, ...n] = a;
     if (!isEnergyId(energy) || !isExhaustId(exhaust) || !isPropellantId(propellant) || !allNumbers(n)) return null;
-    return { parts: { energy, exhaust, propellant }, fuel: FUEL_IDS[0], oxidiser: OXIDISER_IDS[0], n: [...n, 15, 0, DEFAULT_PLUG] };
+    return { parts: { energy, exhaust, propellant }, fuel: FUEL_IDS[0], oxidiser: OXIDISER_IDS[0], n: [...n, 15, 0, DEFAULT_PLUG, ...DEFAULT_ELECTRIC] };
   }
   if (version !== 'v1') return null;
   // Links from before engines had separate parts: the propellant said what kind of engine it
@@ -106,7 +115,7 @@ function unpack(
     parts: { energy: PROPELLANTS[propellant].energy, exhaust, propellant },
     fuel: FUEL_IDS[0],
     oxidiser: OXIDISER_IDS[0],
-    n: [...n.slice(0, 11), n.length > 11 ? n[11] : 1, n.length > 13 ? n[12] : 0, n.length > 13 ? n[13] : 1, 15, 0, DEFAULT_PLUG],
+    n: [...n.slice(0, 11), n.length > 11 ? n[11] : 1, n.length > 13 ? n[12] : 0, n.length > 13 ? n[13] : 1, 15, 0, DEFAULT_PLUG, ...DEFAULT_ELECTRIC],
   };
 }
 
@@ -145,6 +154,9 @@ export function decodeState(hash: string): AppState | null {
       innerExitDia: n[15],
       // Links from before the plug existed carry the default.
       plugShare: n[16],
+      // Links from before electric engines carry the usual power and voltage.
+      powerKW: n[17],
+      voltage: n[18],
     });
     return { config, flight: sanitizeFlight({ altitudeKm: n[9], throttle: n[10] }) };
   } catch {

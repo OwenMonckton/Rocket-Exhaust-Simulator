@@ -61,6 +61,10 @@ export const RANGES = {
   /** An expansion-deflection nozzle's plug, as a share of the wall's diameter at the ring */
   plugShare: { min: 0.5, max: 0.8, fallback: 0.7 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
+  /** Electrical power an electric engine draws, kW */
+  powerKW: { min: 0.05, max: 100, fallback: 2 },
+  /** The voltage a beam thruster throws its atoms out with */
+  voltage: { min: 100, max: 5000, fallback: 300 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
 } satisfies Record<string, Range>;
@@ -172,6 +176,8 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     coneAngleDeg: clampTo(cfg.coneAngleDeg, RANGES.coneAngleDeg),
     innerExitDia,
     plugShare,
+    powerKW: clampTo(cfg.powerKW, RANGES.powerKW),
+    voltage: clampTo(cfg.voltage, RANGES.voltage),
   };
 }
 

@@ -153,7 +153,7 @@ describe('links', () => {
   it('carry an expansion-deflection nozzle and its plug', () => {
     const state = { config: ed({ ...roomy, plugShare: 0.55 }), flight };
     const link = encodeState(state);
-    expect(link.startsWith('v5.')).toBe(true);
+    expect(link.startsWith('v6.')).toBe(true);
     const opened = decodeState(link)!;
     expect(opened.config.exhaust).toBe('expansionDeflection');
     expect(opened.config.plugShare).toBeCloseTo(0.55, 9);
@@ -167,7 +167,7 @@ describe('links', () => {
   it('still open when made before the plug existed, with the default plug', () => {
     const state = { config: sanitize({ ...starterEngine(), exhaust: 'cone', coneAngleDeg: 22 }), flight };
     const now = payload(encodeState(state));
-    expect(now).toHaveLength(23);
+    expect(now).toHaveLength(25);
     const old = decodeState(relink('v4', now.slice(0, 22)))!;
     expect(old).toEqual(state);
     expect(old.config.plugShare).toBe(0.7);
@@ -176,7 +176,7 @@ describe('links', () => {
   it('open as a bell when they name an exhaust this build does not know', () => {
     const a = payload(encodeState({ config: ed(), flight }));
     a[2] = 'warpNacelle';
-    expect(decodeState(relink('v5', a))!.config.exhaust).toBe('bell');
+    expect(decodeState(relink('v5', a.slice(0, 23)))!.config.exhaust).toBe('bell');
   });
 
   it('are refused when a v5 link is the wrong length', () => {

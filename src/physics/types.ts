@@ -123,6 +123,12 @@ export interface EngineConfig {
    * ring it leaves round itself. Every other exhaust keeps the setting, for a swap back, and ignores it.
    */
   plugShare: number;
+  /**
+   * Electrical power an electric engine draws, kW, and the voltage a beam thruster throws its
+   * atoms out with, V. Every other engine keeps the settings, for a swap back, and ignores them.
+   */
+  powerKW: number;
+  voltage: number;
 }
 
 export interface FlightState {

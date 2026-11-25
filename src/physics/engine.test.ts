@@ -28,6 +28,8 @@ const base: EngineConfig = {
   coneAngleDeg: 15,
   innerExitDia: 0,
   plugShare: 0.7,
+  powerKW: 2,
+  voltage: 300,
 };
 const sl = { altitudeKm: 0, throttle: 1 };
 
