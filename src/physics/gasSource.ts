@@ -36,7 +36,7 @@ export interface GasSource {
 /** What stands in for the gas when the chemistry gives none: cold air, never shown as real. */
 const NO_GAS: GasProps = { tc: 300, gamma: 1.4, molarMass: 28, R: R_UNIVERSAL / 28 };
 const NOT_SOLVED: SolvedGas = {
-  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [],
+  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [], makeup: [],
 };
 /** The thrust scale of a solve: 1 for the stand-in gas. */
 const scaleOf = (solved: SolvedGas) => (solved.ok ? solved.ispScale : 1);
@@ -86,7 +86,9 @@ const lookKey = (cfg: EngineConfig) =>
 
 /** The look for a settled solve, remembered for `staticLook`. */
 function derive(cfg: EngineConfig, solved: SolvedGas): PlumeLook {
-  const look = lookFromExhaust({ exhaust: solved.exhaust, tc: solved.tc, condensedShare: solved.condensedShare });
+  // From the whole make-up, not the six species the readout lists: a species that slips to seventh
+  // place is still in the plume.
+  const look = lookFromExhaust({ exhaust: solved.makeup, tc: solved.tc, condensedShare: solved.condensedShare });
   derivedLooks.set(lookKey(cfg), look);
   return look;
 }

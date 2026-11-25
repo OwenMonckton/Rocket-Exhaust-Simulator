@@ -4,6 +4,7 @@ import { clearChemCache, solveFluid, solvePair } from './chem/pair';
 import { showsFigures } from '../ui/copy';
 import { sanitize, simulate } from './engine';
 import { mixRange, resolveGas, staticLook } from './gasSource';
+import { lookFromExhaust } from './plumeLook';
 import { propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
 import { PROPELLANTS, gasProps } from './propellants';
@@ -318,5 +319,41 @@ describe("where the plume's look comes from", () => {
   it('shows an example engine its hand-picked look inside, whatever was solved before', () => {
     resolveGas(built('rp1', 'lox'), 70, 16);
     expect(staticLook(getPreset('merlin-1d')!.config)).toBe(PROPELLANTS.kerolox.look);
+  });
+
+  it('works the look out from everything in the exhaust, not only the six species listed', () => {
+    const g = solvePair('b5h9', 'lox', 2, 70, 16);
+    expect(g.ok).toBe(true);
+    expect(g.exhaust.length).toBeLessThanOrEqual(6);
+    // The whole make-up holds more than the list, and nearly all of the gas.
+    expect(g.makeup.length).toBeGreaterThan(g.exhaust.length);
+    expect(g.makeup.reduce((sum, e) => sum + e.share, 0)).toBeGreaterThan(0.999);
+    const cfg = sanitize({ ...starterEngine(), propellant: 'calculated', fuel: 'b5h9', oxidiser: 'lox', mixtureRatio: 2 });
+    expect(resolveGas(cfg, 70, 16).look).toEqual(lookFromExhaust({ exhaust: g.makeup, tc: g.tc, condensedShare: g.condensedShare }));
+  });
+
+  it('keeps the look moving smoothly on a stub nozzle, where what is listed changes most', () => {
+    // A short nozzle leaves the exhaust hot and full of fragments, so species trade places in the list.
+    for (const [fuel, oxidiser] of [['al-slurry', 'lox'], ['b5h9', 'lox']] as const) {
+      const base = sanitize({ ...starterEngine(), propellant: 'calculated', fuel, oxidiser });
+      const usual = mixRange(base).ofDefault;
+      let last: number[] | null = null;
+      let steps = 0;
+      for (let i = 0; i <= 60; i++) {
+        const src = resolveGas({ ...base, mixtureRatio: usual * (0.5 + (1.5 * i) / 60) }, 70, 2);
+        if (!src.settled) {
+          last = null;
+          continue;
+        }
+        const { look } = src;
+        const now = [...look.core, ...look.mid, ...look.edge, look.opacity, look.soot, look.smoke, look.particles];
+        if (last) {
+          steps++;
+          now.forEach((v, k) => expect(Math.abs(v - last![k]), `${fuel}: step ${i}, number ${k}`).toBeLessThan(0.12));
+        }
+        last = now;
+      }
+      expect(steps, fuel).toBeGreaterThan(40);
+    }
   });
 });

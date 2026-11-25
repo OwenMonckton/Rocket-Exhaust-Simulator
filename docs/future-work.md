@@ -1070,7 +1070,14 @@ The design is in `docs/superpowers/specs/2026-11-25-plume-colour-design.md`.
 5. **An exhaust with almost nothing in it that glows is drawn dim as well as thin.** Helium from a
    reactor first drew as a bright white plume beside the words "barely glows", because the picture
    draws a pale colour brightly however thin it is.
-6. **The every-pair check lives with the existing one.** `src/physics/gasSource.test.ts` already
+6. **The look uses the whole make-up; the words use the list.** The readout lists at most six
+   species, each at least half a percent. The final review found two faults in building on that
+   list. The look could step when a species slipped from sixth place to seventh (aluminium in
+   kerosene on a stub nozzle did, by 0.125 in one step), so the solver now also hands over
+   everything at the exit and the look is worked from that. And the line of words could name
+   something the list did not hold ("burning carbon monoxide" beside an exhaust that was all carbon
+   dioxide, "steam" beside ammonia's hydrogen), so its words now follow the species actually listed.
+7. **The every-pair check lives with the existing one.** `src/physics/gasSource.test.ts` already
    solves every fuel with oxygen and hydrogen with every oxidiser; it now also checks each plume's
    look. Solving them all a second time in another test file slowed the machine enough to fail the
    chemistry speed test.
@@ -1088,7 +1095,7 @@ and 0.25 for soot:
 Seen in a browser, lit at sea level: methane blue-violet, hydrogen pale blue, pentaborane with
 oxygen green (and still green at 60 km), lithium with fluorine crimson, aluminium in kerosene
 orange with a white glare, hydrogen with fluorine a faint haze, cyanogen with oxygen blue-violet,
-a reactor on ammonia faint blue, on methane sooty orange (the solver gives real soot there, 32%),
+a reactor on ammonia the faint blue of hot hydrogen, on methane sooty orange (the solver gives real soot there, 32%),
 and on helium a dim grey haze. The gas inside the engine matched the plume each time, and there
 were no console errors. An example engine shows no colour line, as it has no make-up to show.
 
@@ -1103,8 +1110,9 @@ were no console errors. An example engine shows no colour line, as it has no mak
 - **Cyanogen does not look like cyanogen.** Its real flame is a famous hot violet-white. Its
   equilibrium exhaust is carbon monoxide, carbon dioxide and nitrogen, with none of the carbon and
   nitrogen compounds that give the violet, so it draws blue-violet like any carbon flame.
-- **At most six species are listed**, each at least half a percent of the exhaust, so a trace that
-  would tint a real flame (a little sodium, say) never appears.
+- **Traces the solver does not know cannot tint the flame.** The look is worked out from
+  everything at the exit down to one part in ten thousand, but only from the elements the solver
+  has (no sodium or potassium, which colour many real flames).
 - **The first frame after choosing a new pair** draws the gas inside the engine in the borrowed
   colour, until the gas has been solved once.
 - **The example engines and the engines built from the same parts do not quite match.** Merlin's

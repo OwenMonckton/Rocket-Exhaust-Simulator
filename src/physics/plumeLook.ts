@@ -25,7 +25,7 @@ export type FamilyId =
 
 export interface ExhaustFamily {
   id: FamilyId;
-  /** How the colour line names it: as the main colour, and as a lesser one beside another */
+  /** How the colour line names it, as the main colour and as a lesser one, unless what is listed calls for other words (`wordsFor`) */
   words: { main: string; tinge: string };
   colour: RGB;
   /** How strongly a unit share shows, 0 (nothing) upward */
@@ -50,7 +50,7 @@ export const FAMILIES: Record<FamilyId, ExhaustFamily> = {
   // Glowing carbon outshines any gas beside it, so a little goes a long way. White-hot droplets of
   // a metal's oxide outshine even that.
   soot: family('soot', 'soot glowing orange', 'an orange glow from soot', [1.0, 0.62, 0.15], 12, { soot: 3, smoke: 0.5, particles: 2, burns: true }),
-  steam: family('steam', 'the faint blue of steam and hydrogen', 'a faint blue from steam', [0.5, 0.62, 1.0], 0.42, { burns: true }),
+  steam: family('steam', 'the faint blue of steam', 'a faint blue from steam', [0.5, 0.62, 1.0], 0.42, { burns: true }),
   carbonOxide: family('carbonOxide', 'the blue-violet of burning carbon monoxide', 'a blue-violet tinge from carbon oxides', [0.55, 0.4, 1.0], 0.84, { burns: true }),
   boron: family('boron', 'boron burning green', 'a green tinge from boron', [0.35, 1.0, 0.4], 2.5),
   lithium: family('lithium', 'lithium burning crimson', 'a crimson tinge from lithium', [1.0, 0.15, 0.2], 1.5),
@@ -58,7 +58,7 @@ export const FAMILIES: Record<FamilyId, ExhaustFamily> = {
   beryllium: family('beryllium', 'white-hot beryllium oxide', 'a white glare from beryllium oxide', [0.95, 0.98, 1.0], 30, { smoke: 2, particles: 3 }),
   halide: family('halide', 'the pale, nearly clear glow of hydrogen fluoride and chloride', 'a pale haze from hydrogen fluoride or chloride', [0.75, 0.9, 0.85], 0.2, { smoke: 0.3 }),
   chlorine: family('chlorine', 'the yellow-green of chlorine', 'a yellow-green tinge from chlorine', [0.8, 0.95, 0.5], 0.6),
-  cyanogen: family('cyanogen', 'the violet of cyanogen', 'a violet tinge from cyanogen', [0.75, 0.45, 1.0], 3),
+  cyanogen: family('cyanogen', 'the violet of compounds of carbon and nitrogen', 'a violet tinge from compounds of carbon and nitrogen', [0.75, 0.45, 1.0], 3),
   nitrogenOxide: family('nitrogenOxide', 'the orange-brown of nitrogen oxides', 'an orange-brown tinge from nitrogen oxides', [0.9, 0.55, 0.25], 1.2),
   // Unburnt and half-burnt fuel shows nothing itself, but burns where the plume meets the air.
   hydrocarbon: family('hydrocarbon', '', '', [0, 0, 0], 0, { burns: true }),
@@ -130,38 +130,51 @@ const AFTERBURN: RGB = [1.0, 0.5, 0.3];
  * is left half-burnt it makes soot, which is what turns a kerosene plume orange. Carbon monoxide is
  * the make-up's mark of half-burnt carbon, so the more of it there is past a tenth of the exhaust, the more soot it stands for, provided there
  * is hydrogen about: carbon burnt with no hydrogen (cyanogen) makes none.
+ *
+ * Each family's share comes in gently over its first two percent, so nothing steps when a species
+ * first appears. Every figure of the look is worked from these shares, so they all move together.
  */
 function shares(exhaust: readonly { name: string; share: number }[]) {
-  const byFamily = {} as Record<FamilyId, number>;
-  for (const id of Object.keys(FAMILIES) as FamilyId[]) byFamily[id] = 0;
+  const raw = {} as Record<FamilyId, number>;
+  const lead = {} as Record<FamilyId, { name: string; share: number } | undefined>;
+  for (const id of Object.keys(FAMILIES) as FamilyId[]) raw[id] = 0;
   let co = 0;
   let hydrogen = 0;
   let burning = 0;
   for (const { name, share } of exhaust) {
     if (!(share > 0)) continue;
     const id = familyOf(name);
-    byFamily[id] += share;
+    raw[id] += share;
+    if (!lead[id] || share > lead[id]!.share) lead[id] = { name, share };
     if (name === 'CO') co += share;
     if (id === 'steam' && name !== 'O2' && name !== 'O') hydrogen += share;
     if (AFTERBURNERS.has(name) || id === 'soot') burning += share;
   }
+  const byFamily = {} as Record<FamilyId, number>;
+  for (const id of Object.keys(FAMILIES) as FamilyId[]) byFamily[id] = raw[id] * smooth(0, 0.02, raw[id]);
   const impliedSoot = 0.25 * smooth(0.1, 0.34, co) * clamp01(hydrogen / 0.2);
-  return { byFamily, impliedSoot, burning };
+  return { byFamily, lead, impliedSoot, burning };
+}
+
+interface Source {
+  id: FamilyId;
+  /** Soot the make-up implies but does not list */
+  implied: boolean;
+  /** The species of this family there is most of */
+  lead: string;
+  weight: number;
 }
 
 /** Each family's weight in the blend: its share times how strongly it shows. Implied soot counts as soot. */
 function weights(exhaust: readonly { name: string; share: number }[]) {
-  const { byFamily, impliedSoot, burning } = shares(exhaust);
-  const list: { id: FamilyId; implied: boolean; share: number; weight: number }[] = [];
+  const { byFamily, lead, impliedSoot, burning } = shares(exhaust);
+  const list: Source[] = [];
   for (const id of Object.keys(FAMILIES) as FamilyId[]) {
     if (byFamily[id] > 0 && FAMILIES[id].strength > 0) {
-      // A family comes in gently over its first two percent, so the look does not step when a
-      // species first makes the solver's list (which starts at half a percent).
-      const share = byFamily[id] * smooth(0, 0.02, byFamily[id]);
-      list.push({ id, implied: false, share, weight: share * FAMILIES[id].strength });
+      list.push({ id, implied: false, lead: lead[id]?.name ?? '', weight: byFamily[id] * FAMILIES[id].strength });
     }
   }
-  if (impliedSoot > 0) list.push({ id: 'soot', implied: true, share: impliedSoot, weight: impliedSoot * FAMILIES.soot.strength });
+  if (impliedSoot > 0) list.push({ id: 'soot', implied: true, lead: 'CO', weight: impliedSoot * FAMILIES.soot.strength });
   list.sort((a, b) => b.weight - a.weight);
   return { list, byFamily, impliedSoot, burning, total: list.reduce((sum, w) => sum + w.weight, 0) };
 }
@@ -222,14 +235,51 @@ const BARELY = 0.02;
 
 /**
  * What the colour line names, strongest first: the family that shows most and, if another shows at
- * least a quarter as much, that one too. `implied` marks soot the make-up implies but does not list.
+ * least a quarter as much, that one too.
  */
-export function colourSources(exhaust: readonly { name: string; share: number }[]): { id: FamilyId; implied: boolean }[] {
+export function colourSources(exhaust: readonly { name: string; share: number }[]): { id: FamilyId; implied: boolean; lead: string }[] {
   const { list, total } = weights(exhaust);
   if (!(total > BARELY)) return [];
   const [first, second] = list;
   const named = second && second.weight >= 0.25 * first.weight ? [first, second] : [first];
-  return named.map(({ id, implied }) => ({ id, implied }));
+  return named.map(({ id, implied, lead }) => ({ id, implied, lead }));
+}
+
+/**
+ * How a source is named, as the main colour and as a lesser one. A family is wider than any one
+ * name for it, so the words follow what is actually in the list beside them: hot hydrogen is not
+ * called steam, and carbon dioxide is not called carbon monoxide.
+ */
+function wordsFor(source: { id: FamilyId; implied: boolean; lead: string }, exhaust: readonly { name: string; share: number }[]): { main: string; tinge: string } {
+  const listed = (test: (name: string) => boolean) => exhaust.some((e) => e.share > 0 && test(e.name));
+  // Soot the make-up implies is named for what the make-up does list: carbon that has not finished burning.
+  if (source.implied) return { main: 'unburnt carbon glowing orange', tinge: 'an orange glow from unburnt carbon' };
+  switch (source.id) {
+    case 'steam': {
+      const what = source.lead.startsWith('H2O') ? 'steam' : source.lead === 'H2' || source.lead === 'H' ? 'hot hydrogen' : 'hot oxygen';
+      return { main: `the faint blue of ${what}`, tinge: `a faint blue from ${what}` };
+    }
+    case 'carbonOxide':
+      return source.lead === 'CO'
+        ? { main: 'the blue-violet of burning carbon monoxide', tinge: 'a blue-violet tinge from carbon monoxide' }
+        : { main: 'the blue-violet glow of hot carbon dioxide', tinge: 'a blue-violet tinge from carbon dioxide' };
+    case 'halide': {
+      const hf = listed((n) => n === 'HF');
+      const hcl = listed((n) => n === 'HCL');
+      const what = hf && hcl ? 'hydrogen fluoride and chloride' : hf ? 'hydrogen fluoride' : hcl ? 'hydrogen chloride' : 'halogen compounds';
+      return { main: `the pale, nearly clear glow of ${what}`, tinge: `a pale haze from ${what}` };
+    }
+    case 'aluminium': {
+      const what = listed((n) => n.startsWith('AL2O')) ? 'aluminium oxide' : 'aluminium compounds';
+      return { main: what === 'aluminium oxide' ? 'white-hot droplets of aluminium oxide' : 'the white glare of aluminium compounds', tinge: `a white glare from ${what}` };
+    }
+    case 'beryllium': {
+      const what = listed((n) => /^Be\d?O/.test(n)) ? 'beryllium oxide' : 'beryllium compounds';
+      return { main: `white-hot ${what}`, tinge: `a white glare from ${what}` };
+    }
+    default:
+      return FAMILIES[source.id].words;
+  }
 }
 
 /** "Colour: soot glowing orange, with a green tinge from boron." Empty when there is no make-up. */
@@ -237,8 +287,5 @@ export function colourNote(exhaust: readonly { name: string; share: number }[]):
   if (exhaust.length === 0) return '';
   const [first, second] = colourSources(exhaust);
   if (!first) return 'Colour: almost none. This exhaust barely glows.';
-  // Soot the make-up implies is named for what the make-up does list: carbon that has not finished burning.
-  const words = (s: { id: FamilyId; implied: boolean }) =>
-    s.implied ? { main: 'unburnt carbon glowing orange', tinge: 'an orange glow from unburnt carbon' } : FAMILIES[s.id].words;
-  return `Colour: ${words(first).main}${second ? `, with ${words(second).tinge}` : ''}.`;
+  return `Colour: ${wordsFor(first, exhaust).main}${second ? `, with ${wordsFor(second, exhaust).tinge}` : ''}.`;
 }

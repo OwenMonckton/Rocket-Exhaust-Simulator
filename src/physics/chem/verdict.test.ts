@@ -100,7 +100,7 @@ describe('verdictFor', () => {
   });
 
   it('judges an unsettled solve unsolved', () => {
-    const bad: SolvedGas = { ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [] };
+    const bad: SolvedGas = { ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [], makeup: [] };
     expect(verdictFor('rp1', 'lox', bad).failure).toBe('unsolved');
   });
 
@@ -109,7 +109,7 @@ describe('verdictFor', () => {
   });
 
   it('writes clean notes for every pair', () => {
-    const stand: SolvedGas = { ok: true, tc: 3000, gamma: 1.2, molarMass: 20, cStar: 1700, ispVac: 3000, ispScale: 1, condensedShare: 0.05, exhaust: [] };
+    const stand: SolvedGas = { ok: true, tc: 3000, gamma: 1.2, molarMass: 20, cStar: 1700, ispVac: 3000, ispScale: 1, condensedShare: 0.05, exhaust: [], makeup: [] };
     const names = [...Object.values(FUELS), ...Object.values(OXIDISERS)].map((i) => i.name);
     for (const f of FUEL_IDS) for (const o of [NO_OXIDISER, ...OXIDISER_IDS]) {
       for (const n of verdictFor(f, o, stand).notes) {
@@ -127,14 +127,14 @@ describe('verdictFor', () => {
   });
 
   it('keeps acronyms intact', () => {
-    const v = verdictFor('udmh', 'lox', { ok: true, tc: 3000, gamma: 1.2, molarMass: 20, cStar: 1700, ispVac: 3000, ispScale: 1, condensedShare: 0, exhaust: [] });
+    const v = verdictFor('udmh', 'lox', { ok: true, tc: 3000, gamma: 1.2, molarMass: 20, cStar: 1700, ispVac: 3000, ispScale: 1, condensedShare: 0, exhaust: [], makeup: [] });
     const all = v.notes.join(' ');
     expect(all).toContain('UDMH');
     expect(all).not.toContain('uDMH');
   });
 
   it('explains the hydrazine caveat in plain words', () => {
-    const v = verdictFor('n2h4', 'none', { ok: true, tc: 1200, gamma: 1.3, molarMass: 10, cStar: 1500, ispVac: 2000, ispScale: 1, condensedShare: 0, exhaust: [] });
+    const v = verdictFor('n2h4', 'none', { ok: true, tc: 1200, gamma: 1.3, molarMass: 10, cStar: 1500, ispVac: 2000, ispScale: 1, condensedShare: 0, exhaust: [], makeup: [] });
     expect(v.notes.some((n) => /^Hydrazine alone breaks down into ammonia, hydrogen and nitrogen\./.test(n) && n.includes('eal thrusters'))).toBe(true);
   });
 });
