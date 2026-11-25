@@ -317,7 +317,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           range: () => RANGES.plugShare,
           get: (s) => s.config.plugShare,
           set: (v) => store.set({ config: { plugShare: Math.round(v * 100) / 100 } }),
-          format: (v) => `${Math.round(v * 100)} % of the throat's width`,
+          format: (v) => `${Math.round(v * 100)} % of the wall's width`,
           hidden: shapeHidden('plugShare'),
         },
         {

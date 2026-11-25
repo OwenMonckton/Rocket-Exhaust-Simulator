@@ -1,7 +1,7 @@
 import { SEA_LEVEL_PRESSURE } from '../physics/atmosphere';
 import { areaRatio, machFromAreaRatio, machFromPressureRatio, pressureRatio } from '../physics/nozzle';
 import { ENERGY_SOURCES } from '../physics/parts';
-import { ED_CAP_RADII, edCapTilt, jetLeftWall, lipSlope, ringWallRadius } from '../physics/exhausts';
+import { edCapRadii, edCapTilt, jetLeftWall, lipSlope, ringWallRadius } from '../physics/exhausts';
 import { resolveGas } from '../physics/gasSource';
 import type { EngineConfig, FlightState, RGB, SimResult } from '../physics/types';
 import { SIM_NX, SIM_NY, SPIKE_SAMPLES, type SimInputs, type SimWall } from './fluidSim';
@@ -233,8 +233,8 @@ export function edGrid(profile: EngineProfile, ringWallR: number): EdGrid {
  * there is none to simulate: another exhaust, or a bell too long for the grid.
  *
  * The grid's origin is the plane of the ring and its unit the wall's radius there. The plug is a
- * stub of a spike with a flat back; the gas enters through the ring between its rim and the wall,
- * straight along the axis; the bell is a solid wall from the ring to the mouth. The hollow behind
+ * solid body with a flared cap and a flat back; the gas enters through the ring between its rim and
+ * the wall, heading outward along the wall; the bell is a solid wall from the ring to the mouth. The hollow behind
  * the plug, and whether the outside air reaches into it, the grid works out for itself.
  */
 export function edSimInputs(
@@ -263,8 +263,9 @@ export function edSimInputs(
   const ringInner = Math.sqrt(Math.max(0, 1 - (throatShare * areaRatio(ED_ENTRY_MACH, g)) / Math.cos(tilt)));
   // The plug's cap: past the ring it flares outward beside the wall, turning the gas with it,
   // and ends in a flat back.
+  const capLength = edCapRadii(cfg);
   const radii: number[] = [];
-  for (let i = 0; i < SPIKE_SAMPLES; i++) radii.push(ringInner + Math.tan(tilt) * ((i / (SPIKE_SAMPLES - 1)) * ED_CAP_RADII));
+  for (let i = 0; i < SPIKE_SAMPLES; i++) radii.push(ringInner + Math.tan(tilt) * ((i / (SPIKE_SAMPLES - 1)) * capLength));
   // How much further the whole bell would expand the gas.
   const expansion = pressureRatio(machFromAreaRatio(r.expansionRatio, g), g) / pressureRatio(ED_ENTRY_MACH, g);
   return {
@@ -274,7 +275,7 @@ export function edSimInputs(
       profile: 0,
       spike: {
         radii,
-        length: ED_CAP_RADII,
+        length: capLength,
         // Outward: the opposite of an aerospike's cells, which fire inward.
         tilt: -tilt,
         designDensity: Math.pow(expansion, 1 / g),

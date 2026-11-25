@@ -7,7 +7,7 @@ import { decodeState, encodeState } from '../state/share';
 import { shapeHidden } from '../ui/controls';
 import { expansionText, STATE_COPY } from '../ui/copy';
 import { RANGES, edBaseDrag, edCompensation, edWakeSeals, sanitize, simulate } from './engine';
-import { ED_CAP_RADII, EXHAUSTS, EXHAUST_IDS, divergingWall, edCapTilt, lipSlope, ringWallRadius } from './exhausts';
+import { ED_CAP_RADII, EXHAUSTS, EXHAUST_IDS, divergingWall, edCapRadii, edCapTilt, lipSlope, ringWallRadius } from './exhausts';
 import { starterEngine, withExhaust } from './reshape';
 import type { EngineConfig } from './types';
 
@@ -468,5 +468,103 @@ describe('the whole nozzle in the plume grid', () => {
     const cfg = small();
     const r = simulate(cfg, sea);
     expect(edSimInputs(cfg, r, 0.25, engineProfile(cfg))!.inputs.fire).toBe(0.25);
+  });
+});
+
+describe('the cap on a very short bell (final review)', () => {
+  /** The smallest exit sanitize allows this nozzle: 1.15 times the wall's width at the ring. */
+  const stubby = (plugShare: number) => {
+    const base = starterEngine();
+    return sanitize({ ...base, exhaust: 'expansionDeflection', chamberDia: base.throatDia * 2.5, exitDia: base.throatDia * 1.05, plugShare });
+  };
+  const sea = { altitudeKm: 0, throttle: 1 };
+
+  it('is the usual length on an ordinary bell and no more than half the bell on a short one', () => {
+    const ordinary = sanitize({ ...stubby(0.7), exitDia: starterEngine().throatDia * 4 });
+    expect(edCapRadii(ordinary)).toBe(ED_CAP_RADII);
+    for (const plugShare of [0.5, 0.7, 0.8]) {
+      const cfg = stubby(plugShare);
+      const p = engineProfile(cfg);
+      const bell = (p.exitX - p.throatX) / ringWallRadius(cfg);
+      expect(bell, `plug ${plugShare}`).toBeLessThan(2 * ED_CAP_RADII);
+      expect(edCapRadii(cfg), `plug ${plugShare}`).toBeCloseTo(0.5 * bell, 9);
+    }
+  });
+
+  it('keeps the drawn cap inside the bell, with the passage beside it as wide as the throat', () => {
+    for (const plugShare of [0.5, 0.7, 0.8]) {
+      const cfg = stubby(plugShare);
+      const p = engineProfile(cfg);
+      const plug = p.plug!;
+      expect(plug.capX, `plug ${plugShare}`).toBeLessThan(p.exitX);
+      const throatArea = Math.PI * (cfg.throatDia / 2) ** 2;
+      for (const point of p.points) {
+        if (point.x <= plug.baseX || point.x > plug.capX) continue;
+        const inner = plugRadius(plug, point.x);
+        expect(Math.PI * (point.r ** 2 - inner ** 2), `plug ${plugShare} at x ${point.x}`).toBeGreaterThanOrEqual(throatArea * 0.99);
+      }
+    }
+  });
+
+  it('never squeezes the gas again past the ring in the grid, even at the smallest exit', () => {
+    for (const plugShare of [0.5, 0.7, 0.8]) {
+      for (const nozzleLenPct of [60, 80, 100]) {
+        const cfg = sanitize({ ...stubby(plugShare), nozzleLenPct });
+        const r = simulate(cfg, sea);
+        const ed = edSimInputs(cfg, r, 1, engineProfile(cfg))!;
+        const spike = ed.inputs.spike!;
+        expect(spike.length, `plug ${plugShare}`).toBeLessThan(ed.wall.x1);
+        const { slope, curve } = wallShape(ed.wall);
+        const ringArea = 1 - spike.radii[0] ** 2;
+        for (let i = 1; i < SPIKE_SAMPLES; i++) {
+          const x = (i / (SPIKE_SAMPLES - 1)) * spike.length;
+          const passage = (1 + slope * x + curve * x * x) ** 2 - spike.radii[i] ** 2;
+          expect(passage, `plug ${plugShare}, length ${nozzleLenPct}, sample ${i}`).toBeGreaterThanOrEqual(ringArea * (1 - 1e-9));
+        }
+      }
+    }
+  });
+});
+
+describe('a sealed nozzle far too big for the altitude (final review)', () => {
+  const sea = { altitudeKm: 0, throttle: 1 };
+  const cases: [string, EngineConfig][] = [
+    ['100 bar, area ratio 36', ed({ ...roomy })],
+    ['plug 0.5 at 30 bar, area ratio 36', ed({ ...roomy, plugShare: 0.5, chamberPressureBar: 30 })],
+    ['50 bar, area ratio 100', ed({ ...roomy, exitDia: starterEngine().throatDia * 10, chamberPressureBar: 50 })],
+  ];
+
+  it('reports the gas leaving the whole mouth, as "over-expanded" says it does', () => {
+    for (const [name, cfg] of cases) {
+      const r = simulate(cfg, sea);
+      expect(r.state, name).toBe('over');
+      expect(r.effectiveExitDia, name).toBeCloseTo(r.flowExitDia, 9);
+      expect(r.pe, name).toBeLessThan(r.pa);
+    }
+  });
+
+  it('covers engines whose bell would tear its jet off the wall here', () => {
+    const torn = cases.filter(([, cfg]) => simulate(sanitize({ ...cfg, exhaust: 'bell' }), sea).state === 'separated');
+    expect(torn.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps the thrust it had: the same bell\u2019s, less the plug\u2019s drag', () => {
+    for (const [name, cfg] of cases) {
+      const bell = simulate(sanitize({ ...cfg, exhaust: 'bell' }), sea).thrust;
+      const t = simulate(cfg, sea).thrust;
+      expect(t, name).toBeLessThan(bell);
+      expect(t, name).toBeGreaterThan(bell * 0.97);
+    }
+  });
+
+  it('does not step in thrust or in the size of its jet as the hollow seals on the way up', () => {
+    const cfg = ed({ ...roomy, chamberPressureBar: 15 });
+    let last = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    for (let km = 0.1; km <= 40; km += 0.1) {
+      const now = simulate(cfg, { altitudeKm: km, throttle: 1 });
+      expect(now.thrust / last.thrust, `${km} km`).toBeLessThan(1.02);
+      expect(now.thrust, `${km} km`).toBeGreaterThanOrEqual(last.thrust * (1 - 1e-9));
+      last = now;
+    }
   });
 });

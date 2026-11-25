@@ -97,8 +97,18 @@ export function ringWallRadius(cfg: EngineConfig): number {
   return cfg.exhaust === 'expansionDeflection' ? rt / Math.sqrt(1 - cfg.plugShare ** 2) : rt;
 }
 
-/** How far the cap of an expansion-deflection nozzle's plug runs past the ring, in ring-wall radii. */
+/** How far the cap of an expansion-deflection nozzle's plug runs past the ring at most, in ring-wall radii. */
 export const ED_CAP_RADII = 0.6;
+
+/**
+ * How far the cap runs past the ring on this engine, in ring-wall radii: its usual length, but
+ * never more than half the bell's, so that on a very short bell it does not reach the mouth and
+ * squeeze the gas a second time.
+ */
+export function edCapRadii(cfg: EngineConfig): number {
+  const rw = ringWallRadius(cfg);
+  return Math.min(ED_CAP_RADII, (0.5 * bellLength(cfg, rw, cfg.exitDia / 2)) / rw);
+}
 /** The steepest the cap sends the gas outward, radians. */
 const ED_MAX_TILT = (30 * Math.PI) / 180;
 

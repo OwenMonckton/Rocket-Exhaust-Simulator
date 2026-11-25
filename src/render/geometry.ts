@@ -1,6 +1,6 @@
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { gasFor } from '../physics/engine';
-import { ED_CAP_RADII, EXHAUSTS, divergingWall, edCapTilt, ringWallRadius } from '../physics/exhausts';
+import { EXHAUSTS, divergingWall, edCapRadii, edCapTilt, ringWallRadius } from '../physics/exhausts';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -174,7 +174,7 @@ export function engineProfile(cfg: EngineConfig): EngineProfile {
   if (cfg.exhaust === 'expansionDeflection') {
     const rimR = cfg.plugShare * rt;
     const flareX = Math.max(throatX - 1.5 * rimR, 0.5 * throatX);
-    const capLen = ED_CAP_RADII * rt;
+    const capLen = edCapRadii(cfg) * rt;
     plug = {
       baseX: throatX,
       rimR,

@@ -120,7 +120,7 @@ export interface EngineConfig {
   innerExitDia: number;
   /**
    * An expansion-deflection nozzle's plug: its diameter as a share of the wall's diameter at the
-   * ring it leaves round itself. Every other exhaust carries the default and ignores it.
+   * ring it leaves round itself. Every other exhaust keeps the setting, for a swap back, and ignores it.
    */
   plugShare: number;
 }

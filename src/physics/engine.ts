@@ -333,7 +333,11 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       : 0;
     // Sealed, the nozzle runs as a plain bell this size, but its jet does not tear off the wall:
     // it is thrown onto the wall at the ring and stays there. It reads as too big, not as separated.
-    if (cfg.exhaust === 'expansionDeflection' && state === 'separated') state = 'over';
+    // Its thrust stays the bell's (what a bell loses and keeps by tearing its jet off is the best
+    // figure there is for a nozzle this much too big), but the gas it reports is the gas leaving
+    // the whole mouth, as "over-expanded" says: set after the thrust is worked out, below.
+    const sealedTooBig = cfg.exhaust === 'expansionDeflection' && state === 'separated';
+    if (sealedTooBig) state = 'over';
     if (compensation > 0 && pa > 0 && pe < pa) {
       // Altitude compensation. Nothing but the surrounding air holds in the outside of an
       // aerospike's jet (or the inside of an expansion-deflection nozzle's), so below its design
@@ -349,6 +353,12 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
       // included, keeps it to a few percent however large the spike is.
       const matched = ispScale * eff * idealFlow * ve + (ispScale - 1) * pa * area;
       thrust += compensation * Math.max(0, matched - thrust);
+    }
+    if (sealedTooBig && state === 'over') {
+      mach = exitMach;
+      pExit = pe;
+      area = ae;
+      ve = exitVelocity(mach, g, gas.R, gas.tc);
     }
     return { thrust: n * Math.max(0, THRUST_EFF * thrust), state, mach, pExit, area, ve, eff };
   };

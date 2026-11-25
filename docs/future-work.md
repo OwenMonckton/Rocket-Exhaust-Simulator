@@ -1189,9 +1189,16 @@ choices did not survive meeting the gas simulation; they are listed under the de
    `1 - 0.02 x plug^2` and `0.1 + 0.7 x plug` (always under an aerospike's 0.7).
 6. **Sealed and too big, it reads "over-expanded", never "separated".** Its jet is thrown onto the
    wall at the ring and stays there.
-7. **The drawn cap follows the drawn wall** where a straight flare would pinch the passage between
+7. **The cap is shorter on a very short bell**: its usual 0.6 ring radii, but never more than half
+   the bell's length. At the smallest exit the bell is shorter than the cap, which would have
+   poked out of the mouth and squeezed the gas a second time. (Found in the final review.)
+8. **Sealed and far too big, it reports the gas leaving the whole mouth.** Its thrust there is the
+   same bell's, tearing off included, less the plug's drag; but the pressure, speed and width it
+   reports are the full bell's, so the plume is drawn as wide as the mouth, as "over-expanded"
+   says. (Found in the final review: it used to report the torn-off jet's.)
+9. **The drawn cap follows the drawn wall** where a straight flare would pinch the passage between
    them (the drawn wall is still coming round its throat arc there).
-8. **The chamber is painted, not simulated.** The cutaway's window onto the simulated gas opens
+10. **The chamber is painted, not simulated.** The cutaway's window onto the simulated gas opens
    onto the bell only. No grid holds the chamber's gas for this nozzle, so it is a plain glow in
    the flame's colour in every "Show inside" view.
 
@@ -1210,7 +1217,9 @@ frames, settled for 240 more, then read three times 25 frames apart and averaged
 across the plane of the mouth. The hollow's pressure is read on the centreline two cells behind
 the cap.
 
-No run had a cell that was not a number or had run away (22 runs).
+No run had a cell that was not a number or had run away. Twenty-two runs were made before
+decision 4 and seven after it; the table gathers them, with runs of the same plug and pressure
+that read alike set on one line.
 
 | Chamber | Plug | Altitude | Hollow, over outside pressure | Hollow, % of chamber pressure | Thrust, simulation over formula |
 |---|---|---|---|---|---|
@@ -1244,8 +1253,10 @@ What this shows:
 - **Sealed, the simulation reads 10% under the formula** (6% under at the biggest plug). The
   formula charges about 1% for the plug. The rest is most likely the shocks where this crude cap
   throws the gas onto a wall that was shaped as an ordinary bell: a real nozzle of this kind is
-  contoured to avoid them. Ten percent is the limit the design set for changing the formula, and
-  it was not changed.
+  contoured to avoid them. The design said to change the formula's numbers where the simulation
+  differed by more than a tenth. Two rows are just past that (0.896 and 0.899). They were not
+  changed: charging this nozzle 10% for a crude cap would make the formula describe this
+  simulation's plug, not the part. That is the owner's call to overturn.
 - **Open at 15 bar, the simulation reads 16 to 19% above the formula** at plugs of 0.7 and 0.5,
   about what a perfectly matched nozzle would give. The formula was not raised to meet it, because
   it is not allowed to beat an aerospike, and because thrust read across the mouth of an open,
@@ -1286,6 +1297,13 @@ long to simulate whole" and carried on. The link was a `v5` one. No console erro
   heat limit is the same as a bell's.
 - **Nozzles above an area ratio of about 40 are not simulated whole.**
 - **One chamber only**, and no nozzle extension.
+- **In the narrowest chamber the wall opens out to the ring.** With the smallest plug the wall at
+  the ring is 1.155 throats wide, and the narrowest chamber allowed is 1.11, so on such an engine
+  the chamber flares to its throat instead of narrowing to it.
+- **With the gas drawn, "Show inside" ignores the plug**: the drawn speed jumps at the ring, and
+  the throat's heat glow is drawn at a plain throat's radius, inside the passage.
+- **The plume grid is not cleared when the exhaust is changed while firing**, so the first moments
+  after a swap to or from this nozzle show the old gas in the new shape.
 - **Small things**
   - The drawn cap is a little slimmer than the simulated one where it follows the drawn wall.
   - The simulated ring is a little wider than the drawn one, because the gas enters the grid
