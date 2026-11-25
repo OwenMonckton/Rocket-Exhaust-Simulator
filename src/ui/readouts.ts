@@ -1,12 +1,15 @@
-import type { ExhaustId, Limits, SimResult } from '../physics/types';
+import { ENERGY_SOURCES } from '../physics/parts';
+import type { EnergyId, ExhaustId, Limits, SimResult } from '../physics/types';
 import type { SimulatedFigures } from '../render/simFigures';
 import { colourNote } from '../physics/plumeLook';
-import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, expansionText, exhaustLine, limitNote, showsFigures } from './copy';
+import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, expansionText, exhaustLine, limitCopy, limitNote, showsFigures } from './copy';
 
 export interface ReadoutInfo {
   result: SimResult;
   /** The engine's exhaust type, which the words under the nozzle state depend on */
   exhaust: ExhaustId;
+  /** The engine's energy source, which some wording and the gauges shown depend on. Left out, a combustion chamber. */
+  energy?: EnergyId;
   /** The unmodified preset at the same altitude and throttle, when the engine has been changed */
   stock: SimResult | null;
   stockName: string | null;
@@ -18,7 +21,17 @@ export interface ReadoutInfo {
   fire?: number;
 }
 
-function fmtThrust(n: number): string {
+/** The limit gauges an engine built round `energy` shows: nothing burns in an electric one, so it has no instability. */
+export function gaugesFor(energy: EnergyId): (keyof Limits)[] {
+  return ENERGY_SOURCES[energy].kind ? ['structural', 'heating'] : ['structural', 'heating', 'instability'];
+}
+
+/** Thrust in the unit that suits its size: a number, a space and the unit. */
+export function fmtThrust(n: number): string {
+  if (n < 0.1) return `${(n * 1000).toFixed(1)} mN`;
+  if (n < 1) return `${(n * 1000).toFixed(0)} mN`;
+  if (n < 10) return `${n.toFixed(2)} N`;
+  if (n < 1000) return `${n.toFixed(0)} N`;
   const kn = n / 1000;
   if (kn >= 10000) return `${(kn / 1000).toFixed(2)} MN`;
   if (kn >= 100) return `${kn.toFixed(0)} kN`;
@@ -40,8 +53,24 @@ function simulatedLine(text: string, simulated: number, formula: number): string
   return `${text} (${diff})`;
 }
 
-function fmtFlow(kgs: number): string {
+export function fmtFlow(kgs: number): string {
+  if (kgs < 1e-3) return `${(kgs * 1e6).toFixed(1)} mg/s`;
+  if (kgs < 1) return `${(kgs * 1000).toFixed(2)} g/s`;
   return kgs >= 100 ? `${kgs.toFixed(0)} kg/s` : `${kgs.toFixed(1)} kg/s`;
+}
+
+/** What a thrust would hold up against gravity, in words. */
+export function fmtPush(n: number): string {
+  const kg = n / 9.80665;
+  if (kg >= 10000) return `${(kg / 1000).toFixed(0)} tonnes of push`;
+  if (kg >= 1000) return `${(kg / 1000).toFixed(1)} tonnes of push`;
+  if (kg >= 1) return `${kg.toFixed(0)} kg of push`;
+  return kg >= 0.01 ? `${(kg * 1000).toFixed(0)} grams of push` : `${(kg * 1000).toFixed(1)} grams of push`;
+}
+
+function fmtWatts(w: number): string {
+  if (w < 1000) return `${w.toFixed(0)} W`;
+  return w < 10000 ? `${(w / 1000).toFixed(2)} kW` : `${(w / 1000).toFixed(1)} kW`;
 }
 
 function delta(now: number, stock: number): string {
@@ -77,8 +106,11 @@ const html = `
     <div class="stat" title="How much propellant the engine burns every second.">
       <span class="k">Propellant flow</span><span class="v small" data-r="flow"></span><span class="d" data-r="flowSub"></span>
     </div>
-    <div class="stat" title="Flame temperature inside the chamber, and how fast the exhaust leaves the nozzle.">
-      <span class="k">Flame temp / exhaust speed</span><span class="v small" data-r="temp"></span><span class="d" data-r="tempSub"></span>
+    <div class="stat" data-r="powerRow" title="The electrical power the engine is drawing, and the share of it that ends up as thrust. The rest leaves as heat. With hydrazine the share can pass 100%, because hydrazine gives off heat of its own as it breaks down.">
+      <span class="k">Power / into thrust</span><span class="v small" data-r="power"></span>
+    </div>
+    <div class="stat" title="Temperature of the gas inside the chamber, and how fast the exhaust leaves the nozzle.">
+      <span class="k" data-r="tempLabel">Flame temp / exhaust speed</span><span class="v small" data-r="temp"></span><span class="d" data-r="tempSub"></span>
     </div>
     <div class="stat" title="${SIMULATED_TIP}">
       <span class="k">From the simulated gas</span>
@@ -124,10 +156,14 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   };
 
   const exhaustRow = get('exhaustRow');
+  const powerRow = get('powerRow');
   const dash = '—';
   const gasFigures = ['thrust', 'thrustSub', 'isp', 'ispSub', 'ispBoth', 'ispBothSub', 'flow', 'flowSub', 'temp', 'tempSub', 'press', 'state', 'stateText'];
 
-  return ({ result: r, exhaust: exhaustId, stock, stockName, simulated: sim, simulatedNote, fire = 1 }) => {
+  return ({ result: r, exhaust: exhaustId, energy = 'combustion', stock, stockName, simulated: sim, simulatedNote, fire = 1 }) => {
+    const shown = gaugesFor(energy);
+    powerRow.hidden = !r.electric;
+    set('tempLabel', r.electric ? 'Gas temp / exhaust speed' : 'Flame temp / exhaust speed');
     // Unlit, the figures are what the engine would do; they run up with it as it lights.
     root.dataset.run = fire <= 0 ? 'unlit' : fire < 1 ? 'starting' : 'running';
     const exhaust = exhaustLine(r.exhaust);
@@ -138,11 +174,11 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
 
     // With no settled chemistry every figure from the gas would be made up, so none is shown.
     const figures = showsFigures(r);
-    for (const key of Object.keys(meterEls) as (keyof Limits)[]) meterEls[key].box.hidden = !figures;
+    for (const key of Object.keys(meterEls) as (keyof Limits)[]) meterEls[key].box.hidden = !figures || !shown.includes(key);
     if (!figures) {
       for (const name of gasFigures) set(name, name.endsWith('Sub') || name === 'stateText' ? '' : dash);
       delete get('state').dataset.state;
-      for (const name of ['thrustSim', 'ispSim', 'flowSim']) set(name, '');
+      for (const name of ['thrustSim', 'ispSim', 'flowSim', 'power']) set(name, '');
       set('thrustUnit', '');
       set('run', '');
       set('notes', limitNote(r));
@@ -156,9 +192,8 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     set('thrustUnit', thrustUnit);
     // One line says what every figure below it is: a forecast for a cold engine, or readings from a lit one.
     set('run', fire <= 0 ? 'Forecast: the engine is unlit' : fire < 1 ? 'Running up' : 'Live readings');
-    const tonnes = thrustNow / 9806.65;
-    const lift = tonnes >= 10 ? `${tonnes.toFixed(0)} tonnes of push` : `${tonnes.toFixed(1)} tonnes of push`;
-    set('thrustSub', stock ? delta(r.thrust, stock.thrust) : lift);
+    set('thrustSub', stock ? delta(r.thrust, stock.thrust) : fmtPush(thrustNow));
+    set('power', r.electric ? `${fmtWatts(r.electric.power)} / ${(r.electric.thrustEfficiency * 100).toFixed(0)}%` : '');
     set('isp', `${r.isp.toFixed(0)} s`);
     set('ispSub', stock ? delta(r.isp, stock.isp) : stockName ? `stock ${stockName}` : 'custom engine');
     set('ispBoth', `${r.ispSeaLevel.toFixed(0)} s / ${r.ispVacuum.toFixed(0)} s`);
@@ -168,7 +203,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     set('thrustSim', sim ? `Thrust ${simulatedLine(fmtThrust(sim.thrust), sim.thrust, r.thrust)}` : `No figures yet: ${simulatedNote || 'nothing to measure'}`);
     set('ispSim', sim ? `Efficiency ${simulatedLine(`${sim.isp.toFixed(0)} s`, sim.isp, r.isp)}` : '');
     set('flowSim', sim ? `Flow ${simulatedLine(fmtFlow(sim.massFlow), sim.massFlow, r.massFlow)}` : '');
-    set('flowSub', stock ? delta(r.massFlow, stock.massFlow) : `chamber at ${(r.pc / 1e5).toFixed(0)} bar`);
+    set('flowSub', stock ? delta(r.massFlow, stock.massFlow) : `chamber at ${(r.pc / 1e5).toFixed(r.pc < 1e6 ? 1 : 0)} bar`);
     set('temp', `${r.tc.toFixed(0)} K / ${(r.exitVelocity / 1000).toFixed(2)} km/s`);
     set('tempSub', `Mach ${r.exitMach.toFixed(1)} at the exit`);
     set('press', `${fmtPressure(r.pe)} vs ${fmtPressure(r.pa)}`);
@@ -180,6 +215,8 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     for (const key of Object.keys(meterEls) as (keyof Limits)[]) {
       const v = r.limits[key];
       const m = meterEls[key];
+      const tip = limitCopy(key, energy).tip;
+      if (m.box.title !== tip) m.box.title = tip;
       m.fill.style.width = `${Math.min(100, v * 100)}%`;
       m.value.textContent = `${Math.round(v * 100)}%`;
       m.box.setAttribute('aria-valuenow', String(Math.round(Math.min(1, v) * 100)));

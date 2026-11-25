@@ -69,7 +69,7 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): E
   // from the blank engine.
   if (isElectric(energy)) return electricStarter(cfg, energy);
   if (isElectric(cfg.energy)) {
-    const blank = { ...starterEngine(), presetId: cfg.presetId, powerKW: cfg.powerKW, voltage: cfg.voltage };
+    const blank = { ...starterEngine(), powerKW: cfg.powerKW, voltage: cfg.voltage };
     return withEnergy(blank, energy);
   }
   const source = ENERGY_SOURCES[energy];
@@ -105,6 +105,8 @@ function electricStarter(cfg: EngineConfig, energy: EnergyId): EngineConfig {
   const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, 0);
   return sanitize({
     ...cfg,
+    // No longer the example it was, modified: nothing of that engine is left.
+    presetId: null,
     energy,
     propellant: propellantsFor(energy)[0],
     exhaust: 'bell',

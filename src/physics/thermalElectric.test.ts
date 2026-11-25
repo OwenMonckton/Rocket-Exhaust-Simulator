@@ -152,12 +152,15 @@ describe('gas heated by electrical power', () => {
 describe('swapping to and from a heated-gas electric source', () => {
   it('goes from a big burning engine to an arcjet and back without breaking anything', () => {
     const big = sanitize({ ...starterEngine(), throatDia: 2, chamberDia: 4, exitDia: 8 });
-    const small = withEnergy(big, 'arcjet');
+    const small = withEnergy({ ...big, presetId: 'merlin-1d' }, 'arcjet');
     expect(small.energy).toBe('arcjet');
+    // Nothing of the example is left, so it is not that example modified.
+    expect(small.presetId).toBeNull();
     expect(small.propellant).toBe('aj-hydrazine');
     expect(simulate(small, space).failure).toBeNull();
     const back = withEnergy(small, 'combustion');
     expect(back.energy).toBe('combustion');
+    expect(withEnergy({ ...small, presetId: 'merlin-1d' }, 'combustion').presetId).toBeNull();
     expect(back.throatDia).toBeGreaterThanOrEqual(0.02);
     expect(simulate(back, space).failure).toBeNull();
     const nuclear = withEnergy(small, 'reactor');

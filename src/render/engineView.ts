@@ -4,7 +4,7 @@ import { jetLeftWall } from '../physics/exhausts';
 import { destroys } from '../physics/limits';
 import type { EngineConfig, Failure, RGB, SimResult } from '../physics/types';
 import { drawAerospike } from './aerospikeView';
-import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3, rand } from './drawUtil';
+import { FUEL_COLOUR, OX_COLOUR, css, drawFailure, heatMap, lerp3, rand, scaleBarLabel } from './drawUtil';
 import { GRAIN_END, engineProfile, grainBore, grainLabel, radiusAt, type EngineProfile, type View } from './geometry';
 
 export type FlowOverlay = 'none' | 'mach' | 'temp';
@@ -717,7 +717,7 @@ export function drawEngine(
   ctx.fillStyle = 'rgba(255,255,255,0.8)';
   ctx.font = '12px system-ui, sans-serif';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(barM >= 1 ? `${barM} m` : `${Math.round(barM * 100)} cm`, bx + barPx + 8, by + 4);
+  ctx.fillText(scaleBarLabel(barM), bx + barPx + 8, by + 4);
 
   if (anim.overlay !== 'none') {
     const lx = 18;

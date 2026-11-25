@@ -12,6 +12,7 @@ export const TIPS = {
   coneAngleDeg: "How steeply the cone's wall opens out. A wide cone is short and light, but the jet leaves it spread sideways, which wastes thrust. A narrow cone points the jet straighter, but it has to be longer and heavier.",
   innerExitDia: 'Width of the nozzle at the kink, where the short inner bell opens into the outer one. Near the ground only the inner bell works, so size it for the ground: the closer it is to the right size there, the less thrust is wasted low down.',
   plugShare: 'How much of the throat the plug fills. A bigger plug leaves a thinner ring further out: it adjusts better to the thick air near the ground, but its wide flat back drags more once the engine is in space.',
+  powerKW: 'The electrical power the engine draws. More power heats the propellant further, for a faster exhaust, until the heater or the arc cannot take it.',
   chamberPressureBar: 'How hard the engine is pushed. More pressure means more thrust, more heat and more stress.',
   energy: 'Where the engine gets its energy. Changing it rebuilds the chamber to suit, keeping the throat and nozzle.',
   exhaust: 'How the hot gas is turned into a jet. Changing it keeps the same total throat size, so as much propellant flows through.',
@@ -400,6 +401,30 @@ export function failureCopy(failure: Exclude<Failure, null>, energy: EnergyId): 
       text: 'The fission reaction ran hotter than the layer of water protecting the nozzle could take. Turn down the reaction temperature, lower the chamber pressure or widen the throat.',
     };
   }
+  if (failure === 'meltdown' && energy === 'resistojet') {
+    return {
+      title: 'Heater burnt out',
+      text: 'The heater has to be hotter than the gas it heats, and this much power for this little propellant took it past what a heater survives. Lower the power, or pass more propellant by raising the chamber pressure or widening the throat.',
+    };
+  }
+  if (failure === 'meltdown' && energy === 'arcjet') {
+    return {
+      title: 'Electrodes eroded',
+      text: 'The arc ran so hot that it ate away the electrodes it strikes between. Lower the power, or pass more propellant by raising the chamber pressure or widening the throat.',
+    };
+  }
+  if (failure === 'burnthrough' && ENERGY_SOURCES[energy].kind === 'thermal') {
+    return {
+      title: FAILURE_COPY.burnthrough.title,
+      text: 'The throat got too hot and melted through. Lower the power or the chamber pressure, or widen the throat. Small, high-pressure throats are the hardest to keep cool.',
+    };
+  }
+  if (failure === 'unsolved' && ENERGY_SOURCES[energy].kind === 'thermal') {
+    return {
+      title: FAILURE_COPY.unsolved.title,
+      text: 'The chemistry of this propellant would not settle at this power, so there is no way to say how the engine runs, and no figures are shown. Try a different power or chamber pressure. Restarting with nothing changed goes back to the last setup that ran.',
+    };
+  }
   if (failure === 'unsolved' && ENERGY_SOURCES[energy].mixKind === 'temperature') {
     return {
       title: FAILURE_COPY.unsolved.title,
@@ -414,3 +439,14 @@ export const LIMIT_COPY = {
   heating: { label: 'Heat load', tip: 'How close the hottest part is to melting: the throat, or the reactor core in a nuclear thermal engine. Throat heat rises with chamber pressure and with smaller throats.' },
   instability: { label: 'Instability', tip: 'How close the chamber is to shaking itself apart. Rises with chamber width.' },
 };
+
+/** A limit gauge's name and tip, with wording specific to an energy source where the general wording would mislead. */
+export function limitCopy(key: keyof typeof LIMIT_COPY, energy: EnergyId): { label: string; tip: string } {
+  if (key === 'heating' && energy === 'resistojet') {
+    return { label: LIMIT_COPY.heating.label, tip: 'How close the hottest part is to failing: the heater, which must run hotter than the gas it heats, or the throat. Heat rises with power and falls with more propellant flow.' };
+  }
+  if (key === 'heating' && energy === 'arcjet') {
+    return { label: LIMIT_COPY.heating.label, tip: 'How close the hottest part is to failing: the electrodes the arc strikes between, or the throat. Heat rises with power and falls with more propellant flow.' };
+  }
+  return LIMIT_COPY[key];
+}

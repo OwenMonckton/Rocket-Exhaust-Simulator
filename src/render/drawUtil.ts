@@ -10,6 +10,13 @@ export const lerp3 = (a: RGB, b: RGB, t: number): RGB => [
   a[2] + (b[2] - a[2]) * t,
 ];
 
+/** What the scale bar under the engine reads for a length in metres. */
+export function scaleBarLabel(m: number): string {
+  if (m >= 1) return `${m} m`;
+  if (m >= 0.01) return `${Math.round(m * 100)} cm`;
+  return `${Number((m * 1000).toPrecision(2))} mm`;
+}
+
 /** Blue → cyan → green → yellow → red. */
 export function heatMap(t: number): RGB {
   const stops: RGB[] = [

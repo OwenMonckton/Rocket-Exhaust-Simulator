@@ -1,6 +1,6 @@
-import { RANGES } from '../physics/engine';
+import { RANGES, rangesFor } from '../physics/engine';
 import { mixRange } from '../physics/gasSource';
-import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
+import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, isElectric, propellantsFor } from '../physics/parts';
 import { PROPELLANTS } from '../physics/propellants';
 import type { EngineConfig, EnergyId, ExhaustId, PropellantId } from '../physics/types';
 import { FUELS, FUEL_IDS, NO_OXIDISER, OXIDISERS, OXIDISER_IDS, type Ingredient } from '../physics/chem/ingredients';
@@ -104,6 +104,19 @@ export function propellantNote(s: AppState): string {
   return [made, ...warnings].filter(Boolean).join(' · ');
 }
 
+/** True for an engine that runs on electrical power, which has a Power setting. */
+export const powerShown = (s: AppState) => isElectric(s.config.energy);
+/** False for an engine whose temperature follows from its power and flow: it has no mixture to set. */
+export const mixtureShown = (s: AppState) => ENERGY_SOURCES[s.config.energy].mixKind !== 'power';
+/** One step of the chamber pressure: a tenth of a bar for the small electric engines, which run at a few bar. */
+export const pressureStep = (s: AppState) => (ENERGY_SOURCES[s.config.energy].kind === 'thermal' ? 0.1 : 1);
+
+/** Electrical power, in watts below a kilowatt. */
+export function formatPower(kW: number): string {
+  if (kW < 1) return `${Math.round(kW * 1000)} W`;
+  return kW < 10 ? `${kW.toFixed(2)} kW` : `${kW.toFixed(1)} kW`;
+}
+
 type MixKind = 'ratio' | 'temperature' | 'none' | 'power';
 
 /**
@@ -135,7 +148,8 @@ const STEPS = 1000;
 export function formatLength(m: number): string {
   if (m >= 1) return `${m.toFixed(2)} m`;
   if (m >= 0.1) return `${(m * 100).toFixed(1)} cm`;
-  return `${(m * 100).toFixed(2)} cm`;
+  if (m >= 0.01) return `${(m * 100).toFixed(2)} cm`;
+  return `${(m * 1000).toFixed(2)} mm`;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -155,7 +169,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
     label,
     tip: TIPS[key],
     log: true,
-    range: () => RANGES[key],
+    range: (s) => rangesFor(s.config.energy)[key],
     get: (s) => s.config[key],
     set: (v) => store.set({ config: { [key]: v } }),
     format: (v, s) => {
@@ -324,11 +338,25 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           id: 'chamberPressureBar',
           label: 'Chamber pressure',
           tip: TIPS.chamberPressureBar,
-          step: () => 1,
-          range: () => RANGES.chamberPressureBar,
+          step: pressureStep,
+          range: (s) => rangesFor(s.config.energy).chamberPressureBar,
           get: (s) => s.config.chamberPressureBar,
-          set: (v) => store.set({ config: { chamberPressureBar: Math.round(v) } }),
-          format: (v) => `${Math.round(v)} bar`,
+          set: (v) => {
+            const step = pressureStep(store.get());
+            store.set({ config: { chamberPressureBar: Math.round(v / step) * step } });
+          },
+          format: (v, s) => (pressureStep(s) < 1 ? `${v.toFixed(1)} bar` : `${Math.round(v)} bar`),
+        },
+        {
+          id: 'powerKW',
+          label: 'Power',
+          tip: TIPS.powerKW,
+          log: true,
+          range: () => RANGES.powerKW,
+          get: (s) => s.config.powerKW,
+          set: (v) => store.set({ config: { powerKW: Number(v.toPrecision(3)) } }),
+          format: (v) => formatPower(v),
+          hidden: (s) => !powerShown(s),
         },
       ],
     },
@@ -356,6 +384,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           },
           format: (v, s) => formatMixture(v, ENERGY_SOURCES[s.config.energy].mixKind, noOxidiser(s)),
           disabled: (s) => ENERGY_SOURCES[s.config.energy].mixKind === 'none' || noOxidiser(s),
+          hidden: (s) => !mixtureShown(s),
           describe: (s) =>
             ENERGY_SOURCES[s.config.energy].mixLabel ??
             { label: 'Mixture ratio', tip: noOxidiser(s) ? TIPS.noMixture : TIPS.mixtureRatio },

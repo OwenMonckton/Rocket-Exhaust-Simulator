@@ -7,7 +7,7 @@ import { createStore, defaultState, isModified } from './state/store';
 import { createControls } from './ui/controls';
 import { STATE_COPY, TIPS, failureCopy } from './ui/copy';
 import { NEW_ENGINE, createPicker } from './ui/picker';
-import { createReadouts } from './ui/readouts';
+import { createReadouts, fmtThrust } from './ui/readouts';
 import { createStand } from './ui/stand';
 import { createTestLog, stamp } from './ui/testlog';
 import { createTips } from './ui/tips';
@@ -146,7 +146,7 @@ const record = (info: FrameInfo) => {
   }
   if (info.firing && info.fire >= 1 && !seen.full) {
     seen.full = true;
-    log.add(`Full power: ${(info.result.thrust / 1000).toFixed(0)} kN.`, 'fire');
+    log.add(`Full power: ${fmtThrust(info.result.thrust)}.`, 'fire');
   }
   if (info.firing && seen.full && info.result.state !== seen.state) {
     seen.state = info.result.state;

@@ -5,7 +5,7 @@ import { EXHAUSTS, jetLeftWall, ringWallRadius } from '../physics/exhausts';
 import { getPreset } from '../physics/presets';
 import { ENERGY_SOURCES } from '../physics/parts';
 import { resolveGas } from '../physics/gasSource';
-import type { ExhaustId, Failure, SimResult } from '../physics/types';
+import type { EnergyId, ExhaustId, Failure, SimResult } from '../physics/types';
 import { machFromAreaRatio } from '../physics/nozzle';
 import { drawEngine, type FlowOverlay } from '../render/engineView';
 import { ENGINE_NX, type ColumnReading } from '../render/engineSim';
@@ -20,6 +20,8 @@ export interface FrameInfo {
   result: SimResult;
   /** The engine's exhaust type */
   exhaust: ExhaustId;
+  /** The engine's energy source */
+  energy: EnergyId;
   stock: SimResult | null;
   stockName: string | null;
   firing: boolean;
@@ -491,6 +493,7 @@ export function createRuntime(
       onFrame({
         result,
         exhaust: state.config.exhaust,
+        energy: state.config.energy,
         stock: preset && modified ? simulate(preset.config, state.flight) : null,
         stockName: preset?.name ?? null,
         firing,
