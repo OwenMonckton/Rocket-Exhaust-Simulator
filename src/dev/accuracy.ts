@@ -12,6 +12,7 @@
 //   console.table(acc.joinTable());
 //   console.table(acc.exhaustTable());   // each energy source with each new exhaust type, lit from cold
 //   console.table(acc.lightUp(acc.built('reactor', 'none')));   // frame by frame as it lights
+//   acc.fingerprints();                  // the plume grid's whole state for four fixed cases, to show a change left them alone
 //
 // Anywhere it takes an engine, it takes an example engine's id or a whole configuration (see `built`).
 //
@@ -24,11 +25,11 @@ import { getPreset } from '../physics/presets';
 import { starterEngine, withEnergy, withExhaust } from '../physics/reshape';
 import type { EnergyId, EngineConfig, ExhaustId, SimResult } from '../physics/types';
 import { ENGINE_NX, ENGINE_NY, createEngineSim, type EngineSim, type EngineSimInputs } from '../render/engineSim';
-import { SIM_NX, SIM_NY, createFluidSim, type FluidSim } from '../render/fluidSim';
+import { SIM_NX, SIM_NY, createFluidSim, type FluidSim, type SimInputs, type SimWall } from '../render/fluidSim';
 import { stepGas } from '../render/gasSim';
 import { GRAIN_END, engineProfile, grainBore, radiusAt } from '../render/geometry';
 import { gridLength } from '../render/plume';
-import { engineRestPressure, simInputs, wholeNozzleFlow } from '../render/plumeParams';
+import { engineRestPressure, fixedExitFlow, simInputs, spikeSimInputs, wholeNozzleFlow } from '../render/plumeParams';
 
 interface Context {
   gl: WebGL2RenderingContext;
@@ -489,4 +490,91 @@ export function joinTable() {
     joined('rs-25', 0, 14),
     joined('rs-25', 30, 10),
   ];
+}
+
+// ---- Fingerprints of the plume grid ----
+//
+// For showing that a change to the plume solver left the engines it was not meant for exactly as
+// they were. Each case runs the plume grid alone, from cold, with inputs that depend on nothing but
+// the engine, and sums every number in the grid. The same build on the same graphics card gives the
+// same sums every time; a change that reaches a case moves them.
+
+export type FingerprintCase = 'bell' | 'aerospike' | 'extensionSeated' | 'extensionHalf';
+
+const FINGERPRINT_FRAMES = 240;
+const FINGERPRINT_RAMP = 60;
+
+/** What the plume grid is given for a case at full fire: inputs, any wall, and the grid's size. */
+function fingerprintSetup(name: FingerprintCase): { inputs: SimInputs; wall: SimWall | null; length: number; upstream: number } {
+  const size = (across: number) => {
+    const length = gridLength(across * 1.05);
+    return { length, upstream: Math.min(2, 0.15 * length) };
+  };
+  if (name === 'bell') {
+    // Merlin 1D at sea level, the jet as it leaves the whole nozzle.
+    const cfg = getPreset('merlin-1d')!.config;
+    const r = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    return { inputs: simInputs(cfg, r, 1, { flow: wholeNozzleFlow(r) }), wall: null, ...size(10) };
+  }
+  if (name === 'aerospike') {
+    // The XRS-2200 at sea level: a ring of gas at the lip of a solid spike.
+    const cfg = getPreset('xrs-2200')!.config;
+    const r = simulate(cfg, { altitudeKm: 0, throttle: 1 });
+    return { inputs: spikeSimInputs(cfg, r, 1, engineProfile(cfg).spike!), wall: null, ...size(10) };
+  }
+  // The RL10B-2 at 60 km, its extension seated or halfway along its travel: a solid curved wall
+  // standing in the plume grid, as the app builds it (runtime.ts).
+  const cfg = { ...getPreset('rl10b-2')!.config, extDeploy: name === 'extensionSeated' ? 1 : 0.5 };
+  const r = simulate(cfg, { altitudeKm: 60, throttle: 1 });
+  const ext = engineProfile(cfg).extension!;
+  const flow = fixedExitFlow(cfg, r, true)!;
+  const wall: SimWall = {
+    x0: -ext.shift / flow.radiusM,
+    r0: ext.seam.r / flow.radiusM,
+    x1: (ext.length - ext.shift) / flow.radiusM,
+    r1: cfg.exitDia / 2 / flow.radiusM,
+    slope0: ext.seamSlope,
+  };
+  return { inputs: simInputs(cfg, r, 1, { flow, wallSlope: ext.seamSlope }), wall, ...size(10) };
+}
+
+/**
+ * The plume grid's state after a case has run from cold: the sum of all its numbers and the sum
+ * of their squares, to 17 figures, and how many cells hold something that is not a number.
+ */
+export function fingerprint(name: FingerprintCase): string {
+  const { plume } = begin();
+  const { inputs, wall, length, upstream } = fingerprintSetup(name);
+  plume.reset();
+  for (let frame = 0; frame < FINGERPRINT_FRAMES; frame++) {
+    const fire = frame < FINGERPRINT_RAMP ? (frame + 1) / FINGERPRINT_RAMP : 1;
+    plume.step({ ...inputs, fire }, length + upstream, wall, upstream);
+    pace(frame);
+  }
+  let sum = 0;
+  let squares = 0;
+  let bad = 0;
+  for (const texture of [plume.texture, plume.scalarTexture]) {
+    const cells = read(texture, SIM_NX, SIM_NY);
+    for (let i = 0; i < cells.length; i++) {
+      const v = cells[i];
+      if (!Number.isFinite(v)) {
+        bad++;
+        continue;
+      }
+      sum += v;
+      squares += v * v;
+    }
+  }
+  return `${sum.toPrecision(17)} ${squares.toPrecision(17)} bad=${bad}`;
+}
+
+/** Every case's fingerprint, run twice, with whether the two runs agreed. */
+export function fingerprints() {
+  const cases: FingerprintCase[] = ['bell', 'aerospike', 'extensionSeated', 'extensionHalf'];
+  return cases.map((name) => {
+    const first = fingerprint(name);
+    const second = fingerprint(name);
+    return { case: name, fingerprint: first, repeats: first === second };
+  });
 }
