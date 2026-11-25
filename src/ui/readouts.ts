@@ -4,6 +4,7 @@ import { PROPELLANTS } from '../physics/propellants';
 import type { EnergyId, ExhaustId, Limits, PropellantId, SimResult } from '../physics/types';
 import type { SimulatedFigures } from '../render/simFigures';
 import { colourNote } from '../physics/plumeLook';
+import { FROZEN_RUN_LINE } from './runState';
 import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, expansionText, exhaustLine, limitCopy, limitNote, showsFigures } from './copy';
 
 export interface ReadoutInfo {
@@ -23,6 +24,8 @@ export interface ReadoutInfo {
   simulatedNote: string;
   /** How far the engine has run up: 0 unlit, 1 at full power. Left out, the engine is taken as running. */
   fire?: number;
+  /** True while a failure is showing and these are the engine's last live readings, held */
+  frozen?: boolean;
 }
 
 /** The limit gauges an engine built round `energy` shows: nothing burns in an electric one, so it has no instability. */
@@ -213,7 +216,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
   const TEMP_TIP = tempRow.title;
   const hideable = ['ispBothRow', 'nozzleRow', 'pressRow', 'simRow'];
 
-  return ({ result: r, exhaust: exhaustId, energy = 'combustion', propellant, stock, stockName, simulated: sim, simulatedNote, fire = 1 }) => {
+  return ({ result: r, exhaust: exhaustId, energy = 'combustion', propellant, stock, stockName, simulated: sim, simulatedNote, fire = 1, frozen = false }) => {
     const shown = gaugesFor(energy);
     const beam = ENERGY_SOURCES[energy].kind === 'beam' && propellant ? beamReadout(r, propellant, fire) : null;
     const hidden = rowsHidden(energy);
@@ -224,7 +227,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     powerRow.hidden = !r.electric;
     set('tempLabel', r.electric ? 'Gas temp / exhaust speed' : 'Flame temp / exhaust speed');
     // Unlit, the figures are what the engine would do; they run up with it as it lights.
-    root.dataset.run = fire <= 0 ? 'unlit' : fire < 1 ? 'starting' : 'running';
+    root.dataset.run = frozen ? 'failed' : fire <= 0 ? 'unlit' : fire < 1 ? 'starting' : 'running';
     const exhaust = exhaustLine(r.exhaust);
     set('exhaust', exhaust);
     // What in that make-up is colouring the plume. Empty, like the make-up, for a hand-picked look.
@@ -282,6 +285,7 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
       if (stock) set('flowSub', delta(r.massFlow, stock.massFlow));
     }
     set('volts', beam ? beam.volts : '');
+    if (frozen) set('run', FROZEN_RUN_LINE);
 
     for (const key of Object.keys(meterEls) as (keyof Limits)[]) {
       const v = r.limits[key];
@@ -298,7 +302,8 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
       m.box.dataset.level = v >= 1 ? 'red' : v >= REDLINE ? 'amber' : 'ok';
     }
     const msgs: string[] = [];
-    if (r.failure) msgs.push(limitNote(r));
+    // Held at the moment of failure, the line says what the figures are; otherwise it warns ahead.
+    if (r.failure) msgs.push(frozen ? 'Past its limit: this is what broke it.' : limitNote(r));
     if (r.shudder > 0 && !r.failure) msgs.push('The chamber is shuddering, close to combustion instability.');
     if (r.rough) msgs.push('Running rough: the mixture is at the edge of what will burn.');
     if (r.combustionEff < 0.95 && r.shudder === 0 && !r.rough) {

@@ -65,6 +65,8 @@ export interface StageLayout {
 
 export interface Runtime {
   toggleFire(): void;
+  /** Stop at once, with no run-down: a different engine is being put on the stand. */
+  shutDown(): void;
   /** Start an altitude sweep in a direction (1 up, -1 down), or pause it if already running that way. */
   toggleSweep(direction: 1 | -1): void;
   rebuild(): void;
@@ -547,6 +549,11 @@ export function createRuntime(
     setEngineGas(mode) {
       if (mode === 'sim' && engineGas !== 'sim') plume?.resetEngineSim();
       engineGas = mode;
+    },
+    shutDown() {
+      firing = false;
+      fire = 0;
+      sweep = 0;
     },
     toggleFire() {
       if (failure) return;

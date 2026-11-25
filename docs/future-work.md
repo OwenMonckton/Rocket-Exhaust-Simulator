@@ -1550,3 +1550,41 @@ Done 25 November 2026, across the page at 1440, 1024 and 375 wide.
 Looked at and left: the design detector's advisories about font sizes and colours outside
 DESIGN.md are all on lines from before this pass. The first-fire "Sound is off" notice can sit
 over the end of the legend for the few seconds it shows.
+
+## After the second UI critique: the run state and accessibility
+
+The critique of 25 November 2026 scored the page 29/40, up from 26
+(`.impeccable/critique/2026-11-25T16-06-33Z__index-html.md`). Its two P1 issues were fixed the
+same day; its three P2 issues were left (below).
+
+### What changed
+
+- **Picking another engine, or opening a link, while firing shuts the stand down first.** The
+  plume used to stay lit under a "Standby" clock, with a log reading "Ready to fire" and no
+  Ignition line. Now the run ends, the log starts afresh and the clock reads Standby.
+- **At a failure the readings hold the moment it came**, under a red "Readings at the moment of
+  failure" line: the failing engine's figures at the power the run had reached, with the gauge
+  that broke it at full strength. They used to fall back to a calm unlit forecast. Settings moved
+  while the notice shows do not change what is held. An engine that never lit has nothing to hold
+  and shows the forecast as before. (`nextLive` and `readingsFor` in `src/ui/runState.ts`.)
+- **The line logged when the engine is put right says what happened**: "Engine rebuilt and back
+  on the stand." below 2 km, "Engine rebuilt." above it, and "Ready to fire again." (or "switch
+  on", for a beam thruster) after a failure that did no damage. It used to say "Engine back on
+  the stand." at any height.
+- **Every slider has a name and a spoken value with its unit** ("Throttle", "100 %"). Each one sat
+  inside a label whose first labelable element was its read-out, so none had a name.
+- **Forecast figures are readable.** They sat back by fading to half strength, which measured
+  2.7:1 on the panel; they now sit back in the Dim colour (6.2:1). A gauge's percentage keeps its
+  own colour while unlit, so a forecast already past a limit reads in red at 5.0:1 rather than at
+  half strength. The detector no longer reports low contrast.
+- **Space no longer fires the engine while a slider or text box has focus.** The Fire button says
+  that Space is its shortcut, in its tip and to a screen reader.
+- **When a failure notice opens, the keyboard's focus moves to its button.**
+
+### Left from that critique
+
+- The test log is squeezed when "Engineer's numbers" is open (P2).
+- The engine picker is 18 equal cards, ungrouped, with text cut mid-word (P2).
+- On a phone the thrust figure is below the fold, and the numbered marks crowd the left edge (P2).
+- Fire is still the 32nd of 33 tab stops; Space is the way to it from the keyboard.
+- Thrust and the gauges are not read out as they change; only the log is.

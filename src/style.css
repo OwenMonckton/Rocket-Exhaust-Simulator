@@ -1058,17 +1058,27 @@ button.primary:hover:not(:disabled) {
   color: var(--yellow);
 }
 
-/* Unlit, everything is a forecast and sits back together; it comes up to full strength as the engine does. */
+/* Unlit, everything is a forecast and sits back together; it comes up to full strength as the
+   engine does. The figures sit back in the Dim colour rather than fading, so they stay readable
+   (at least 4.5:1 on the panel), and a gauge's percentage keeps its own colour: a limit the
+   forecast already passes is the loudest thing on the page, not the faintest. */
 #readouts[data-run='unlit'] .hero .v,
-#readouts[data-run='unlit'] .pair .v,
-#readouts[data-run='unlit'] .pct,
-#readouts[data-run='unlit'] .fill,
-#readouts[data-run='unlit'] .state {
+#readouts[data-run='unlit'] .pair .v {
+  color: var(--dim);
+}
+
+#readouts[data-run='unlit'] .fill {
   opacity: 0.5;
 }
 
 #readouts[data-run='unlit'] .state {
+  color: var(--dim);
   border-style: dashed;
+}
+
+/* Held at the moment of a failure: the last live readings, at full strength, under a red line. */
+#readouts[data-run='failed'] .run {
+  color: var(--red-text);
 }
 
 .pair {

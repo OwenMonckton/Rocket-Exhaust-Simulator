@@ -1,4 +1,5 @@
 import { isBeam } from './physics/parts';
+import type { Failure } from './physics/types';
 import { getPreset } from './physics/presets';
 import type { FlowOverlay } from './render/engineView';
 import { createRuntime, type FrameInfo, type PlumeMode } from './sim/runtime';
@@ -9,6 +10,7 @@ import { createControls } from './ui/controls';
 import { STATE_COPY, TIPS, failureCopy, restartLabel } from './ui/copy';
 import { NEW_ENGINE, createPicker } from './ui/picker';
 import { createReadouts, fmtThrust } from './ui/readouts';
+import { nextLive, readingsFor, restoreLine, spaceFires, type LiveFrame } from './ui/runState';
 import { createStand } from './ui/stand';
 import { createTestLog, stamp } from './ui/testlog';
 import { createTips } from './ui/tips';
@@ -30,6 +32,8 @@ const blurb = $('blurb');
 // Choosing a whole engine clears away the wreck of the last one. The store tells the runtime
 // about the new engine, which becomes the one Rebuild goes back to.
 const picker = createPicker($('picker'), $('picker-list'), $<HTMLButtonElement>('change-engine'), $<HTMLButtonElement>('picker-close'), (id) => {
+  // A whole new engine goes on a stand that has been shut down: the test of the last one is over.
+  runtime.shutDown();
   runtime.clearFailure();
   if (id === NEW_ENGINE) store.newEngine();
   else store.loadPreset(id);
@@ -89,6 +93,9 @@ const syncHeader = () => {
 const articleName = () => getPreset(store.get().config.presetId)?.name ?? 'Your engine';
 const announceEngine = () => {
   log.reset();
+  // The log starts afresh, so nothing it said about the last engine's run is carried over.
+  Object.assign(seen, { firing: false, full: false, state: '', failure: null, altitude: store.get().flight.altitudeKm });
+  lastLive = null;
   log.add(`${articleName()} on the stand. Ready to fire.`);
 };
 store.subscribe(syncHeader);
@@ -127,7 +134,8 @@ const sweeps = ([
 });
 
 // What the log has already said, so each moment of a test is written down once.
-const seen = { firing: false, full: false, state: '', altitude: 0, failed: false, soundAsked: false };
+const seen: { firing: boolean; full: boolean; state: string; altitude: number; failure: Failure; soundAsked: boolean } =
+  { firing: false, full: false, state: '', altitude: 0, failure: null, soundAsked: false };
 /** Write down what changed since the last look: ignition, full power, the nozzle, the climb, the end. */
 const record = (info: FrameInfo) => {
   const altitude = store.get().flight.altitudeKm;
@@ -162,16 +170,19 @@ const record = (info: FrameInfo) => {
       if (seen.altitude >= km && altitude < km) log.add(km === 86 ? 'Back in the air.' : 'Below 10 km.');
     }
   }
-  if (info.failure && !seen.failed) log.add(`${failureCopy(info.failure, store.get().config.energy).title}.`, 'fail');
+  if (info.failure && !seen.failure) log.add(`${failureCopy(info.failure, store.get().config.energy).title}.`, 'fail');
   else if (!info.firing && seen.firing && !info.failure) log.add('Shutdown.');
-  if (!info.failure && seen.failed) log.add('Engine back on the stand.');
+  if (!info.failure && seen.failure) log.add(restoreLine(seen.failure, altitude, store.get().config.energy));
   seen.firing = info.firing;
-  seen.failed = info.failure !== null;
+  seen.failure = info.failure;
   seen.altitude = altitude;
 };
 
+// The engine's last frame while lit, held so the readings can show the moment a failure came.
+let lastLive: LiveFrame | null = null;
 const runtime = createRuntime(store, stage, $<HTMLCanvasElement>('gl'), $<HTMLCanvasElement>('overlay-canvas'), (info) => {
-  updateReadouts(info);
+  lastLive = nextLive(lastLive, info);
+  updateReadouts({ ...info, ...readingsFor(info, lastLive) });
   record(info);
   const ids = partIds();
   stand.update(info.layout, store.get().flight.altitudeKm, ids);
@@ -212,11 +223,17 @@ const runtime = createRuntime(store, stage, $<HTMLCanvasElement>('gl'), $<HTMLCa
     // Nothing is lit in a reactor: it is started again, not relit.
     rebuildBtn.textContent = restartLabel(store.get().config.energy, info.failure);
   }
+  // As the notice opens, the way out of it takes the keyboard's focus.
+  const opening = failureBox.hidden && info.failure !== null;
   failureBox.hidden = info.failure === null;
+  if (opening) rebuildBtn.focus({ preventScroll: true });
 });
 $('nogl').hidden = runtime.hasPlume;
 
 fireBtn.addEventListener('click', () => runtime.toggleFire());
+// Space fires or shuts down from anywhere that does not use Space itself. Say so.
+fireBtn.setAttribute('aria-keyshortcuts', 'Space');
+fireBtn.title = 'Fire the engine, or shut it down. Shortcut: Space.';
 for (const s of sweeps) s.button.addEventListener('click', () => runtime.toggleSweep(s.direction));
 rebuildBtn.addEventListener('click', () => runtime.rebuild());
 
@@ -300,7 +317,7 @@ stage.addEventListener(
 
 window.addEventListener('keydown', (e) => {
   const tag = (e.target as HTMLElement).tagName;
-  if (e.code === 'Space' && tag !== 'BUTTON' && tag !== 'SELECT' && tag !== 'SUMMARY') {
+  if (e.code === 'Space' && spaceFires(tag)) {
     e.preventDefault();
     runtime.toggleFire();
   }
@@ -326,6 +343,7 @@ window.addEventListener('hashchange', () => {
   const next = decodeState(location.hash);
   if (next && encodeState(next) !== encodeState(store.get())) {
     // A link is a whole engine too.
+    runtime.shutDown();
     runtime.clearFailure();
     store.replace(next);
     announceEngine();

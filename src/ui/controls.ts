@@ -594,6 +594,9 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           name.textContent = text.label;
           row.title = text.tip;
         }
+        // A slider is named by its label and read out in its own units, not as a bare number.
+        if (input.getAttribute('aria-label') !== name.textContent) input.setAttribute('aria-label', name.textContent ?? spec.label);
+        if (input.getAttribute('aria-valuetext') !== value.textContent) input.setAttribute('aria-valuetext', value.textContent ?? '');
         const off = spec.disabled?.(s) ?? false;
         input.disabled = off;
         row.classList.toggle('disabled', off);
