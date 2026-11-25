@@ -48,9 +48,9 @@ describe('share links', () => {
   });
   it('writes links that carry the three parts', () => {
     const text = encodeState({ config: getPreset('nerva')!.config, flight: { altitudeKm: 100, throttle: 1 } });
-    expect(text.startsWith('v4.')).toBe(true);
+    expect(text.startsWith('v5.')).toBe(true);
     const packed = JSON.parse(atob(text.slice(3).replace(/-/g, '+').replace(/_/g, '/')));
-    expect(packed).toHaveLength(22);
+    expect(packed).toHaveLength(23);
     expect(packed.slice(0, 4)).toEqual(['nerva', 'reactor', 'bell', 'ntr-hydrogen']);
     expect(packed.slice(4, 6)).toEqual([getPreset('nerva')!.config.fuel, getPreset('nerva')!.config.oxidiser]);
   });
@@ -63,7 +63,7 @@ describe('share links', () => {
   it('reads v1 and v2 links exactly as before, with the tabled pair filled in (review focus 5)', () => {
     // Expected engines are what the links decoded to before Task 10 (share.ts at cb88400).
     const nums = [0.45, 0.38, 0.26, 1.06, 80, 0.012, 97, 2.36, 1, 0, 1, 1, 0, 1];
-    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1, coneAngleDeg: 15, innerExitDia: 0 };
+    const shape = { chamberDia: 0.45, chamberLen: 0.38, throatDia: 0.26, exitDia: 1.06, nozzleLenPct: 80, wall: 0.012, chamberPressureBar: 97, scale: 1, chambers: 1, extFixedDia: 0, extDeploy: 1, coneAngleDeg: 15, innerExitDia: 0, plugShare: 0.7 };
     const flight = { altitudeKm: 0, throttle: 1 };
     const v2 = decodeState('v2.' + btoa(JSON.stringify([null, 'combustion', 'bell', 'kerolox', ...nums])))!;
     expect(v2).toEqual({ config: { presetId: null, energy: 'combustion', exhaust: 'bell', propellant: 'kerolox', fuel: 'rp1', oxidiser: 'lox', mixtureRatio: 2.36, ...shape }, flight });
@@ -136,7 +136,7 @@ describe('share links', () => {
     const cfg = sanitize({ ...starterEngine(), chamberPressureBar: 137 });
     const packed = JSON.parse(atob(encodeState({ config: cfg, flight: { altitudeKm: 0, throttle: 1 } }).split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     packed[2] = 'expansion-deflection';
-    const link = 'v4.' + btoa(JSON.stringify(packed)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const link = 'v5.' + btoa(JSON.stringify(packed)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     const opened = decodeState(link)!.config;
     expect(opened.exhaust).toBe('bell');
     expect(opened.chamberPressureBar).toBe(137);

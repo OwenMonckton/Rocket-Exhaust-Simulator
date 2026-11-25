@@ -14,7 +14,7 @@ export type PropellantId =
   | 'saltwater';
 
 export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater';
-export type ExhaustId = 'bell' | 'cone' | 'dualBell' | 'none' | 'aerospike';
+export type ExhaustId = 'bell' | 'cone' | 'dualBell' | 'none' | 'aerospike' | 'expansionDeflection';
 
 export type RGB = [number, number, number];
 
@@ -118,6 +118,11 @@ export interface EngineConfig {
   coneAngleDeg: number;
   /** Diameter at a dual bell's kink, m; 0 means not set yet */
   innerExitDia: number;
+  /**
+   * An expansion-deflection nozzle's plug: its diameter as a share of the wall's diameter at the
+   * ring it leaves round itself. Every other exhaust carries the default and ignores it.
+   */
+  plugShare: number;
 }
 
 export interface FlightState {

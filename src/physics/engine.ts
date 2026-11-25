@@ -58,10 +58,19 @@ export const RANGES = {
   coneAngleDeg: { min: 8, max: 30, fallback: 15 },
   /** Diameter at a dual bell's kink, m; 0 means not set yet */
   innerExitDia: { min: 0, max: 25, fallback: 0 },
+  /** An expansion-deflection nozzle's plug, as a share of the wall's diameter at the ring */
+  plugShare: { min: 0.4, max: 0.8, fallback: 0.7 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
 } satisfies Record<string, Range>;
+
+/**
+ * How wide the wall at an expansion-deflection nozzle's ring may be: this share of the chamber's
+ * width, and the exit must be this many times wider than it for the bell to open at all.
+ */
+const ED_CHAMBER_SHARE = 0.95;
+const ED_EXIT_RATIO = 1.15;
 
 function clampTo(v: unknown, r: Range): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return r.fallback;
@@ -83,7 +92,7 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   const mix = mixRange({ ...cfg, propellant, fuel, oxidiser });
   const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
   const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
-  const exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
+  let exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
   // Only a bell has one to extend.
   const exhaust = isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
@@ -96,6 +105,19 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     const lo = 1.1 * throatDia;
     const hi = 0.95 * exitDia;
     innerExitDia = lo <= hi ? Math.min(hi, Math.max(lo, innerExitDia)) : (throatDia + exitDia) / 2;
+  }
+  // A plug pushes the wall at the ring outward. Where that wall would be wider than the chamber
+  // can feed or the exit can open from, the plug gives way first, as far as its smallest; if that
+  // is still not enough, the exit is widened.
+  // Every exhaust keeps its plug setting, as it keeps its cone angle, so a swap away and back
+  // does not lose it; only an expansion-deflection nozzle uses it.
+  let plugShare = clampTo(cfg.plugShare, RANGES.plugShare);
+  if (exhaust === 'expansionDeflection') {
+    // The widest the wall at the ring may be, as a diameter.
+    const room = Math.min(ED_CHAMBER_SHARE * chamberDia, exitDia / ED_EXIT_RATIO);
+    const fits = room > throatDia ? Math.sqrt(1 - (throatDia / room) ** 2) : 0;
+    plugShare = Math.max(RANGES.plugShare.min, Math.min(plugShare, fits));
+    exitDia = Math.max(exitDia, (ED_EXIT_RATIO * throatDia) / Math.sqrt(1 - plugShare ** 2));
   }
   return {
     presetId: typeof cfg.presetId === 'string' ? cfg.presetId : null,
@@ -120,6 +142,7 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
     coneAngleDeg: clampTo(cfg.coneAngleDeg, RANGES.coneAngleDeg),
     innerExitDia,
+    plugShare,
   };
 }
 

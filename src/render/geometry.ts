@@ -1,6 +1,6 @@
 import { areaRatio, machFromAreaRatio } from '../physics/nozzle';
 import { gasFor } from '../physics/engine';
-import { EXHAUSTS, divergingWall } from '../physics/exhausts';
+import { EXHAUSTS, divergingWall, ringWallRadius } from '../physics/exhausts';
 import type { EngineConfig } from '../physics/types';
 
 export interface ProfilePoint {
@@ -108,7 +108,8 @@ const DEG = Math.PI / 180;
 export function engineProfile(cfg: EngineConfig): EngineProfile {
   if (cfg.exhaust === 'aerospike') return aerospikeProfile(cfg);
   const rc = cfg.chamberDia / 2;
-  const rt = cfg.throatDia / 2;
+  // The wall's radius at the throat: wider than a plain throat where a plug fills its middle.
+  const rt = ringWallRadius(cfg);
   const re = cfg.exitDia / 2;
   const points: ProfilePoint[] = [
     { x: 0, r: rc },
