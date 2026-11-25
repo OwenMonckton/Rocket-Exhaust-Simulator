@@ -188,6 +188,23 @@ export function solveFluid(reactant: string, tK: number, pcBar: number, eps: num
     () => ({ kind: 'tp', t, pBar: p }), e);
 }
 
+/**
+ * The fitted gas of thermo reactant `reactant` alone, as it is stored (a liquid in its tank), given
+ * `addedJPerKg` of heat at `pcBar` and expanded to area ratio `eps`: an electrically heated engine,
+ * where the power and the flow set the heat and the temperature follows. The energy is rounded to
+ * 4 significant figures. Cached as solvePair is. Too little heat to make a gas does not settle,
+ * or settles cold.
+ */
+export function solveHeated(reactant: string, addedJPerKg: number, pcBar: number, eps: number): SolvedGas {
+  if (!usable(addedJPerKg) || !usable(pcBar) || pcBar === 0 || !Number.isFinite(eps) || !(eps >= 1)) return NOT_SETTLED;
+  const q = Number(addedJPerKg.toPrecision(4));
+  const p = sig3(pcBar);
+  const e = sig3(eps);
+  const chain = `heated|${reactant}`;
+  return cached(`${chain}|${q}|${p}|${e}`, chain, { x: q, p, e }, () => mixtureFrom([{ reactant: reactantOf(reactant), massFraction: 1 }]),
+    (m) => ({ kind: 'hp', h: m.h0 + q, pBar: p }), e);
+}
+
 // ---- A pair's mixtures ----
 
 const GRID_LO = 0.05;

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { pairRange } from './chem/pair';
 import { defaultInnerExitDia } from './exhausts';
 import { sanitize, simulate } from './engine';
-import { ENERGY_IDS, propellantsFor } from './parts';
+import { resolveGas } from './gasSource';
+import { ENERGY_IDS, EXHAUST_IDS, isBeam, isElectric, propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
 import { DEFAULT_CELLS, starterEngine, withEnergy, withExhaust, withPropellant } from './reshape';
 import type { EngineConfig } from './types';
@@ -42,6 +43,9 @@ describe('changing the energy source', () => {
   });
 
   for (const e of ENERGY_IDS) {
+    // An electric engine is nothing like the size of one that burns, so it starts from a small
+    // engine of its own kind instead of keeping the throat: thermalElectric.test.ts covers those.
+    if (isElectric(e)) continue;
     it(`gives a ${e} engine that runs, as stressed as the engine it came from`, () => {
       const from = starterEngine();
       const next = withEnergy(from, e);
@@ -106,6 +110,14 @@ describe('changing the exhaust type', () => {
   });
 
   for (const e of ENERGY_IDS) {
+    if (isBeam(e)) {
+      it(`leaves a ${e} thruster alone: it has no nozzle to change`, () => {
+        const thruster = withEnergy(starterEngine(), e);
+        for (const x of EXHAUST_IDS) expect(withExhaust(thruster, x), x).toEqual(thruster);
+        expect(resolveGas(thruster, 100, 16).settled).toBe(false);
+      });
+      continue;
+    }
     it(`gives a ${e} aerospike that runs`, () => {
       const spike = withExhaust(withEnergy(starterEngine(), e), 'aerospike');
       expect(simulate(spike, ground).failure).toBeNull();

@@ -13,7 +13,24 @@ const H = 56;
  * card with one scale so a long engine and a squat one keep their own proportions.
  */
 export function silhouettePath(config: EngineConfig): string {
-  const { points } = engineProfile(config);
+  const profile = engineProfile(config);
+  if (profile.beam) {
+    // A beam thruster's card: its body, then the two grids of a gridded thruster standing off its
+    // mouth, or the centre pole of a Hall thruster standing in its ring-shaped channel.
+    const k = Math.min((W - 40) / profile.length, (H - 10) / (2 * profile.maxRadius));
+    const len = profile.length * k;
+    const r = profile.maxRadius * k;
+    const x = (W - len) / 2;
+    const y = H / 2;
+    // Absolute points throughout, as the engines' outlines are.
+    const box = (bx: number, by: number, bw: number, bh: number) => {
+      const [l, t, rt, b] = [bx, by, bx + bw, by + bh].map((n) => n.toFixed(1));
+      return `M${l} ${t}L${rt} ${t}L${rt} ${b}L${l} ${b}Z`;
+    };
+    if (profile.beam === 'ion') return box(x, y - r, len, 2 * r) + box(x + len + 3, y - r, 2, 2 * r) + box(x + len + 8, y - r, 2, 2 * r);
+    return box(x, y - r, len * 0.5, 2 * r) + box(x + len * 0.5, y - r, len * 0.5, 0.12 * r) + box(x + len * 0.5, y + 0.88 * r, len * 0.5, 0.12 * r) + box(x + len * 0.5, y - 0.55 * r, len * 0.5, 1.1 * r);
+  }
+  const { points } = profile;
   const x0 = points[0].x;
   const length = points[points.length - 1].x - x0 || 1;
   const radius = Math.max(...points.map((p) => p.r)) || 1;

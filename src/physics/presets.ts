@@ -1,8 +1,8 @@
 import { FUEL_IDS, OXIDISER_IDS } from './chem/ingredients';
-import { simulate } from './engine';
+import { sanitize, simulate } from './engine';
 import { ENERGY_SOURCES } from './parts';
 import { PROPELLANTS } from './propellants';
-import { chamberShape, wallFor } from './reshape';
+import { chamberShape, starterEngine, wallFor } from './reshape';
 import type { EngineConfig, ExhaustId, PropellantId } from './types';
 
 export interface Preset {
@@ -35,8 +35,15 @@ interface Spec {
   chambers?: number;
   /** How the gas leaves (default a bell) */
   exhaust?: ExhaustId;
+  /** Electrical power, kW, for an electric engine */
+  powerKW?: number;
+  /** A beam thruster: its type, its voltage and the diameter of its face, m. The engine dimensions above are then unused. */
+  beam?: { type: 'ion' | 'hall'; voltage: number; diameterM: number };
   published: Preset['published'];
 }
+
+/** The engine dimensions a beam thruster's entry does not use. */
+const BEAM_SPEC = { propellant: 'xenon', pcBar: 100, of: 0, eps: 16, contraction: 1.7, lStar: 1, nozzleLenPct: 80, structural: 0.5 } as const;
 
 const SPECS: Spec[] = [
   {
@@ -137,12 +144,83 @@ const SPECS: Spec[] = [
     nozzleLenPct: 75, structural: 0.5,
     published: { thrustKN: 1200, atVacuum: false, ispSL: 240, ispVac: 265 },
   },
+  {
+    id: 'mr-510',
+    name: 'MR-510 arcjet',
+    blurb: 'Aerojet arcjet that keeps Lockheed Martin A2100 communications satellites on station. Two kilowatts of arc on hydrazine, for about twice the efficiency of a hydrazine thruster alone.',
+    // Published: 222 to 258 mN at 585 to 615 s on 1.53 to 2.04 kW (L3Harris electric propulsion data
+    // sheet; satcatalog.com gives the same thrust and Isp ranges). Taken here at the high-thrust end.
+    // The chamber pressure and nozzle are not published: 4 bar and an area ratio of 100 are typical.
+    propellant: 'aj-hydrazine', pcBar: 4, of: 0, eps: 100, contraction: 5, lStar: 2,
+    nozzleLenPct: 80, structural: 0.5, powerKW: 2,
+    published: { thrustKN: 0.000258, atVacuum: true, ispVac: 585 },
+  },
+  // Beam thrusters. Their thrust follows from their power and voltage, so nothing is sized to fit:
+  // the figures below are the published ones, and the formula's constants (electric.ts) are set
+  // once for all four.
+  {
+    id: 'nstar',
+    name: 'NSTAR ion thruster',
+    blurb: 'NASA gridded ion thruster that flew Deep Space 1 and took Dawn to Vesta and Ceres. Less push than the weight of a sheet of paper, kept up for years.',
+    // 0.5 to 2.3 kW, 92 mN and over 3,100 s at full power (NASA NEXT/NSTAR comparison tables,
+    // NTRS 20080010688; the Deep Space 1 report NTRS 20050237892 gives 92 mN and 2.9 mg/s). The
+    // screen grid stands at about 1,090 V at full power. A 30 cm thruster.
+    ...BEAM_SPEC, powerKW: 2.3, beam: { type: 'ion', voltage: 1100, diameterM: 0.3 },
+    published: { thrustKN: 0.000092, atVacuum: true, ispVac: 3100 },
+  },
+  {
+    id: 'next',
+    name: 'NEXT ion thruster',
+    blurb: 'NASA\u2019s successor to NSTAR, flown on the DART asteroid mission. Three times the power through grids only a little wider, at a higher voltage.',
+    // 6.9 kW, 1,800 V and 3.52 A of beam at full power; 236 mN and 4,190 s; a 36 cm beam (NASA
+    // NEXT long-duration test reports, NTRS 20130000079 and 20140016766).
+    ...BEAM_SPEC, powerKW: 6.9, beam: { type: 'ion', voltage: 1800, diameterM: 0.36 },
+    published: { thrustKN: 0.000236, atVacuum: true, ispVac: 4190 },
+  },
+  {
+    id: 'spt-100',
+    name: 'SPT-100 Hall thruster',
+    blurb: 'Russian Hall thruster from Fakel, flying since 1994 and the most-flown of its kind. Its name is the width of its channel: 100 mm.',
+    // 1,350 W at 300 V, 83 mN (80 mN in some tables), 1,600 s (the SPT-100 and Hall-effect
+    // thruster articles on Wikipedia, from Fakel's figures).
+    ...BEAM_SPEC, powerKW: 1.35, beam: { type: 'hall', voltage: 300, diameterM: 0.1 },
+    published: { thrustKN: 0.000083, atVacuum: true, ispVac: 1600 },
+  },
+  {
+    id: 'xr-5',
+    name: 'XR-5 Hall thruster',
+    blurb: 'Aerojet Rocketdyne\u2019s 4.5 kW Hall thruster, once called the BPT-4000. In 2010 it became the first American Hall thruster on a working satellite, and later rescued it by raising its orbit alone.',
+    // The 4.5 kW rating and 300 to 400 V range are confirmed (Wikipedia; University of Michigan
+    // PEPL). The thrust and Isp at 300 V, 290 mN and 1,790 s, are the commonly quoted data-sheet
+    // figures and were NOT confirmed against a source when this was written; nor was the channel
+    // width, taken as 170 mm. docs/future-work.md says so.
+    ...BEAM_SPEC, powerKW: 4.5, beam: { type: 'hall', voltage: 300, diameterM: 0.17 },
+    published: { thrustKN: 0.00029, atVacuum: true, ispVac: 1790 },
+  },
 ];
 
 const round = (v: number) => Math.round(v * 1e4) / 1e4;
+/** An electric engine's dimensions are fractions of a millimetre, so they are kept to a thousandth of one. */
+const fine = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /** Size the engine so the model reproduces the published thrust. Thrust is proportional to throat area. */
 function build(s: Spec): Preset {
+  if (s.beam) {
+    // No chamber, throat or nozzle to shape: sanitize gives the dimensions it does not have.
+    const config = sanitize({
+      ...starterEngine(),
+      presetId: s.id,
+      energy: s.beam.type,
+      exhaust: 'none',
+      propellant: s.propellant,
+      exitDia: s.beam.diameterM,
+      powerKW: s.powerKW ?? 2,
+      voltage: s.beam.voltage,
+    });
+    return { id: s.id, name: s.name, blurb: s.blurb, config, published: s.published };
+  }
+  const electric = s.powerKW !== undefined;
+  const tidy = electric ? fine : round;
   const shape = (throatDia: number): EngineConfig => {
     const { chamberDia, chamberLen } = chamberShape(throatDia, s.contraction, s.lStar, PROPELLANTS[s.propellant].lStarRef);
     return {
@@ -155,8 +233,8 @@ function build(s: Spec): Preset {
       oxidiser: PROPELLANTS[s.propellant].pair?.oxidiser ?? OXIDISER_IDS[0],
       chamberDia,
       chamberLen,
-      throatDia: round(throatDia),
-      exitDia: round(throatDia * Math.sqrt(s.eps)),
+      throatDia: tidy(throatDia),
+      exitDia: tidy(throatDia * Math.sqrt(s.eps)),
       nozzleLenPct: s.nozzleLenPct,
       wall: round(wallFor(s.pcBar, chamberDia, s.structural)),
       chamberPressureBar: s.pcBar,
@@ -170,9 +248,26 @@ function build(s: Spec): Preset {
       coneAngleDeg: 15,
       innerExitDia: 0,
       plugShare: 0.7,
+      powerKW: s.powerKW ?? 2,
+      voltage: 300,
     };
   };
   const flight = { altitudeKm: s.published.atVacuum ? 100 : 0, throttle: 1 };
+  if (electric) {
+    // On a fixed power thrust does not simply go as throat area (more flow is cooler flow), but it
+    // does rise with it, so the throat that gives the published thrust is searched for.
+    const target = s.published.thrustKN * 1000;
+    let lo = 0.0003;
+    let hi = 0.01;
+    for (let i = 0; i < 40; i++) {
+      const mid = Math.sqrt(lo * hi);
+      const r = simulate(sanitize(shape(mid)), flight);
+      // Too little flow for the power overheats; too much will not boil.
+      if (r.failure === 'meltdown' || (r.failure !== 'underpowered' && r.thrust < target)) lo = mid;
+      else hi = mid;
+    }
+    return { id: s.id, name: s.name, blurb: s.blurb, config: sanitize(shape(Math.sqrt(lo * hi))), published: s.published };
+  }
   const trial = simulate(shape(0.3), flight).thrust;
   const throatDia = 0.3 * Math.sqrt((s.published.thrustKN * 1000) / trial);
   return { id: s.id, name: s.name, blurb: s.blurb, config: shape(throatDia), published: s.published };

@@ -1,10 +1,10 @@
 import { pairRange } from './chem/pair';
-import { RANGES, sanitize, simulate } from './engine';
+import { RANGES, rangesFor, sanitize, simulate } from './engine';
 import { EXHAUSTS } from './exhausts';
 
 import { mixRange, resolveGas } from './gasSource';
 import { SIGMA_ALLOW_BAR } from './limits';
-import { ENERGY_SOURCES, propellantsFor } from './parts';
+import { ENERGY_SOURCES, isBeam, isElectric, propellantsFor } from './parts';
 import { isPropellantId } from './propellants';
 import type { EnergyId, EngineConfig, ExhaustId, PropellantId } from './types';
 
@@ -64,6 +64,14 @@ export function wallFor(pcBar: number, chamberDia: number, fraction: number): nu
  */
 export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): EngineConfig {
   if (cfg.energy === energy) return cfg;
+  // An electric engine is nothing like the size of one that burns, so there is no keeping the
+  // throat: going to one starts from a small engine of that kind, and coming from one starts
+  // from the blank engine.
+  if (isElectric(energy)) return electricStarter(cfg, energy);
+  if (isElectric(cfg.energy)) {
+    const blank = { ...starterEngine(), powerKW: cfg.powerKW, voltage: cfg.voltage };
+    return withEnergy(blank, energy);
+  }
   const source = ENERGY_SOURCES[energy];
   if (ENERGY_SOURCES[cfg.energy].throttleable && !source.throttleable && throttle < 1) {
     // Whole bars, as the slider sets them, and never more than it was running at.
@@ -81,6 +89,54 @@ export function withEnergy(cfg: EngineConfig, energy: EnergyId, throttle = 1): E
   const swapped = sanitize({ ...shaped, wall: (cfg.wall * shaped.chamberDia) / cfg.chamberDia });
   // The new source starts at its own usual temperature, so there is no old setting to keep.
   return source.mixKind === 'temperature' ? cooled(swapped, 0) : eased(swapped, heatLoad(cfg));
+}
+
+/**
+ * What each beam thruster starts as: about NSTAR, the ion thruster that flew on Deep Space 1 and
+ * Dawn, and about the SPT-100, the most-flown Hall thruster.
+ */
+const BEAM_STARTER: Partial<Record<EnergyId, Pick<EngineConfig, 'powerKW' | 'voltage' | 'exitDia'>>> = {
+  ion: { powerKW: 2.3, voltage: 1100, exitDia: 0.3 },
+  hall: { powerKW: 1.35, voltage: 300, exitDia: 0.1 },
+};
+
+/** What each heated-gas electric source starts at: its power, kW. */
+const STARTER_POWER: Partial<Record<EnergyId, number>> = { resistojet: 0.2, arcjet: 2 };
+
+/**
+ * A small engine built round an electric source: a throat of 0.6 mm at 4 bar with a nozzle of area
+ * ratio 100, about what a flown hydrazine arcjet has, on the source's first propellant.
+ */
+function electricStarter(cfg: EngineConfig, energy: EnergyId): EngineConfig {
+  if (isBeam(energy)) {
+    const start = BEAM_STARTER[energy]!;
+    // The blank engine's proportions stand in for the dimensions a beam thruster does not have.
+    return sanitize({ ...starterEngine(), presetId: null, energy, propellant: 'xenon', exhaust: 'none', ...start });
+  }
+  const source = ENERGY_SOURCES[energy];
+  const throatDia = 0.0006;
+  const pcBar = 4;
+  const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, 0);
+  return sanitize({
+    ...cfg,
+    // No longer the example it was, modified: nothing of that engine is left.
+    presetId: null,
+    energy,
+    propellant: propellantsFor(energy)[0],
+    exhaust: 'bell',
+    ...shape,
+    throatDia,
+    exitDia: throatDia * 10,
+    nozzleLenPct: 80,
+    wall: wallFor(pcBar, shape.chamberDia, 0.5),
+    chamberPressureBar: pcBar,
+    mixtureRatio: 0,
+    scale: 1,
+    chambers: 1,
+    extFixedDia: 0,
+    extDeploy: 1,
+    powerKW: STARTER_POWER[energy] ?? cfg.powerKW,
+  });
 }
 
 /** How close an engine is to its heat limit: 1 or more and it fails. */
@@ -155,6 +211,21 @@ export function withPair(cfg: EngineConfig, part: { fuel?: string; oxidiser?: st
 
 /** An engine on a new propellant, turned down if it now runs hotter than its throat can take. */
 function settled(next: EngineConfig, heatBefore: number): EngineConfig {
+  // An electric engine's heat is set by its power, which is the builder's to turn down. But a
+  // propellant that takes more to boil than the last one did would leave an engine that will not
+  // start, so the power is raised, a twentieth at a time, to the least that starts it.
+  if (isElectric(next.energy)) {
+    const flight = { altitudeKm: 0, throttle: 1 };
+    if (simulate(next, flight).failure !== 'underpowered') return next;
+    for (let kW = next.powerKW * 1.05; kW <= RANGES.powerKW.max; kW *= 1.05) {
+      const raised = sanitize({ ...next, powerKW: Number(kW.toPrecision(3)) });
+      const failure = simulate(raised, flight).failure;
+      if (failure === null) return raised;
+      // Past boiling and straight into overheating: no power suits this much flow.
+      if (failure !== 'underpowered') break;
+    }
+    return next;
+  }
   return ENERGY_SOURCES[next.energy].mixKind === 'temperature' ? cooled(next, heatBefore) : eased(next, heatBefore);
 }
 
@@ -215,7 +286,8 @@ function divided(cfg: EngineConfig, exhaust: ExhaustId, count: number): EngineCo
  * where a flame would burn through throats that small (small throats are the hardest to keep cool).
  */
 export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig {
-  if (cfg.exhaust === exhaust) return cfg;
+  // A beam thruster has no nozzle to change.
+  if (cfg.exhaust === exhaust || isBeam(cfg.energy)) return cfg;
   if (EXHAUSTS[cfg.exhaust].counts === 'chambers' && EXHAUSTS[exhaust].counts === 'chambers') {
     // The dimensions, count, pressure and wall mean the same thing for both: only the nozzle
     // changes. `sanitize` drops an extension the new type cannot take and sets a dual bell's kink.
@@ -235,7 +307,7 @@ export function withExhaust(cfg: EngineConfig, exhaust: ExhaustId): EngineConfig
     }
     return cooled(merged, heatBefore);
   }
-  const smallest = RANGES.throatDia.min;
+  const smallest = rangesFor(cfg.energy).throatDia.min;
   let count = Math.max(1, Math.min(DEFAULT_CELLS, Math.floor(cfg.chambers * (cfg.throatDia / smallest) ** 2 + 1e-9)));
   let next = divided(cfg, exhaust, count);
   if (ENERGY_SOURCES[cfg.energy].mixKind !== 'temperature') {
@@ -275,6 +347,8 @@ export function starterEngine(): EngineConfig {
     coneAngleDeg: 15,
     innerExitDia: 0,
     plugShare: 0.7,
+    powerKW: 2,
+    voltage: 300,
   };
   const shape = chamberShape(throatDia, source.starter.contraction, source.starter.lStar, lStarRefOf(unshaped));
   return sanitize({ ...unshaped, ...shape, wall: round(wallFor(pcBar, shape.chamberDia, 0.5)) });

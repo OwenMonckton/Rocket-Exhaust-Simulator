@@ -4,7 +4,7 @@ import { mixtureOf } from './ingredients';
 import { rocket } from './rocket';
 import { R_UNIVERSAL } from './thermo';
 import {
-  DROPLET_LOSS, chemCacheSize, clearChemCache, fitGas, pairRange, solveFluid, solvePair, type SolvedGas,
+  DROPLET_LOSS, chemCacheSize, clearChemCache, fitGas, pairRange, solveFluid, solveHeated, solvePair, type SolvedGas,
 } from './pair';
 
 const G0 = 9.80665;
@@ -315,4 +315,54 @@ describe('the cache', () => {
     for (let i = 0; i < 2100; i++) solvePair('h2', 'lox', 2 + i * 0.01, 70, 40);
     expect(chemCacheSize()).toBe(2000);
   }, 30_000);
+});
+
+describe('solveHeated: a fluid given a set energy per kilogram', () => {
+  const MJ = 1e6;
+
+  it('lets hydrazine break down by itself with no heat added', () => {
+    const gas = solveHeated('N2H4(L)', 0, 4, 100);
+    expect(gas.ok).toBe(true);
+    expect(gas.tc).toBeGreaterThan(800);
+    expect(gas.tc).toBeLessThan(1500);
+  });
+
+  it('agrees with heating the same fluid to the temperature it reaches', () => {
+    // Find the energy that takes ammonia to 2,000 K, then compare with the gas solved at 2,000 K.
+    let lo = 1 * MJ;
+    let hi = 40 * MJ;
+    for (let i = 0; i < 40; i++) {
+      const mid = 0.5 * (lo + hi);
+      const g = solveHeated('NH3(L)', mid, 4, 100);
+      if (g.ok && g.tc > 2000) hi = mid;
+      else lo = mid;
+    }
+    const heated = solveHeated('NH3(L)', hi, 4, 100);
+    const held = solveFluid('NH3(L)', 2000, 4, 100);
+    expect(heated.ok && held.ok).toBe(true);
+    expect(Math.abs(heated.tc - 2000)).toBeLessThan(5);
+    expect(relErr(heated.cStar, held.cStar)).toBeLessThan(0.005);
+    expect(relErr(heated.ispVac, held.ispVac)).toBeLessThan(0.005);
+  });
+
+  it('gets hotter with every step of energy', () => {
+    let last = 0;
+    for (let q = 6; q <= 60; q += 6) {
+      const g = solveHeated('H2(L)', q * MJ, 4, 100);
+      expect(g.ok, `${q} MJ/kg`).toBe(true);
+      expect(g.tc, `${q} MJ/kg`).toBeGreaterThan(last);
+      last = g.tc;
+    }
+  });
+
+  it('gives no hot gas from water that has not been given enough to boil it', () => {
+    const g = solveHeated('H2O(L)', 0.5 * MJ, 4, 100);
+    expect(!g.ok || g.tc < 450).toBe(true);
+  });
+
+  it('settles nothing for an energy that is not a number or is negative', () => {
+    for (const q of [NaN, Infinity, -1]) expect(solveHeated('NH3(L)', q, 4, 100).ok).toBe(false);
+    expect(solveHeated('NH3(L)', 5 * MJ, 0, 100).ok).toBe(false);
+    expect(solveHeated('NH3(L)', 5 * MJ, 4, 0.5).ok).toBe(false);
+  });
 });

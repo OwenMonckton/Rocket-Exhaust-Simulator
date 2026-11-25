@@ -105,6 +105,41 @@ exports[`example engines > figures for merlin-vac 1`] = `
 }
 `;
 
+exports[`example engines > figures for mr-510 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 2.33922653,
+    "failure": null,
+    "heating": 0.6268209249,
+    "instability": 1.639517986e-7,
+    "isp": 226.5511018,
+    "ispSeaLevel": 226.5511018,
+    "ispVacuum": 574.2480254,
+    "massFlow": 0.000045792285,
+    "pe": 28717.46694,
+    "state": "separated",
+    "structural": 0.01066666667,
+    "tc": 3760.925549,
+    "thrust": 0.1017370567,
+  },
+  "vacuum": {
+    "exitMach": 4.548814058,
+    "failure": null,
+    "heating": 0.6268209249,
+    "instability": 1.639517986e-7,
+    "isp": 574.2480254,
+    "ispSeaLevel": 226.5511018,
+    "ispVacuum": 574.2480254,
+    "massFlow": 0.000045792285,
+    "pe": 323.2169168,
+    "state": "under",
+    "structural": 0.01066666667,
+    "tc": 3760.925549,
+    "thrust": 0.2578769358,
+  },
+}
+`;
+
 exports[`example engines > figures for nerva 1`] = `
 {
   "seaLevel": {
@@ -136,6 +171,76 @@ exports[`example engines > figures for nerva 1`] = `
     "structural": 0.4001409018,
     "tc": 2360,
     "thrust": 246741.7415,
+  },
+}
+`;
+
+exports[`example engines > figures for next 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 4229.567083,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.3761260795,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0,
+    "instability": 0,
+    "isp": 4229.567083,
+    "ispSeaLevel": 0,
+    "ispVacuum": 4229.567083,
+    "massFlow": 0.000005588691823,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.3761260795,
+    "tc": 0,
+    "thrust": 0.2318071113,
+  },
+}
+`;
+
+exports[`example engines > figures for nstar 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 3306.404684,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.5814080731,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0,
+    "instability": 0,
+    "isp": 3306.404684,
+    "ispSeaLevel": 0,
+    "ispVacuum": 3306.404684,
+    "massFlow": 0.000002865995806,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0.5814080731,
+    "tc": 0,
+    "thrust": 0.09292920753,
   },
 }
 `;
@@ -381,6 +486,76 @@ exports[`example engines > figures for solid-booster 1`] = `
     "structural": 0.4993032787,
     "tc": 3384.312931,
     "thrust": 1331239.555,
+  },
+}
+`;
+
+exports[`example engines > figures for spt-100 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0.4722700119,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0.4722700119,
+    "instability": 0,
+    "isp": 1614.659078,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0.000005442899862,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0.08618503424,
+  },
+}
+`;
+
+exports[`example engines > figures for xr-5 1`] = `
+{
+  "seaLevel": {
+    "exitMach": 0,
+    "failure": "noVacuum",
+    "heating": 0.5447174301,
+    "instability": 0,
+    "isp": 0,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0,
+  },
+  "vacuum": {
+    "exitMach": 0,
+    "failure": null,
+    "heating": 0.5447174301,
+    "instability": 0,
+    "isp": 1614.659078,
+    "ispSeaLevel": 0,
+    "ispVacuum": 1614.659078,
+    "massFlow": 0.00001814299954,
+    "pe": 0,
+    "state": "ideal",
+    "structural": 0,
+    "tc": 0,
+    "thrust": 0.2872834475,
   },
 }
 `;

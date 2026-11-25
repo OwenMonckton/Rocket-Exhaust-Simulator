@@ -34,7 +34,10 @@ export function failureFor(cfg: EngineConfig, pcBar: number, tc: number): Failur
   return null;
 }
 
-/** True when the failure tears the engine open; false when the flame simply goes out or never lights. */
+/** The failures that leave the engine whole: it goes out, never starts, or trips off. */
+const HARMLESS: Failure[] = ['flameout', 'inert', 'unsolved', 'underpowered', 'noVacuum', 'gridOverload', 'channelOverheat'];
+
+/** True when the failure tears the engine open; false when the flame simply goes out or the engine never starts. */
 export function destroys(f: Failure): boolean {
-  return f !== null && f !== 'flameout' && f !== 'inert' && f !== 'unsolved';
+  return f !== null && !HARMLESS.includes(f);
 }

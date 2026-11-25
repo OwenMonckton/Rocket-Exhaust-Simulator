@@ -11,9 +11,20 @@ export type PropellantId =
   | 'ntr-water'
   | 'ntr-co2'
   | 'ntr-helium'
-  | 'saltwater';
+  | 'saltwater'
+  | 'rj-hydrazine'
+  | 'rj-ammonia'
+  | 'rj-hydrogen'
+  | 'rj-water'
+  | 'aj-hydrazine'
+  | 'aj-ammonia'
+  | 'aj-hydrogen'
+  | 'xenon'
+  | 'krypton'
+  | 'argon'
+  | 'iodine';
 
-export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater';
+export type EnergyId = 'combustion' | 'solid' | 'reactor' | 'saltwater' | 'resistojet' | 'arcjet' | 'ion' | 'hall';
 export type ExhaustId = 'bell' | 'cone' | 'dualBell' | 'none' | 'aerospike' | 'expansionDeflection';
 
 export type RGB = [number, number, number];
@@ -123,6 +134,12 @@ export interface EngineConfig {
    * ring it leaves round itself. Every other exhaust keeps the setting, for a swap back, and ignores it.
    */
   plugShare: number;
+  /**
+   * Electrical power an electric engine draws, kW, and the voltage a beam thruster throws its
+   * atoms out with, V. Every other engine keeps the settings, for a swap back, and ignores them.
+   */
+  powerKW: number;
+  voltage: number;
 }
 
 export interface FlightState {
@@ -145,12 +162,33 @@ export type Failure =
   | 'flameout'
   | 'inert'
   | 'detonation'
-  | 'unsolved';
+  | 'unsolved'
+  /** An electrically heated engine given too little power to turn its propellant into gas */
+  | 'underpowered'
+  /** A beam thruster switched on in air */
+  | 'noVacuum'
+  /** A gridded ion thruster asked for more current than its grids can pass */
+  | 'gridOverload'
+  /** A Hall thruster whose channel cannot shed its waste heat */
+  | 'channelOverheat';
 
 export interface Limits {
   structural: number;
   heating: number;
   instability: number;
+}
+
+/** What only an electric engine has to report. */
+export interface ElectricFigures {
+  /** Electrical power drawn, W, at the throttle setting */
+  power: number;
+  /** The share of that power that ends up as thrust: thrust squared over twice the flow times the power */
+  thrustEfficiency: number;
+  /** Beam thrusters only: volts and amps */
+  voltage?: number;
+  beamCurrent?: number;
+  /** Heated-gas engines only: the temperature the gas was heated to, K */
+  heatedTo?: number;
 }
 
 export interface SimResult {
@@ -193,4 +231,6 @@ export interface SimResult {
   calculated: boolean;
   /** False when no solve settled and the figures come from a stand-in gas; none of them is real */
   settled: boolean;
+  /** An electric engine's own figures; absent for every other engine */
+  electric?: ElectricFigures;
 }

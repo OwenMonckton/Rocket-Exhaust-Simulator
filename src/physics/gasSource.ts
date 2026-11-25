@@ -2,11 +2,12 @@
 // chemistry solver for a fuel and oxidiser picked freely ('calculated') and for a reactor fluid
 // that names its thermo reactant (`fluid`).
 import { FUELS, NO_OXIDISER, type Family } from './chem/ingredients';
-import { pairRange, solveFluid, solvePair, type SolvedGas } from './chem/pair';
+import { pairRange, solveFluid, solveHeated, solvePair, type SolvedGas } from './chem/pair';
+import { ENERGY_SOURCES, isBeam } from './parts';
 import { dropletNote, verdictFor, type ChemFailure } from './chem/verdict';
 import { lookFromExhaust } from './plumeLook';
 import { PROPELLANTS, gasProps, richness } from './propellants';
-import type { EngineConfig, GasProps, PlumeLook, PropellantId } from './types';
+import type { EngineConfig, Failure, GasProps, PlumeLook, PropellantId } from './types';
 
 const R_UNIVERSAL = 8314.46;
 
@@ -28,7 +29,7 @@ export interface GasSource {
   derivedLook: boolean;
   /** -1 oxidiser-rich, 0 at the hottest mixture, +1 fuel-rich */
   richness: number;
-  failure: ChemFailure | null;
+  failure: ChemFailure | Extract<Failure, 'underpowered' | 'meltdown'> | null;
   exhaust: { name: string; share: number }[];
   notes: string[];
 }
@@ -105,10 +106,128 @@ export function staticLook(cfg: EngineConfig): PlumeLook {
   return derivedLooks.get(lookKey(cfg)) ?? picked.look;
 }
 
+// ---- A fluid heated by electrical power ----
+
+/**
+ * The share of the ideal flow's characteristic velocity a chamber where nothing burns delivers, as
+ * `simulate` has it: what the flow through the throat is worked out with.
+ */
+const HEATED_FLOW_EFF = 0.98;
+/** The energies per kilogram, J/kg, the search looks between: far less than boils anything, to more than tears hydrogen into atoms. */
+const HEAT_LO = 1e4;
+const HEAT_HI = 5e8;
+const HEAT_SCAN = 24;
+/** A settled result colder than this is not a gas an engine can run on. */
+const GAS_MIN_T = 300;
+/** Below this the heater is adding little. */
+const LUKEWARM_T = 700;
+const HEATED_CACHE = 500;
+
+interface Heated {
+  solved: SolvedGas;
+  /** 'cold': the power cannot make a gas of the propellant. 'hot': it gives more heat than the solver can follow. */
+  out: null | 'cold' | 'hot';
+}
+const heatedResults = new Map<string, Heated>();
+
+/**
+ * The gas of an electrically heated engine. The power that reaches the gas, divided by the flow,
+ * is the heat each kilogram takes up; but the flow through the throat falls as the gas gets
+ * hotter, so the heat per kilogram is searched for: the one at which heat per kilogram times flow
+ * equals the power. `pcBar` below the engine's own is the throttle, which turns the power down with it.
+ */
+function heated(cfg: EngineConfig, fluid: string, pcBar: number, eps: number): Heated {
+  const sig = (x: number) => Number(x.toPrecision(4));
+  const key = [fluid, cfg.energy, sig(cfg.powerKW), sig(pcBar), sig(cfg.chamberPressureBar), sig(eps), sig(cfg.throatDia), cfg.chambers].join('|');
+  const hit = heatedResults.get(key);
+  if (hit) return hit;
+  const throttle = cfg.chamberPressureBar > 0 ? pcBar / cfg.chamberPressureBar : 1;
+  const heat = (ENERGY_SOURCES[cfg.energy].heatingShare ?? 1) * cfg.powerKW * 1000 * throttle;
+  const pcAt = cfg.chambers * pcBar * 1e5 * (Math.PI / 4) * cfg.throatDia ** 2;
+  const usable = (g: SolvedGas) => g.ok && g.tc >= GAS_MIN_T;
+  /** Heat taken up at `q` J/kg, less the heat on offer: rises with `q`. */
+  const excess = (q: number, g: SolvedGas) => (q * pcAt) / (g.cStar * HEATED_FLOW_EFF) - heat;
+
+  // A coarse scan finds where the fluid makes a usable gas at all, and brackets the answer.
+  let lowest: { q: number; g: SolvedGas } | null = null;
+  let below: { q: number; g: SolvedGas } | null = null;
+  let above: { q: number; g: SolvedGas } | null = null;
+  let highest: { q: number; g: SolvedGas } | null = null;
+  let boiled = true; // false once a lower energy has failed to make a gas
+  for (let k = 0; k < HEAT_SCAN && !above; k++) {
+    const q = HEAT_LO * (HEAT_HI / HEAT_LO) ** (k / (HEAT_SCAN - 1));
+    const g = solveHeated(fluid, q, pcBar, eps);
+    if (!usable(g)) {
+      if (!lowest) boiled = false;
+      continue;
+    }
+    const point = { q, g };
+    lowest ??= point;
+    highest = point;
+    if (excess(q, g) < 0) below = point;
+    else above = point;
+  }
+  let out: Heated;
+  if (!lowest) {
+    out = { solved: NOT_SOLVED, out: 'cold' };
+  } else if (!below) {
+    // Even the least heat that makes a gas is more than the power gives. A fluid that is a gas
+    // with no help (hydrazine, broken down) simply runs on its own heat.
+    out = boiled ? { solved: lowest.g, out: null } : { solved: NOT_SOLVED, out: 'cold' };
+  } else if (!above) {
+    out = { solved: highest!.g, out: 'hot' };
+  } else {
+    let lo = below;
+    let hi = above;
+    for (let i = 0; i < 30 && hi.q / lo.q > 1.001; i++) {
+      const q = Math.sqrt(lo.q * hi.q);
+      const g = solveHeated(fluid, q, pcBar, eps);
+      // A point that will not settle between two that do: keep the cooler side, which is known good.
+      if (!usable(g)) break;
+      if (excess(q, g) < 0) lo = { q, g };
+      else hi = { q, g };
+    }
+    out = { solved: lo.g, out: null };
+  }
+  heatedResults.set(key, out);
+  while (heatedResults.size > HEATED_CACHE) heatedResults.delete(heatedResults.keys().next().value!);
+  return out;
+}
+
 /** The engine's gas at chamber pressure `pcBar` and area ratio `eps`. Cheap when nothing changed. */
 export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSource {
+  // A beam thruster has no gas: anything that asks for one gets the stand-in, marked as not real.
+  if (isBeam(cfg.energy)) {
+    return {
+      calculated: false, settled: false, gas: { ...NO_GAS }, ispScale: 1, lStarRef: 0,
+      look: PROPELLANTS.xenon.look, derivedLook: false, richness: 0, failure: null, exhaust: [], notes: [],
+    };
+  }
   if (cfg.propellant !== 'calculated') {
     const p = PROPELLANTS[cfg.propellant];
+    if (p.fluid && ENERGY_SOURCES[cfg.energy].mixKind === 'power') {
+      const { solved, out } = heated(cfg, p.fluid, pcBar, eps);
+      const drops = dropletNote(solved);
+      const notes = drops ? [drops] : [];
+      // Hydrazine's own breakdown already makes hot gas, so a cool jet of it is never the heater's doing.
+      if (solved.ok && solved.tc < LUKEWARM_T) {
+        notes.push(`The ${cfg.energy === 'arcjet' ? 'arc' : 'heater'} is adding little: the gas leaves at only ${Math.round(solved.tc)} K. More power, or less flow, would heat it further.`);
+      }
+      return {
+        calculated: true,
+        settled: solved.ok,
+        gas: gasOf(solved),
+        ispScale: scaleOf(solved),
+        lStarRef: 0,
+        look: solved.ok ? derive(cfg, solved) : p.look,
+        derivedLook: solved.ok,
+        richness: 0,
+        // More heat than the solver can follow is more than any heater or arc survives.
+        failure: out === 'cold' ? 'underpowered' : out === 'hot' ? 'meltdown' : null,
+        exhaust: solved.ok ? solved.exhaust : [],
+        notes,
+      };
+    }
     if (p.fluid) {
       // A reactor heats the fluid to the core temperature, the engine's "mixture" setting.
       const solved = solveFluid(p.fluid, cfg.mixtureRatio, pcBar, eps);

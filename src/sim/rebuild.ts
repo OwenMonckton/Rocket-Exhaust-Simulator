@@ -6,13 +6,17 @@ import type { AppState } from '../state/store';
 /** How far the start-up ramp gets (0 to 1) before a failure of a lit engine shows. */
 const LIT_FAILURE_RAMP = 0.6;
 
+/** The failures of an engine that never starts: there is nothing to see first. */
+const NEVER_STARTS: Failure[] = ['inert', 'unsolved', 'underpowered', 'noVacuum'];
+
 /**
  * Whether a failure shows now, `fire` into the start-up ramp. An engine that never lights (nothing to
- * burn, or no answer from the chemistry) shows it as Fire is pressed, with no flame first.
+ * burn, no answer from the chemistry, too little power, or a beam thruster in air) shows it as
+ * Fire is pressed, with no flame first.
  */
 export function latchesNow(failure: Failure, fire: number): boolean {
   if (!failure) return false;
-  return failure === 'inert' || failure === 'unsolved' ? fire > 0 : fire > LIT_FAILURE_RAMP;
+  return NEVER_STARTS.includes(failure) ? fire > 0 : fire > LIT_FAILURE_RAMP;
 }
 
 /**

@@ -1,6 +1,6 @@
-import { RANGES } from '../physics/engine';
+import { RANGES, rangesFor } from '../physics/engine';
 import { mixRange } from '../physics/gasSource';
-import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, propellantsFor } from '../physics/parts';
+import { ENERGY_IDS, ENERGY_SOURCES, EXHAUSTS, EXHAUST_IDS, isBeam, isElectric, propellantsFor } from '../physics/parts';
 import { PROPELLANTS } from '../physics/propellants';
 import type { EngineConfig, EnergyId, ExhaustId, PropellantId } from '../physics/types';
 import { FUELS, FUEL_IDS, NO_OXIDISER, OXIDISERS, OXIDISER_IDS, type Ingredient } from '../physics/chem/ingredients';
@@ -104,7 +104,37 @@ export function propellantNote(s: AppState): string {
   return [made, ...warnings].filter(Boolean).join(' · ');
 }
 
-type MixKind = 'ratio' | 'temperature' | 'none';
+/** True for an engine that runs on electrical power, which has a Power setting. */
+export const powerShown = (s: AppState) => isElectric(s.config.energy);
+/** False for an electric engine: nothing is mixed in one. */
+export const mixtureShown = (s: AppState) => !isElectric(s.config.energy);
+/** True for a beam thruster, which throws its atoms out with a voltage. */
+export const voltageShown = (s: AppState) => isBeam(s.config.energy);
+
+/** The controls a beam thruster has no use for: it has no chamber, throat or nozzle, and one size, its diameter. */
+const BEAM_HIDES = new Set(['exhaust', 'scale', 'chambers', 'chamberDia', 'chamberLen', 'throatDia', 'nozzleLenPct', 'coneAngleDeg', 'innerExitDia', 'plugShare', 'chamberPressureBar', 'mixtureRatio']);
+export const hiddenForBeam = (id: string) => BEAM_HIDES.has(id);
+
+/** A voltage, with a comma in the thousands. */
+export function formatVoltage(v: number): string {
+  return `${Math.round(v).toLocaleString('en-US')} V`;
+}
+
+/** True where the chamber pressure is spread by ratio: the small electric engines run at a few bar of a range that reaches 400. */
+export const pressureLog = (s: AppState) => ENERGY_SOURCES[s.config.energy].kind === 'thermal';
+/** A chamber pressure as the slider sets it: whole bars, or tenths below ten bar on a small electric engine. */
+export function roundPressure(v: number, s: AppState): number {
+  const step = pressureLog(s) && v < 10 ? 0.1 : 1;
+  return Math.round(v / step) * step;
+}
+
+/** Electrical power, in watts below a kilowatt. */
+export function formatPower(kW: number): string {
+  if (kW < 1) return `${Math.round(kW * 1000)} W`;
+  return kW < 10 ? `${kW.toFixed(2)} kW` : `${kW.toFixed(1)} kW`;
+}
+
+type MixKind = 'ratio' | 'temperature' | 'none' | 'power';
 
 /**
  * The mixture setting a slider position stands for, in round numbers. Temperatures step by an amount
@@ -135,7 +165,8 @@ const STEPS = 1000;
 export function formatLength(m: number): string {
   if (m >= 1) return `${m.toFixed(2)} m`;
   if (m >= 0.1) return `${(m * 100).toFixed(1)} cm`;
-  return `${(m * 100).toFixed(2)} cm`;
+  if (m >= 0.01) return `${(m * 100).toFixed(2)} cm`;
+  return `${(m * 1000).toFixed(2)} mm`;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -155,18 +186,23 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
     label,
     tip: TIPS[key],
     log: true,
-    range: () => RANGES[key],
+    range: (s) => rangesFor(s.config.energy)[key],
     get: (s) => s.config[key],
     set: (v) => store.set({ config: { [key]: v } }),
     format: (v, s) => {
       // An aerospike's sliders size one thrust cell; its exit is the whole ring of cells.
       const shown = key === 'exitDia' && s.config.exhaust === 'aerospike' ? v * Math.sqrt(s.config.chambers) : v;
+      if (isBeam(s.config.energy)) return formatLength(v);
       return key === 'exitDia'
         ? `${formatLength(shown)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`
         : formatLength(v);
     },
-    describe: (s) => (s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] }),
-    hidden: key === 'exitDia' ? shapeHidden('exitDia') : undefined,
+    describe: (s) =>
+      key === 'exitDia' && isBeam(s.config.energy)
+        ? { label: 'Thruster diameter', tip: TIPS.beamDia }
+        : s.config.exhaust === 'aerospike' ? AEROSPIKE_DIMS[key] : { label, tip: TIPS[key] },
+    // A beam thruster's diameter is kept in the exit diameter, and is its one size.
+    hidden: key === 'exitDia' ? (s) => !isBeam(s.config.energy) && shapeHidden('exitDia')(s) : undefined,
   });
 
   /**
@@ -324,11 +360,36 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           id: 'chamberPressureBar',
           label: 'Chamber pressure',
           tip: TIPS.chamberPressureBar,
-          step: () => 1,
-          range: () => RANGES.chamberPressureBar,
+          // Whole bars for an ordinary engine; spread by ratio over a thousand positions for a small
+          // electric one, whose few bar would otherwise be a sliver at the end of the track.
+          log: pressureLog,
+          step: (s) => (pressureLog(s) ? null : 1),
+          range: (s) => rangesFor(s.config.energy).chamberPressureBar,
           get: (s) => s.config.chamberPressureBar,
-          set: (v) => store.set({ config: { chamberPressureBar: Math.round(v) } }),
-          format: (v) => `${Math.round(v)} bar`,
+          set: (v) => store.set({ config: { chamberPressureBar: Number(roundPressure(v, store.get()).toFixed(1)) } }),
+          format: (v, s) => (pressureLog(s) && v < 10 ? `${v.toFixed(1)} bar` : `${Math.round(v)} bar`),
+        },
+        {
+          id: 'powerKW',
+          label: 'Power',
+          tip: TIPS.powerKW,
+          log: true,
+          range: () => RANGES.powerKW,
+          get: (s) => s.config.powerKW,
+          set: (v) => store.set({ config: { powerKW: Number(v.toPrecision(3)) } }),
+          format: (v) => formatPower(v),
+          hidden: (s) => !powerShown(s),
+        },
+        {
+          id: 'voltage',
+          label: 'Voltage',
+          tip: TIPS.voltage,
+          log: true,
+          range: (s) => rangesFor(s.config.energy).voltage,
+          get: (s) => s.config.voltage,
+          set: (v) => store.set({ config: { voltage: Math.round(v / 10) * 10 } }),
+          format: (v) => formatVoltage(v),
+          hidden: (s) => !voltageShown(s),
         },
       ],
     },
@@ -356,6 +417,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           },
           format: (v, s) => formatMixture(v, ENERGY_SOURCES[s.config.energy].mixKind, noOxidiser(s)),
           disabled: (s) => ENERGY_SOURCES[s.config.energy].mixKind === 'none' || noOxidiser(s),
+          hidden: (s) => !mixtureShown(s),
           describe: (s) =>
             ENERGY_SOURCES[s.config.energy].mixLabel ??
             { label: 'Mixture ratio', tip: noOxidiser(s) ? TIPS.noMixture : TIPS.mixtureRatio },
@@ -433,7 +495,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
       // The menu is only rebuilt when what it offers changes, so it stays open while in use.
       let offered = '';
       syncers.push((s) => {
-        const hide = spec.hidden?.(s) ?? false;
+        const hide = (spec.hidden?.(s) ?? false) || (isBeam(s.config.energy) && hiddenForBeam(spec.id));
         row.hidden = hide;
         if (hide) return;
         const options = spec.options(s);
@@ -510,7 +572,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
       };
       input.addEventListener('input', () => spec.set(toValue(Number(input.value), store.get())));
       syncers.push((s) => {
-        const hide = spec.hidden?.(s) ?? false;
+        const hide = (spec.hidden?.(s) ?? false) || (isBeam(s.config.energy) && hiddenForBeam(spec.id));
         row.hidden = hide;
         if (hide) return;
         const v = spec.get(s);
@@ -537,6 +599,12 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
         row.classList.toggle('disabled', off);
       });
     }
+    // A group with nothing to show (an electric engine has no mixture) is not shown at all.
+    // Pushed after its rows' own syncers, so it reads what they have just decided.
+    const rows = [...box.querySelectorAll<HTMLElement>('.row')];
+    syncers.push(() => {
+      box.hidden = rows.every((row) => row.hidden);
+    });
     if (group.place === 'flight') flightRoot.append(box);
     else if (group.place === 'tune') tune.append(box);
     else root.append(box);

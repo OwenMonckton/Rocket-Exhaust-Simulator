@@ -10,10 +10,11 @@ import {
 } from './nozzle';
 import { FUEL_IDS, OXIDISER_IDS, isFuelId, isOxidiserId } from './chem/ingredients';
 import { mixRange, resolveGas, type GasSource } from './gasSource';
-import { ENERGY_SOURCES, isEnergyId, propellantsFor } from './parts';
+import { simulateBeam } from './electric';
+import { ENERGY_SOURCES, isBeam, isElectric, isEnergyId, propellantsFor } from './parts';
 import { EXHAUSTS, defaultInnerExitDia, isExhaustId } from './exhausts';
 import { PROPELLANTS, isPropellantId } from './propellants';
-import type { EngineConfig, ExpansionState, FlightState, SimResult } from './types';
+import type { EnergyId, EngineConfig, ExpansionState, FlightState, SimResult } from './types';
 
 const G0 = 9.80665;
 /** Baseline combustion efficiency of a well-sized chamber. */
@@ -61,9 +62,41 @@ export const RANGES = {
   /** An expansion-deflection nozzle's plug, as a share of the wall's diameter at the ring */
   plugShare: { min: 0.5, max: 0.8, fallback: 0.7 },
   extDeploy: { min: 0, max: 1, fallback: 1 },
+  /** Electrical power an electric engine draws, kW */
+  powerKW: { min: 0.05, max: 100, fallback: 2 },
+  /** The voltage a beam thruster throws its atoms out with */
+  voltage: { min: 100, max: 5000, fallback: 300 },
   altitudeKm: { min: 0, max: 100, fallback: 0 },
   throttle: { min: 0.4, max: 1, fallback: 1 },
 } satisfies Record<string, Range>;
+
+/**
+ * A heated-gas electric engine runs on a few kilowatts, so it may be far smaller than any engine
+ * that burns: a real arcjet's throat is well under a millimetre.
+ */
+const SMALL: Partial<Record<keyof typeof RANGES, Range>> = {
+  chamberDia: { min: 0.002, max: 8, fallback: 0.4 },
+  chamberLen: { min: 0.002, max: 40, fallback: 0.5 },
+  throatDia: { min: 0.0003, max: 5, fallback: 0.2 },
+  exitDia: { min: 0.0005, max: 25, fallback: 0.8 },
+  chamberPressureBar: { min: 0.5, max: 400, fallback: 100 },
+};
+
+/**
+ * A beam thruster has one size, its diameter (kept in `exitDia`), from a few centimetres to a
+ * metre, and each type its own span of voltage.
+ */
+const BEAM_DIA: Range = { min: 0.03, max: 1, fallback: 0.3 };
+const BEAM: Partial<Record<EnergyId, Partial<Record<keyof typeof RANGES, Range>>>> = {
+  ion: { exitDia: BEAM_DIA, voltage: { min: 300, max: 5000, fallback: 1100 } },
+  hall: { exitDia: BEAM_DIA, voltage: { min: 100, max: 1000, fallback: 300 } },
+};
+
+/** The span of every setting for an engine built round `energy`. */
+export function rangesFor(energy: EnergyId): typeof RANGES {
+  if (BEAM[energy]) return { ...RANGES, ...BEAM[energy] };
+  return ENERGY_SOURCES[energy]?.kind === 'thermal' ? { ...RANGES, ...SMALL } : RANGES;
+}
 
 /**
  * How wide the wall at an expansion-deflection nozzle's ring may be: this share of the chamber's
@@ -112,19 +145,24 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
   // propellant, and a propellant the source can't use is swapped for its first one.
   const known = isPropellantId(cfg.propellant) ? cfg.propellant : null;
   const energy = isEnergyId(cfg.energy) ? cfg.energy : known ? PROPELLANTS[known].energy : 'combustion';
-  const propellant = known && PROPELLANTS[known].energy === energy ? known : propellantsFor(energy)[0];
+  const propellant = known && propellantsFor(energy).includes(known) ? known : propellantsFor(energy)[0];
   // A tabled propellant made of a fuel and oxidiser the solver knows names them; otherwise the
   // picks stay as they are, or the first of each where they are not known.
   const pair = PROPELLANTS[propellant].pair;
   const fuel = pair ? pair.fuel : isFuelId(cfg.fuel) ? cfg.fuel : FUEL_IDS[0];
   const oxidiser = pair ? pair.oxidiser : isOxidiserId(cfg.oxidiser) ? cfg.oxidiser : OXIDISER_IDS[0];
   const mix = mixRange({ ...cfg, propellant, fuel, oxidiser });
-  const chamberDia = clampTo(cfg.chamberDia, RANGES.chamberDia);
-  const throatDia = Math.min(clampTo(cfg.throatDia, RANGES.throatDia), 0.9 * chamberDia);
-  let exitDia = Math.max(clampTo(cfg.exitDia, RANGES.exitDia), 1.05 * throatDia);
+  const R = rangesFor(energy);
+  // A beam thruster has no chamber, throat or nozzle: its one size is its diameter, and the
+  // dimensions it does not have follow that, so that they are always something drawable.
+  const beam = isBeam(energy);
+  const beamDia = clampTo(cfg.exitDia, R.exitDia);
+  const chamberDia = beam ? beamDia : clampTo(cfg.chamberDia, R.chamberDia);
+  const throatDia = beam ? 0.9 * beamDia : Math.min(clampTo(cfg.throatDia, R.throatDia), 0.9 * chamberDia);
+  let exitDia = beam ? beamDia : Math.max(clampTo(cfg.exitDia, R.exitDia), 1.05 * throatDia);
   // An extension must be wider than the throat and narrower than the full nozzle; otherwise there isn't one.
   // Only a bell has one to extend.
-  const exhaust = isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
+  const exhaust = beam ? 'none' : isExhaustId(cfg.exhaust) ? cfg.exhaust : 'bell';
   const type = EXHAUSTS[exhaust];
   let extFixedDia = clampTo(cfg.extFixedDia, RANGES.extFixedDia);
   if (!type.extension || extFixedDia < 1.05 * throatDia || extFixedDia > 0.98 * exitDia) extFixedDia = 0;
@@ -156,22 +194,24 @@ export function sanitize(cfg: EngineConfig): EngineConfig {
     fuel,
     oxidiser,
     chamberDia,
-    chamberLen: clampTo(cfg.chamberLen, RANGES.chamberLen),
+    chamberLen: beam ? beamDia : clampTo(cfg.chamberLen, R.chamberLen),
     throatDia,
     exitDia,
     nozzleLenPct: clampTo(cfg.nozzleLenPct, RANGES.nozzleLenPct),
     wall: clampTo(cfg.wall, RANGES.wall),
-    chamberPressureBar: clampTo(cfg.chamberPressureBar, RANGES.chamberPressureBar),
+    chamberPressureBar: clampTo(cfg.chamberPressureBar, R.chamberPressureBar),
     mixtureRatio: Number.isFinite(cfg.mixtureRatio)
       ? Math.min(mix.ofMax, Math.max(mix.ofMin, cfg.mixtureRatio))
       : mix.ofDefault,
     scale: clampTo(cfg.scale, RANGES.scale),
-    chambers: Math.round(clampTo(cfg.chambers, type.counts === 'cells' ? RANGES.cells : RANGES.chambers)),
+    chambers: beam ? 1 : Math.round(clampTo(cfg.chambers, type.counts === 'cells' ? RANGES.cells : RANGES.chambers)),
     extFixedDia,
     extDeploy: extFixedDia > 0 ? clampTo(cfg.extDeploy, RANGES.extDeploy) : 1,
     coneAngleDeg: clampTo(cfg.coneAngleDeg, RANGES.coneAngleDeg),
     innerExitDia,
     plugShare,
+    powerKW: clampTo(cfg.powerKW, RANGES.powerKW),
+    voltage: clampTo(cfg.voltage, R.voltage),
   };
 }
 
@@ -209,6 +249,8 @@ function combustionEfficiency(lStar: number, lStarRef: number): number {
 export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResult {
   const cfg = sanitize(rawCfg);
   const flight = sanitizeFlight(rawFlight);
+  // A beam thruster has no gas, chamber or nozzle to work out: it has a formula of its own.
+  if (isBeam(cfg.energy)) return simulateBeam(cfg, flight);
   const prop = PROPELLANTS[cfg.propellant];
   const source = ENERGY_SOURCES[cfg.energy];
   const throttle = source.throttleable ? flight.throttle : 1;
@@ -368,7 +410,14 @@ export function simulate(rawCfg: EngineConfig, rawFlight: FlightState): SimResul
   const sl = thrustAt(SEA_LEVEL_PRESSURE);
   const vac = thrustAt(0);
 
+  // An electric engine's own figures. `throttle` turns its power down with its flow.
+  const power = cfg.powerKW * 1000 * throttle;
+  const electric = isElectric(cfg.energy)
+    ? { power, thrustEfficiency: now.thrust ** 2 / (2 * massFlow * power), heatedTo: gas.tc }
+    : undefined;
+
   return {
+    ...(electric ? { electric } : {}),
     thrust: now.thrust,
     isp: now.thrust / (massFlow * G0),
     ispSeaLevel: sl.thrust / (massFlow * G0),
