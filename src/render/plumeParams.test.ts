@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from '../physics/engine';
 import { starterEngine } from '../physics/reshape';
 import { PRESETS, getPreset } from '../physics/presets';
+import { PROPELLANTS } from '../physics/propellants';
+import { mixRange, resolveGas } from '../physics/gasSource';
 import { machFromAreaRatio, pressureRatio } from '../physics/nozzle';
 import { SPIKE_SAMPLES } from './fluidSim';
 import { engineProfile } from './geometry';
@@ -196,5 +198,52 @@ describe('the still gas in an unlit engine', () => {
     const low = sanitize({ ...starterEngine(), exhaust: 'none', chamberPressureBar: 5 });
     const { r, exit } = exitPressureOf(low, 0);
     expect(engineRestPressure(exit, r.pa, r.pc)).toBeCloseTo(r.pa / r.pc, 9);
+  });
+});
+
+describe('a look worked out from the exhaust, in the plume', () => {
+  const flight = { altitudeKm: 0, throttle: 1 };
+  const kerosene = sanitize({ ...starterEngine(), propellant: 'calculated', fuel: 'rp1', oxidiser: 'lox' });
+  const params = (mixtureRatio: number) => {
+    const cfg = { ...kerosene, mixtureRatio };
+    const r = simulate(cfg, flight);
+    return { cfg, r, p: plumeParams(cfg, r, flight, 1) };
+  };
+
+  it('is not tinted a second time for its mixture', () => {
+    const { cfg, r, p } = params(mixRange(kerosene).ofDefault * 0.7);
+    const look = resolveGas(cfg, r.pc / 1e5, r.expansionRatio).look;
+    expect(p.mid).toEqual(look.mid);
+    expect(p.core).toEqual(look.core);
+    expect(p.edge).toEqual(look.edge);
+    expect(p.soot).toBeCloseTo(look.soot, 9);
+  });
+
+  it('moves smoothly across the mixtures a kerosene engine can run', () => {
+    // From well fuel-rich to well lean, in 60 even steps.
+    const usual = mixRange(kerosene).ofDefault;
+    let last: ReturnType<typeof params>['p'] | null = null;
+    for (let i = 0; i <= 60; i++) {
+      const { r, p } = params(usual * (0.5 + (1.5 * i) / 60));
+      if (r.failure || !Number.isFinite(p.opacity)) continue;
+      if (last) {
+        const channels: [string, number, number][] = [
+          ...p.core.map((v, k): [string, number, number] => [`core[${k}]`, v, last!.core[k]]),
+          ...p.mid.map((v, k): [string, number, number] => [`mid[${k}]`, v, last!.mid[k]]),
+          ...p.edge.map((v, k): [string, number, number] => [`edge[${k}]`, v, last!.edge[k]]),
+          ['opacity', p.opacity, last.opacity],
+          ['soot', p.soot, last.soot],
+        ];
+        for (const [name, now, before] of channels) expect(Math.abs(now - before), `step ${i}: ${name}`).toBeLessThan(0.12);
+      }
+      last = p;
+    }
+    expect(last).not.toBeNull();
+  });
+
+  it('still tints a hand-picked look by its mixture', () => {
+    const merlin = getPreset('merlin-1d')!.config;
+    const rich = { ...merlin, mixtureRatio: PROPELLANTS.kerolox.ofMin };
+    expect(plumeParams(rich, simulate(rich, flight), flight, 1).mid).not.toEqual(PROPELLANTS.kerolox.look.mid);
   });
 });

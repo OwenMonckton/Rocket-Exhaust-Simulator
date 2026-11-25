@@ -1,5 +1,6 @@
 import type { ExhaustId, Limits, SimResult } from '../physics/types';
 import type { SimulatedFigures } from '../render/simFigures';
+import { colourNote } from '../physics/plumeLook';
 import { LIMIT_COPY, SIMULATED_TIP, STATE_COPY, expansionText, exhaustLine, limitNote, showsFigures } from './copy';
 
 export interface ReadoutInfo {
@@ -86,7 +87,7 @@ const html = `
       <span class="sim" data-r="flowSim"></span>
     </div>
     <div class="stat exhaust" data-r="exhaustRow" title="What the exhaust is made of where it leaves the nozzle, as a share of its molecules, largest first.">
-      <span class="k">Exhaust</span><span class="v small" data-r="exhaust"></span>
+      <span class="k">Exhaust</span><span class="v small" data-r="exhaust"></span><span class="d" data-r="colour"></span>
     </div>
   </details>
 `;
@@ -131,6 +132,8 @@ export function createReadouts(root: HTMLElement): (info: ReadoutInfo) => void {
     root.dataset.run = fire <= 0 ? 'unlit' : fire < 1 ? 'starting' : 'running';
     const exhaust = exhaustLine(r.exhaust);
     set('exhaust', exhaust);
+    // What in that make-up is colouring the plume. Empty, like the make-up, for a hand-picked look.
+    set('colour', colourNote(r.exhaust));
     exhaustRow.hidden = exhaust === '';
 
     // With no settled chemistry every figure from the gas would be made up, so none is shown.

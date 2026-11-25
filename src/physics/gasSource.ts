@@ -4,6 +4,7 @@
 import { FUELS, NO_OXIDISER, type Family } from './chem/ingredients';
 import { pairRange, solveFluid, solvePair, type SolvedGas } from './chem/pair';
 import { dropletNote, verdictFor, type ChemFailure } from './chem/verdict';
+import { lookFromExhaust } from './plumeLook';
 import { PROPELLANTS, gasProps, richness } from './propellants';
 import type { EngineConfig, GasProps, PlumeLook, PropellantId } from './types';
 
@@ -23,6 +24,8 @@ export interface GasSource {
   /** Characteristic chamber length (m) needed for complete combustion */
   lStarRef: number;
   look: PlumeLook;
+  /** True when `look` was worked out from this gas's own exhaust; false for a hand-picked or borrowed one */
+  derivedLook: boolean;
   /** -1 oxidiser-rich, 0 at the hottest mixture, +1 fuel-rich */
   richness: number;
   failure: ChemFailure | null;
@@ -33,7 +36,7 @@ export interface GasSource {
 /** What stands in for the gas when the chemistry gives none: cold air, never shown as real. */
 const NO_GAS: GasProps = { tc: 300, gamma: 1.4, molarMass: 28, R: R_UNIVERSAL / 28 };
 const NOT_SOLVED: SolvedGas = {
-  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [],
+  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [], makeup: [],
 };
 /** The thrust scale of a solve: 1 for the stand-in gas. */
 const scaleOf = (solved: SolvedGas) => (solved.ok ? solved.ispScale : 1);
@@ -73,9 +76,33 @@ export function mixRange(cfg: EngineConfig): { ofMin: number; ofMax: number; ofD
   return { ofMin: r.ofMin, ofMax: r.ofMax, ofDefault: r.ofDefault };
 }
 
-/** The plume's look, for callers with no chamber pressure to hand. Never solves. */
+/**
+ * The look last worked out from each calculated pair's or fluid's own exhaust, by what it is made
+ * from. The gas is resolved every frame for the plume, so this is the plume's look.
+ */
+const derivedLooks = new Map<string, PlumeLook>();
+const lookKey = (cfg: EngineConfig) =>
+  cfg.propellant === 'calculated' ? `pair|${cfg.fuel}|${cfg.oxidiser}` : `fluid|${cfg.propellant}`;
+
+/** The look for a settled solve, remembered for `staticLook`. */
+function derive(cfg: EngineConfig, solved: SolvedGas): PlumeLook {
+  // From the whole make-up, not the six species the readout lists: a species that slips to seventh
+  // place is still in the plume.
+  const look = lookFromExhaust({ exhaust: solved.makeup, tc: solved.tc, condensedShare: solved.condensedShare });
+  derivedLooks.set(lookKey(cfg), look);
+  return look;
+}
+
+/**
+ * The plume's look, for callers with no chamber pressure to hand (the gas drawn inside the engine).
+ * Never solves: an engine whose look comes from its exhaust gets the one last worked out for it,
+ * and until there is one, the hand-picked look it would otherwise borrow.
+ */
 export function staticLook(cfg: EngineConfig): PlumeLook {
-  return PROPELLANTS[cfg.propellant === 'calculated' ? borrowedFrom(cfg.fuel) : cfg.propellant].look;
+  const calculated = cfg.propellant === 'calculated';
+  const picked = PROPELLANTS[calculated ? borrowedFrom(cfg.fuel) : cfg.propellant];
+  if (!calculated && !picked.fluid) return picked.look;
+  return derivedLooks.get(lookKey(cfg)) ?? picked.look;
 }
 
 /** The engine's gas at chamber pressure `pcBar` and area ratio `eps`. Cheap when nothing changed. */
@@ -92,7 +119,8 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
         gas: gasOf(solved),
         ispScale: scaleOf(solved),
         lStarRef: 0,
-        look: p.look,
+        look: solved.ok ? derive(cfg, solved) : p.look,
+        derivedLook: solved.ok,
         // As hydrogen's table gives it: the hottest core, at the top of the range, is the "peak".
         richness: Math.min(1, Math.max(0, (p.ofMax - cfg.mixtureRatio) / (p.ofMax - p.ofMin))),
         failure: solved.ok ? null : 'unsolved',
@@ -107,6 +135,7 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
       ispScale: 1,
       lStarRef: p.lStarRef,
       look: p.look,
+      derivedLook: false,
       richness: richness(cfg.propellant, cfg.mixtureRatio),
       failure: null,
       exhaust: [],
@@ -131,7 +160,8 @@ export function resolveGas(cfg: EngineConfig, pcBar: number, eps: number): GasSo
     gas: gasOf(solved),
     ispScale: scaleOf(solved),
     lStarRef: borrowed.lStarRef,
-    look: borrowed.look,
+    look: solved.ok ? derive(cfg, solved) : borrowed.look,
+    derivedLook: solved.ok,
     richness: rich,
     failure: verdict.failure,
     exhaust: solved.ok ? solved.exhaust : [],

@@ -23,6 +23,11 @@ export interface SolvedGas {
   ispScale: number;
   condensedShare: number;                         // mass fraction at the exit
   exhaust: { name: string; share: number }[];     // exit mole fractions over all species, largest first, at most 6, each ≥ 0.005
+  /**
+   * Everything at the exit down to one part in ten thousand, largest first: what the plume's look
+   * is worked out from, so that it does not step when a species leaves the short list above.
+   */
+  makeup: { name: string; share: number }[];
 }
 export interface MixRange { ofMin: number; ofMax: number; ofDefault: number; ofPeak: number }
 
@@ -34,13 +39,14 @@ const FIT_EPS_MIN = 3;        // below this area ratio Isp/c* barely depends on 
 const CACHE_LIMIT = 2000;
 const EXHAUST_MAX = 6;
 const EXHAUST_MIN_SHARE = 0.005;
+const MAKEUP_MIN_SHARE = 1e-4;
 const RANGE_PC = 70;          // bar
 const RANGE_EPS = 40;
 const FLAME_OUT_T = 700;      // K, where pairRange puts the ends of a pair's mixtures
 const HOLD = 50;              // ofMin and ofMax stay within ofDefault / HOLD and ofDefault × HOLD
 
 const NOT_SETTLED: SolvedGas = {
-  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [],
+  ok: false, tc: 0, gamma: 0, molarMass: 0, cStar: 0, ispVac: 0, ispScale: 1, condensedShare: 0, exhaust: [], makeup: [],
 };
 
 /** Vacuum Isp over c* for a simple gas of ratio of specific heats `g` at area ratio `eps`. */
@@ -128,12 +134,12 @@ function toGas(r: RocketResult, eps: number): SolvedGas {
   if (![tc, gamma, molarMass, r.cStar, ispVac, ispScale].every(Number.isFinite)) return NOT_SETTLED;
   let total = 0;
   for (let j = 0; j < ex.moles.length; j++) total += ex.moles[j];
-  const exhaust = ex.species
+  const makeup = ex.species
     .map((s, j) => ({ name: s.name, share: ex.moles[j] / total }))
-    .filter((e) => e.share >= EXHAUST_MIN_SHARE)
-    .sort((x, y) => y.share - x.share)
-    .slice(0, EXHAUST_MAX);
-  return { ok: true, tc, gamma, molarMass, cStar: r.cStar, ispVac, ispScale, condensedShare, exhaust };
+    .filter((e) => e.share >= MAKEUP_MIN_SHARE)
+    .sort((x, y) => y.share - x.share);
+  const exhaust = makeup.filter((e) => e.share >= EXHAUST_MIN_SHARE).slice(0, EXHAUST_MAX);
+  return { ok: true, tc, gamma, molarMass, cStar: r.cStar, ispVac, ispScale, condensedShare, exhaust, makeup };
 }
 
 /** A cached solve: `chain` names the pair or fluid whose last settled result is the warm start. */

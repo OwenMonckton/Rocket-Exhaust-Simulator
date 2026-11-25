@@ -279,18 +279,25 @@ describe('the cache', () => {
   });
 
   it('finds a pair\'s mixtures quickly enough for a click', () => {
-    // The best of three cold runs, so a moment when the machine is busy with the other test files
-    // does not count against the solver. A shared build machine is slower than the one a person
-    // clicks on, so it gets three times as long.
+    // Timed by the processor time this test's own process spends, not by the clock on the wall:
+    // the other test files run alongside in processes of their own, and when they are busy the
+    // clock runs on while the solver waits its turn. The best of three cold runs, and a shared
+    // build machine, slower than the one a person clicks on, gets three times as long.
+    const node = (globalThis as {
+      process?: { env: Record<string, string | undefined>; cpuUsage?: () => { user: number; system: number } };
+    }).process;
+    const spentMs = () => {
+      const cpu = node?.cpuUsage?.();
+      return cpu ? (cpu.user + cpu.system) / 1000 : performance.now();
+    };
     let best = Infinity;
     for (let run = 0; run < 3; run++) {
       clearChemCache();
-      const t0 = performance.now();
+      const t0 = spentMs();
       pairRange('al-slurry', 'lox');
-      best = Math.min(best, performance.now() - t0);
+      best = Math.min(best, spentMs() - t0);
     }
-    const onBuildMachine = Boolean((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env.CI);
-    expect(best, 'cold pairRange, ms').toBeLessThan(onBuildMachine ? 1800 : 600);
+    expect(best, 'cold pairRange, ms of processor time').toBeLessThan(node?.env.CI ? 1800 : 600);
   });
 
   it('gives the same answer after a jump in mixture as from a cold start', () => {

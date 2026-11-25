@@ -7,6 +7,7 @@ import { SPECIES } from '../physics/chem/thermo';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
 import { EXHAUSTS, EXHAUST_IDS } from '../physics/exhausts';
+import { colourNote, familyOf } from '../physics/plumeLook';
 import { COUNT_COPY, SPECIES_NAMES, STATE_COPY, TIPS, expansionText, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
 
 // Every gas met by sweeps of every pair across its slider (13 mixtures, five engines) and of every
@@ -248,5 +249,86 @@ describe('copy for the new exhausts', () => {
   });
   it('names what the count slider counts for every exhaust', () => {
     for (const id of EXHAUST_IDS) expect(COUNT_COPY[EXHAUSTS[id].counts].label.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the colour line beside the exhaust\u2019s make-up', () => {
+  type Listed = readonly { name: string; share: number }[];
+  /** What each thing the line can name must find in the make-up beside it, by the solver's species names. */
+  const NAMED: [RegExp, (e: Listed) => boolean][] = [
+    [/steam/, (e) => e.some((x) => x.name.startsWith('H2O'))],
+    [/carbon monoxide|unburnt carbon/, (e) => e.some((x) => x.name === 'CO')],
+    [/carbon dioxide/, (e) => e.some((x) => x.name === 'CO2')],
+    [/hydrogen fluoride/, (e) => e.some((x) => x.name === 'HF')],
+    [/chloride/, (e) => e.some((x) => x.name === 'HCL')],
+    [/hydrogen(?! fluoride| chloride)/, (e) => e.some((x) => x.name === 'H2' || x.name === 'H')],
+    [/oxygen/, (e) => e.some((x) => ['O2', 'O', 'OH'].includes(x.name))],
+    [/soot/, (e) => e.some((x) => familyOf(x.name) === 'soot')],
+    [/boron/, (e) => e.some((x) => familyOf(x.name) === 'boron')],
+    [/lithium/, (e) => e.some((x) => familyOf(x.name) === 'lithium')],
+    [/aluminium oxide/, (e) => e.some((x) => x.name.startsWith('AL2O'))],
+    [/aluminium/, (e) => e.some((x) => familyOf(x.name) === 'aluminium')],
+    [/beryllium oxide/, (e) => e.some((x) => x.name.startsWith('BeO') || x.name.startsWith('Be2O') || x.name.startsWith('Be3O') || x.name.startsWith('Be4O'))],
+    [/beryllium/, (e) => e.some((x) => familyOf(x.name) === 'beryllium')],
+    [/chlorine/, (e) => e.some((x) => familyOf(x.name) === 'chlorine')],
+    [/halogen/, (e) => e.some((x) => familyOf(x.name) === 'halide')],
+    [/nitrogen oxide/, (e) => e.some((x) => familyOf(x.name) === 'nitrogenOxide')],
+    [/carbon and nitrogen/, (e) => e.some((x) => familyOf(x.name) === 'cyanogen')],
+  ];
+  const holds = (note: string, exhaust: Listed, label: string) => {
+    expect(note, label).toMatch(/^Colour: [^.]+\.( This exhaust barely glows\.)?$/);
+    let matched = 0;
+    for (const [word, held] of NAMED) {
+      if (!word.test(note)) continue;
+      matched++;
+      expect(held(exhaust), `${label}: "${note}" names ${word}`).toBe(true);
+    }
+    if (!/almost none/.test(note)) expect(matched, `${label}: "${note}" names nothing known`).toBeGreaterThan(0);
+  };
+
+  it('never names a thing the make-up beside it does not hold, for pairs that burn', () => {
+    const pairs = [['rp1', 'lox'], ['ch4', 'lox'], ['h2', 'lox'], ['b5h9', 'lox'], ['li', 'lf2'], ['al-slurry', 'lox'],
+      ['h2', 'lf2'], ['n2h4', 'n2o4'], ['nh3', 'clf3'], ['c2n2', 'lox'], ['be', 'lox'], ['b2h6', 'of2']] as const;
+    for (const [fuel, ox] of pairs) {
+      const usual = pairRange(fuel, ox).ofDefault;
+      // Rich, usual and lean: what is listed changes with the mixture.
+      for (const k of [0.6, 1, 1.8]) {
+        const g = solvePair(fuel, ox, usual * k, 70, 16);
+        if (!g.ok) continue;
+        holds(colourNote(g.exhaust), g.exhaust, `${fuel} + ${ox} at ${k}x`);
+      }
+    }
+  });
+
+  it('never names a thing the make-up beside it does not hold, for a reactor\u2019s fluids', () => {
+    for (const id of ['ntr-ammonia', 'ntr-methane', 'ntr-water', 'ntr-co2', 'ntr-helium'] as const) {
+      const g = solveFluid(PROPELLANTS[id].fluid!, 2500, 40, 100);
+      expect(g.ok, id).toBe(true);
+      holds(colourNote(g.exhaust), g.exhaust, id);
+    }
+  });
+
+  it('says carbon dioxide, not carbon monoxide, where carbon dioxide is all there is', () => {
+    expect(colourNote([{ name: 'CO2', share: 1 }])).toBe('Colour: the blue-violet glow of hot carbon dioxide.');
+  });
+
+  it('says hydrogen, not steam, where there is no steam', () => {
+    const note = colourNote([{ name: 'H2', share: 0.74 }, { name: 'N2', share: 0.25 }]);
+    expect(note).toMatch(/hydrogen/);
+    expect(note).not.toMatch(/steam/);
+  });
+
+  it('names only the halide that is listed', () => {
+    const note = colourNote([{ name: 'HF', share: 0.76 }, { name: 'H2', share: 0.24 }]);
+    expect(note).toMatch(/hydrogen fluoride/);
+    expect(note).not.toMatch(/chloride/);
+  });
+
+  it('calls implied soot unburnt carbon, and listed soot soot', () => {
+    const kerosene = solvePair('rp1', 'lox', pairRange('rp1', 'lox').ofDefault, 70, 16).exhaust;
+    expect(kerosene.some((e) => e.name === 'C(gr)')).toBe(false);
+    expect(colourNote(kerosene)).toMatch(/unburnt carbon/);
+    expect(colourNote(kerosene)).not.toMatch(/soot/);
+    expect(colourNote([{ name: 'H2', share: 0.6 }, { name: 'C(gr)', share: 0.4 }])).toMatch(/soot glowing orange/);
   });
 });

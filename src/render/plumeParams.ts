@@ -213,7 +213,11 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
   let mid = look.mid;
   let edge = look.edge;
   let opacity = look.opacity;
-  if (rich > 0) {
+  // A look worked out from the exhaust already carries its mixture: richer gas is sootier in the make-up itself.
+  const derived = gasSource.derivedLook;
+  if (derived) {
+    // Nothing more to tint.
+  } else if (rich > 0) {
     mid = mix3(mid, look.richTint, 0.6 * rich);
     edge = mix3(edge, look.richTint, 0.6 * rich);
   } else {
@@ -223,7 +227,7 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
   }
   // Soot and smoke only billow where there is air to hold them up; in vacuum there is nothing to see.
   const air = Math.pow(paFrac, 0.4);
-  const soot = look.soot * clamp(0.4 + 1.2 * rich, 0, 2) * air;
+  const soot = look.soot * (derived ? 1 : clamp(0.4 + 1.2 * rich, 0, 2)) * air;
 
   const throttle = ENERGY_SOURCES[cfg.energy].throttleable ? flight.throttle : 1;
   const altM = flight.altitudeKm * 1000;
@@ -249,9 +253,9 @@ export function plumeParams(cfg: EngineConfig, r: SimResult, flight: FlightState
     opacity,
     soot,
     smoke: look.smoke * air,
-    afterburn: look.afterburnStrength * clamp(0.35 + 0.9 * rich, 0, 1.2) * Math.sqrt(paFrac),
+    afterburn: look.afterburnStrength * (derived ? 1 : clamp(0.35 + 0.9 * rich, 0, 1.2)) * Math.sqrt(paFrac),
     afterburnColor: look.afterburn,
-    particles: look.particles * (rich > 0 ? 1 : 1 + 0.6 * rich),
+    particles: look.particles * (derived || rich > 0 ? 1 : 1 + 0.6 * rich),
     separated: jetLeftWall(r.state),
     skyTop: mix3([0.16, 0.38, 0.74], [0.0, 0.0, 0.015], smooth(0, 45000, altM)),
     skyBottom: mix3([0.56, 0.74, 0.93], [0.008, 0.01, 0.03], smooth(4000, 60000, altM)),
