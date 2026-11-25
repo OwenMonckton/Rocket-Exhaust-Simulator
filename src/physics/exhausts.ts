@@ -57,7 +57,7 @@ export const EXHAUSTS: Record<ExhaustId, ExhaustType> = {
   expansionDeflection: {
     id: 'expansionDeflection',
     name: 'Expansion-deflection',
-    tip: 'A plug sits in the throat, so the gas leaves through a ring and runs out along a short bell. Near the ground the outside air fills the hollow behind the plug and the nozzle acts like a smaller one; higher up the hollow closes and the gas fills the bell.',
+    tip: 'A plug sits in the throat and throws the gas out through a ring onto the wall of a short bell. On a low-pressure engine near the ground, the outside air fills the hollow behind the plug and the nozzle acts like a smaller one. Higher up, or at high chamber pressure, the hollow seals itself and it runs as a plain bell.',
     counts: 'chambers',
     hasNozzle: true,
     extension: false,

@@ -1,6 +1,6 @@
 # Expansion-deflection nozzle (engine builder, part 3b)
 
-Status: awaiting approval, 25 November 2026.
+Status: approved and built, 25 November 2026. Several choices here were changed by what the gas simulation showed: the gas is thrown outward by a cap on the plug, not fed in straight; the smallest plug is 0.5; and the hollow seals by chamber pressure against outside pressure, not by the bell's size. `docs/future-work.md`, "Expansion-deflection piece (part 3b)", says what was built and why.
 
 ## What it is for
 
