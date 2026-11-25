@@ -127,7 +127,7 @@ const AFTERBURN: RGB = [1.0, 0.5, 0.3];
  * The solver works out the exhaust at equilibrium, where carbon is burnt to its oxides and there
  * is no soot at any ordinary mixture. A real hydrocarbon flame is not at equilibrium: where carbon
  * is left half-burnt it makes soot, which is what turns a kerosene plume orange. Carbon monoxide is
- * the make-up's mark of half-burnt carbon, so above a threshold it counts as soot, provided there
+ * the make-up's mark of half-burnt carbon, so the more of it there is past a tenth of the exhaust, the more soot it stands for, provided there
  * is hydrogen about: carbon burnt with no hydrogen (cyanogen) makes none.
  */
 function shares(exhaust: readonly { name: string; share: number }[]) {
@@ -144,7 +144,7 @@ function shares(exhaust: readonly { name: string; share: number }[]) {
     if (id === 'steam' && name !== 'O2' && name !== 'O') hydrogen += share;
     if (AFTERBURNERS.has(name) || id === 'soot') burning += share;
   }
-  const impliedSoot = 0.25 * smooth(0.13, 0.3, co) * clamp01(hydrogen / 0.2);
+  const impliedSoot = 0.25 * smooth(0.1, 0.34, co) * clamp01(hydrogen / 0.2);
   return { byFamily, impliedSoot, burning };
 }
 
@@ -198,7 +198,9 @@ export function lookFromExhaust({ exhaust, tc, condensedShare }: ExhaustInput): 
     edge: clampRGB(edge),
     // The make-up already carries the mixture, so there is no further tint for running rich.
     richTint: clampRGB(mid),
-    opacity: Math.min(1, Math.max(0.15, total * glow + 1.5 * condensed)),
+    // The more there is glowing the more solid the plume, with less and less gained: it never
+    // snaps to solid as soot comes in.
+    opacity: Math.min(1, Math.max(0.15, 1 - Math.exp(-1.2 * total * glow) + 1.5 * condensed)),
     soot: clamp01(sum('soot')),
     smoke: clamp01(sum('smoke') + 2.5 * condensed),
     afterburn: clampRGB(mix(AFTERBURN, mid, 0.25)),

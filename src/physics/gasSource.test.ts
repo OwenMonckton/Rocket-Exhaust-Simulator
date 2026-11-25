@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { FUEL_IDS, OXIDISER_IDS } from './chem/ingredients';
+import { FUEL_IDS, NO_OXIDISER, OXIDISER_IDS } from './chem/ingredients';
 import { clearChemCache, solveFluid, solvePair } from './chem/pair';
 import { showsFigures } from '../ui/copy';
 import { sanitize, simulate } from './engine';
-import { mixRange, resolveGas } from './gasSource';
+import { mixRange, resolveGas, staticLook } from './gasSource';
 import { propellantsFor } from './parts';
 import { PRESETS, getPreset } from './presets';
 import { PROPELLANTS, gasProps } from './propellants';
 import { starterEngine } from './reshape';
-import type { EngineConfig } from './types';
+import type { EngineConfig, PropellantId } from './types';
 
 const G0 = 9.80665;
 const sl = { altitudeKm: 0, throttle: 1 };
@@ -208,6 +208,16 @@ describe('every pick gives finite figures', () => {
   const finite = (cfg: EngineConfig, label: string) => {
     const r = simulate(cfg, sl);
     for (const v of [r.thrust, r.isp, r.tc]) expect(Number.isFinite(v), `${label}: ${r.failure}`).toBe(true);
+    // And a plume that can be drawn: every number of its look in range, and never invisible.
+    const { look } = resolveGas(cfg, r.pc / 1e5, r.expansionRatio);
+    const parts = [...look.core, ...look.mid, ...look.edge, ...look.richTint, ...look.afterburn,
+      look.opacity, look.soot, look.smoke, look.afterburnStrength, look.particles];
+    for (const v of parts) {
+      expect(Number.isFinite(v), `${label}: look`).toBe(true);
+      expect(v, `${label}: look`).toBeGreaterThanOrEqual(0);
+      expect(v, `${label}: look`).toBeLessThanOrEqual(1);
+    }
+    expect(look.opacity, `${label}: opacity`).toBeGreaterThanOrEqual(0.15);
   };
   it('each fuel against oxygen', () => {
     for (const fuel of FUEL_IDS) finite({ ...starterEngine(), fuel }, `${fuel}/lox`);
@@ -256,5 +266,57 @@ describe('whether the gas settled', () => {
     const eps = (nerva.exitDia / nerva.throatDia) ** 2;
     expect(resolveGas(sanitize({ ...nerva, propellant: 'ntr-co2', mixtureRatio: 2360 }), 0, eps).settled).toBe(false);
     expect(resolveGas(nerva, nerva.chamberPressureBar, eps).settled).toBe(true);
+  });
+});
+
+describe("where the plume's look comes from", () => {
+  const built = (fuel: string, oxidiser: string) => sanitize({ ...starterEngine(), propellant: 'calculated', fuel, oxidiser });
+
+  it('leaves every example engine its hand-picked look', () => {
+    for (const p of PRESETS) {
+      const src = resolveGas(p.config, p.config.chamberPressureBar, (p.config.exitDia / p.config.throatDia) ** 2);
+      expect(src.look, p.name).toBe(PROPELLANTS[p.config.propellant as Exclude<PropellantId, 'calculated'>].look);
+      expect(src.derivedLook, p.name).toBe(false);
+    }
+  });
+
+  it('gives a calculated pair a look from its own exhaust', () => {
+    const src = resolveGas(built('b5h9', 'lox'), 70, 16);
+    expect(src.settled).toBe(true);
+    expect(src.derivedLook).toBe(true);
+    expect(src.look).not.toEqual(PROPELLANTS.kerolox.look);
+    // Boron: greener than it is red or blue.
+    expect(src.look.mid[1]).toBeGreaterThan(Math.max(src.look.mid[0], src.look.mid[2]));
+  });
+
+  it('gives a solver-worked reactor fluid a look from its own exhaust', () => {
+    const cfg = sanitize({ ...getPreset('nerva')!.config, propellant: 'ntr-ammonia', presetId: null });
+    const src = resolveGas(cfg, 40, 100);
+    expect(src.settled).toBe(true);
+    expect(src.derivedLook).toBe(true);
+    expect(src.look).not.toBe(PROPELLANTS['ntr-ammonia'].look);
+  });
+
+  it('keeps the borrowed look when the gas did not settle', () => {
+    const src = resolveGas(built('rp1', NO_OXIDISER), 70, 16);
+    expect(src.settled).toBe(false);
+    expect(src.derivedLook).toBe(false);
+    expect(src.look).toBe(PROPELLANTS.kerolox.look);
+  });
+
+  it('shows the same look inside the engine as in the plume once the gas is solved', () => {
+    const cfg = built('b5h9', 'lox');
+    expect(simulate(cfg, sl).thrust).toBeGreaterThan(0);
+    const plume = resolveGas(cfg, cfg.chamberPressureBar, (cfg.exitDia / cfg.throatDia) ** 2).look;
+    expect(staticLook(cfg)).toEqual(plume);
+  });
+
+  it('shows the borrowed look inside an engine whose gas has never been solved', () => {
+    expect(staticLook(built('syntin', 'tnm'))).toBe(PROPELLANTS.kerolox.look);
+  });
+
+  it('shows an example engine its hand-picked look inside, whatever was solved before', () => {
+    resolveGas(built('rp1', 'lox'), 70, 16);
+    expect(staticLook(getPreset('merlin-1d')!.config)).toBe(PROPELLANTS.kerolox.look);
   });
 });
