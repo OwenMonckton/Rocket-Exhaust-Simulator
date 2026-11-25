@@ -99,6 +99,13 @@ describe('a look worked out from the exhaust', () => {
     const look = lookFromExhaust({ exhaust: g.exhaust, tc: g.tc, condensedShare: g.condensedShare });
     expect(look.opacity).toBeLessThanOrEqual(0.3);
     expect(look.opacity).toBeGreaterThanOrEqual(0.15);
+    // Dim as well as thin: the picture draws a pale colour brightly however thin it is.
+    for (const c of [look.core, look.mid, look.edge]) expect(Math.max(...c)).toBeLessThanOrEqual(0.45);
+  });
+
+  it('does not dim an exhaust that has anything in it to glow', () => {
+    expect(Math.max(...solve('h2', 'lf2').core)).toBeGreaterThan(0.8);
+    expect(Math.max(...solve('h2', 'lox').core)).toBeGreaterThan(0.8);
   });
 
   it('keeps every number of a look in range for a spread of unlike pairs', () => {

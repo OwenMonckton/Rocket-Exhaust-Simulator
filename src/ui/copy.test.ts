@@ -7,6 +7,7 @@ import { SPECIES } from '../physics/chem/thermo';
 import { starterEngine } from '../physics/reshape';
 import type { Failure } from '../physics/types';
 import { EXHAUSTS, EXHAUST_IDS } from '../physics/exhausts';
+import { colourNote, colourSources, familyOf } from '../physics/plumeLook';
 import { COUNT_COPY, SPECIES_NAMES, STATE_COPY, TIPS, expansionText, exhaustLine, failureCopy, limitNote, showsFigures, speciesName } from './copy';
 
 // Every gas met by sweeps of every pair across its slider (13 mixtures, five engines) and of every
@@ -248,5 +249,41 @@ describe('copy for the new exhausts', () => {
   });
   it('names what the count slider counts for every exhaust', () => {
     for (const id of EXHAUST_IDS) expect(COUNT_COPY[EXHAUSTS[id].counts].label.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the colour line beside the exhaust’s make-up', () => {
+  // A spread of unlike pairs: everyday, storable, metal, boron, halogen.
+  const pairs = [['rp1', 'lox'], ['ch4', 'lox'], ['h2', 'lox'], ['b5h9', 'lox'], ['li', 'lf2'], ['al-slurry', 'lox'], ['h2', 'lf2'], ['n2h4', 'n2o4'], ['nh3', 'clf3']] as const;
+
+  it('never names a colour the make-up beside it does not hold', () => {
+    for (const [fuel, ox] of pairs) {
+      const g = solvePair(fuel, ox, pairRange(fuel, ox).ofDefault, 70, 16);
+      expect(g.ok, `${fuel} + ${ox}`).toBe(true);
+      const sources = colourSources(g.exhaust);
+      expect(sources.length, `${fuel} + ${ox}`).toBeGreaterThan(0);
+      for (const source of sources) {
+        // Soot the make-up implies is named as unburnt carbon, which the listed carbon monoxide is.
+        const held = source.implied
+          ? g.exhaust.some((e) => e.name === 'CO')
+          : g.exhaust.some((e) => familyOf(e.name) === source.id);
+        expect(held, `${fuel} + ${ox}: ${source.id}`).toBe(true);
+      }
+    }
+  });
+
+  it('is one sentence', () => {
+    for (const [fuel, ox] of pairs) {
+      const note = colourNote(solvePair(fuel, ox, pairRange(fuel, ox).ofDefault, 70, 16).exhaust);
+      expect(note, `${fuel} + ${ox}`).toMatch(/^Colour: [^.]+\.$/);
+    }
+  });
+
+  it('calls implied soot unburnt carbon, and listed soot soot', () => {
+    const kerosene = solvePair('rp1', 'lox', pairRange('rp1', 'lox').ofDefault, 70, 16).exhaust;
+    expect(kerosene.some((e) => e.name === 'C(gr)')).toBe(false);
+    expect(colourNote(kerosene)).toMatch(/unburnt carbon/);
+    expect(colourNote(kerosene)).not.toMatch(/soot/);
+    expect(colourNote([{ name: 'H2', share: 0.6 }, { name: 'C(gr)', share: 0.4 }])).toMatch(/soot glowing orange/);
   });
 });

@@ -1,6 +1,6 @@
 # Plume colour from the exhaust's make-up (engine builder, part 4)
 
-Status: awaiting approval, 25 November 2026.
+Status: approved and built, 25 November 2026. What was built, and where it departed from this, is in `docs/future-work.md` under "Plume colour piece".
 
 ## What it is for
 
@@ -53,7 +53,7 @@ Chosen: 1, by the owner handing the choice over ("go with your pick").
 
 ## The design
 
-- **One new function**, `lookFromExhaust`, in a new file `src/render/plumeLook.ts`. It takes the
+- **One new function**, `lookFromExhaust`, in a new file `src/physics/plumeLook.ts` (first written here as `src/render/`; the physics has to call it, and physics does not import from the drawing code). It takes the
   exhaust's make-up (species and share), the flame temperature and the share of the exhaust that is
   solid or liquid, and returns the same `PlumeLook` record the hand-picked looks use, plus the line
   of words.

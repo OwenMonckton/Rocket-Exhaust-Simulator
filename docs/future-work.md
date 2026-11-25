@@ -142,8 +142,8 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
 - **Only hydrogen is still a hand-typed table among the nuclear fluids.** Ammonia, methane, water,
   carbon dioxide and helium are worked out by the chemistry solver of piece 2 (see "Chemistry
   piece: nuclear fluids against published figures" below). Hydrogen keeps its table because the
-  NERVA example is pinned to it. The fluids still borrow part 1's hand-picked plume look until
-  piece 4.
+  NERVA example is pinned to it. Since piece 4 those fluids take their plume's look from their own
+  exhaust (see "Plume colour piece" below).
 - **Swapping a part is not allowed to destroy the engine by itself**, with one exception. A
   reactor or salt-water reaction is turned down if the swap would overheat it, a flame that a new
   energy source or propellant would make too hot for its throat runs at a lower chamber pressure,
@@ -439,8 +439,8 @@ solver's most efficient, 2.76. It is marked modified, and Reset returns it to th
   every frame. Time spent by the graphics card was not measured.
 - **Three-propellant engines** (lithium, fluorine and hydrogen) **and blends made by the user** are
   not done.
-- **Plume colour** still comes from a hand-picked look per family, for pairs and fluids alike
-  (piece 4).
+- **Plume colour** came from a hand-picked look per family, for pairs and fluids alike. Piece 4
+  has since worked it out from the exhaust (see "Plume colour piece" below).
 - **A calculated aerospike's drawn shape** uses the full-throttle gas whatever the throttle.
 
 ### Found and fixed in the final review
@@ -994,3 +994,119 @@ exhaust-types merge and 787 ms after this one, so neither was published and the 
 chemistry piece from 21 to 24 November 2026. The test now takes the best of three cold runs and
 allows a build machine three times as long (1,800 ms); a person's own machine is still held to
 600 ms.
+
+## Plume colour piece (part 4): what was built and what was left
+
+The design is in `docs/superpowers/specs/2026-11-25-plume-colour-design.md`.
+
+### Words used below
+
+- **Look**: the handful of numbers the picture draws a plume from: three colours (its heart, its
+  body and its ragged edge), how solid it is, and how much soot, smoke, sparks and afterburn it has.
+- **Hand-picked look**: a look typed in by eye for one of the tabled propellants.
+- **Derived look**: a look worked out from what the chemistry says leaves the nozzle.
+- **Family**: a group of exhaust species that glow the same way, such as everything containing
+  boron.
+- **Equilibrium**: the make-up the exhaust would settle to if every reaction had time to finish.
+  This is what the solver works out.
+
+### What was built
+
+- **`src/physics/plumeLook.ts`** turns an exhaust's make-up, flame temperature and the share of it
+  that is solid or liquid into a look, and into one line of words. It is in `src/physics/`, not
+  `src/render/` as the design first said, because the physics has to call it.
+- **Twelve families**, each with a colour and a strength (how brightly a given share of it shows):
+  - soot: orange, very strong
+  - steam, hydrogen and oxygen: faint pale blue
+  - carbon monoxide and dioxide: blue-violet
+  - boron and its compounds: green
+  - lithium and its compounds: crimson
+  - aluminium and its compounds: brilliant white, smoky, with sparks; strongest of all
+  - beryllium and its compounds: white and smoky
+  - hydrogen fluoride and chloride, and other fluorine and chlorine compounds: pale, nearly clear
+  - chlorine and its fluorides: yellow-green
+  - anything with carbon and nitrogen together: violet
+  - nitrogen oxides: orange-brown
+  - unburnt and half-burnt fuel (methane, alcohols, acids): shows nothing, but burns in the air
+  - Helium, nitrogen and nitrogen bound only to hydrogen show nothing at all.
+- **A species' family comes from the elements it is made of**, which the solver already records for
+  all 511 species it knows, so none can be missed. A metal decides the family whatever else is bound
+  to it.
+- **The blend.** The body colour is the families' colours mixed by share times strength. The heart
+  is the body pulled toward white by the flame temperature, and further by white-hot oxide
+  droplets. The edge is the body darkened, reddened for a carbon flame and browned for a sooty one.
+  How solid the plume looks rises with how much is glowing, levelling off smoothly.
+- **Where it is used.** An engine built from a fuel and an oxidiser, and a reactor on ammonia,
+  methane, water, carbon dioxide or helium, get a derived look whenever the solver has a settled
+  gas. When it has none, the look they used to borrow stands.
+- **The gas drawn inside the engine matches the plume.** It uses the look last worked out for that
+  pair or fluid.
+- **The look follows the mixture slider** through the make-up itself, so the old rule that tinted a
+  plume for running rich is skipped for a derived look.
+- **A line of words** under the exhaust's make-up in "Engineer's numbers", such as "Colour: boron
+  burning green." It names the family that shows most and, if another shows at least a quarter as
+  much, that one too.
+
+### Decisions made during the build, in order
+
+1. **The twelve example engines keep their hand-picked looks** (the owner's decision), and a test
+   checks that each one's look is the very same record as before. So do every tabled propellant,
+   the solid motor, tabled hydrogen in a reactor, and salt water.
+2. **Carbon monoxide stands for soot.** The solver's equilibrium exhaust for kerosene with oxygen
+   holds no soot at all: steam 43%, carbon dioxide 28%, carbon monoxide 23%, hydrogen 6%. Methane
+   with oxygen is nearly the same list. A real kerosene flame is orange because carbon left
+   half-burnt makes soot before the reactions finish. So carbon monoxide counts as soot, coming in
+   from a tenth of the exhaust and fully in at 34%, provided there is hydrogen about (carbon burnt
+   with no hydrogen, as in cyanogen, makes none). Kerosene's 23% gives a sooty orange plume and
+   methane's 13% a nearly clean blue one. The line of words calls this "unburnt carbon", not soot,
+   so it never names something the make-up beside it does not list.
+3. **White-hot oxide outshines soot.** Aluminium in kerosene is only 5% aluminium oxide by count of
+   molecules, and at first its plume was indistinguishable from kerosene's. Aluminium's and
+   beryllium's strengths were raised until the white shows through.
+4. **A family comes in gently over its first 2% of the exhaust**, and soot comes in over a wide
+   span of carbon monoxide, so the look never steps as the mixture slider is dragged. A test walks
+   kerosene with oxygen from half to twice its usual mixture in 60 steps and allows no number of the
+   look to move by more than 0.12 in a step.
+5. **An exhaust with almost nothing in it that glows is drawn dim as well as thin.** Helium from a
+   reactor first drew as a bright white plume beside the words "barely glows", because the picture
+   draws a pale colour brightly however thin it is.
+6. **The every-pair check lives with the existing one.** `src/physics/gasSource.test.ts` already
+   solves every fuel with oxygen and hydrogen with every oxidiser; it now also checks each plume's
+   look. Solving them all a second time in another test file slowed the machine enough to fail the
+   chemistry speed test.
+
+### What was measured
+
+At their usual mixtures, 70 bar and area ratio 16, the derived looks sit this far from the
+hand-picked ones (straight-line distance between colours, where 0 is identical and 1.7 is black
+against white); the test allows 0.35 for the heart and body, 0.45 for the edge, 0.3 for how solid
+and 0.25 for soot:
+
+- Kerosene, methane and hydrogen with oxygen all pass, so each is recognisably its example engine's
+  colour. In the browser, derived kerosene is a paler, pinker orange than Merlin's.
+
+Seen in a browser, lit at sea level: methane blue-violet, hydrogen pale blue, pentaborane with
+oxygen green (and still green at 60 km), lithium with fluorine crimson, aluminium in kerosene
+orange with a white glare, hydrogen with fluorine a faint haze, cyanogen with oxygen blue-violet,
+a reactor on ammonia faint blue, on methane sooty orange (the solver gives real soot there, 32%),
+and on helium a dim grey haze. The gas inside the engine matched the plume each time, and there
+were no console errors. An example engine shows no colour line, as it has no make-up to show.
+
+### What was left
+
+- **It is not physically true.** The colours are the ones each family is known for, turned up to
+  be seen. Real hydrogen and hydrogen-fluorine plumes are fainter still, and real boron and lithium
+  colours depend on which compound is glowing.
+- **Soot is a rule of thumb.** Carbon monoxide standing for soot is right for kerosene and methane
+  and is a guess for everything else. A fuel that is rich in carbon monoxide but burns clean in
+  life (methanol run rich, say) will look too orange.
+- **Cyanogen does not look like cyanogen.** Its real flame is a famous hot violet-white. Its
+  equilibrium exhaust is carbon monoxide, carbon dioxide and nitrogen, with none of the carbon and
+  nitrogen compounds that give the violet, so it draws blue-violet like any carbon flame.
+- **At most six species are listed**, each at least half a percent of the exhaust, so a trace that
+  would tint a real flame (a little sodium, say) never appears.
+- **The first frame after choosing a new pair** draws the gas inside the engine in the borrowed
+  colour, until the gas has been solved once.
+- **The example engines and the engines built from the same parts do not quite match.** Merlin's
+  hand-picked orange is richer than derived kerosene's. This is the cost of keeping the examples
+  exactly as they were.
