@@ -74,7 +74,7 @@ export function drawBeamThruster(
     ctx.globalCompositeOperation = 'lighter';
     // Wedges laid one over another, each narrower than the last, add up to a beam that is densest
     // down its middle and fades smoothly to its edges.
-    const LAYERS = 12;
+    const LAYERS = 32;
     for (let k = 1; k <= LAYERS; k++) {
       const share = k / LAYERS;
       // A Hall thruster's beam leaves a ring; the grids' beam leaves the whole face.

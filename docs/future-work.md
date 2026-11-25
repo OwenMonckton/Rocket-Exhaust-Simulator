@@ -127,7 +127,8 @@ in `docs/superpowers/specs/2026-11-20-engine-builder-design.md`. It is the first
      below.
    - **3b (built):** expansion-deflection. See "Expansion-deflection piece (part 3b)" below.
 4. **Plume colour from what is in the exhaust**, replacing hand-picked colours.
-5. **Electric thrusters** (ion, Hall effect), which need their own view.
+5. **Electric thrusters (built):** resistojet, arcjet, gridded ion and Hall effect. See "Electric
+   thrusters (part 5)" below.
 
 ### What is left from the first piece
 
@@ -1310,3 +1311,191 @@ long to simulate whole" and carried on. The link was a `v5` one. No console erro
     already past the speed of sound and heading outward, which takes more room than the throat.
   - `isModified` in `src/state/store.ts` does not look at the plug size (or the cone angle or the
     dual bell's kink), which only matters for an example engine whose exhaust has not been changed.
+
+## Electric thrusters (part 5): what was built and what was left
+
+Built 25 November 2026. Design: `docs/superpowers/specs/2026-11-25-electric-thrusters-design.md`.
+Plan: `docs/superpowers/plans/2026-11-25-electric-thrusters.md`. This was the last planned piece
+of the engine builder.
+
+### Words used below
+
+- **Heated-gas electrics**: the resistojet and the arcjet. Electricity heats a gas, which leaves
+  through an ordinary nozzle.
+- **Beam thrusters**: the gridded ion thruster and the Hall-effect thruster. Atoms are stripped of
+  an electron and thrown out by a voltage. No chamber, throat or hot gas.
+- **Heating share**: how much of a heated-gas engine's electrical power ends up as heat the nozzle
+  can turn into speed.
+- **Isp**: efficiency, in seconds. Thrust divided by the weight of propellant used each second.
+
+### What was built
+
+- **Four new energy sources**: Resistojet, Arcjet, Ion thruster, Hall thruster. Every engine now
+  carries a power (kW) and a voltage, which only electric engines use, and share links moved to
+  `v6` to carry them. Links from v1 to v5 still open.
+- **Heated-gas electrics run on the existing machinery.** The chemistry solver gained
+  `solveHeated`: a fluid given a set amount of heat per kilogram, where the nuclear engine's
+  `solveFluid` heats it to a set temperature. The engine's power and flow set that heat. The flow
+  falls as the gas gets hotter, so the heat per kilogram is searched for (`heated` in
+  `src/physics/gasSource.ts`). Every nozzle shape, the gas simulation and the plume colour work
+  for them unchanged.
+- **Their propellants**: hydrazine, ammonia, hydrogen and water for the resistojet; hydrazine,
+  ammonia and hydrogen for the arcjet. The propellant starts as the liquid in its tank, so the
+  power has to boil it first. Hydrazine breaks down by itself into gas at about 1,000 K, and the
+  electricity adds to that.
+- **They may be far smaller than any other engine**: throat down to 0.3 mm, chamber pressure down
+  to 0.5 bar (`rangesFor` in `src/physics/engine.ts`). The page shows millimetres, millinewtons,
+  milligrams a second and grams of push where figures are small.
+- **Beam thrusters have a formula of their own** (`src/physics/electric.ts`), which `simulate`
+  hands over to before anything about gas is worked out. It follows from power, voltage and the
+  mass of one atom. Propellants: xenon, krypton, argon, iodine.
+- **Beam thrusters have a picture of their own** (`src/render/beamView.ts`): a cutaway of the
+  discharge chamber and two grids, or of the ring-shaped channel and its magnet coils, the small
+  neutraliser beside it, and a faint steady beam coloured by the propellant. It is drawn on the 2D
+  layer. The plume layer draws only the sky. None of the gas simulation's shaders was changed.
+- **Their controls** are Power, Voltage and Thruster diameter. Everything to do with a chamber,
+  throat or nozzle is hidden, as are the gas simulation menus and "Show inside", with a note
+  saying why.
+- **Five examples** joined the twelve: the MR-510 arcjet, the NSTAR and NEXT ion thrusters, and
+  the SPT-100 and XR-5 Hall thrusters.
+
+### Limits and failures added
+
+| Engine | What stops it | How it shows |
+|---|---|---|
+| Resistojet | The heater melts when the gas passes 2,400 K | "Heater burnt out". Destroys the engine. |
+| Arcjet | The electrodes erode when the average gas passes 6,000 K | "Electrodes eroded". Destroys the engine. |
+| Either | Too little power to turn the propellant into gas | "Not enough power to boil the propellant". The engine never starts, unharmed. |
+| Ion or Hall | Outside pressure above 1 Pa (below about 80 km) | "Needs a vacuum". Never starts, or shuts down if brought down while running. Unharmed. |
+| Ion | More current than the grids can pass | "Grids overloaded". Trips off, unharmed. |
+| Hall | More waste heat than the channel can shed | "Channel overheated". Trips off, unharmed. |
+
+Picking an ion or Hall thruster, as an energy source or as an example, moves the altitude to
+100 km, and the test log says so. Nothing else moves the altitude.
+
+### Every constant, and what it rests on
+
+Heated-gas electrics (`src/physics/parts.ts`, `src/physics/gasSource.ts`):
+
+| Constant | Value | Rests on |
+|---|---|---|
+| Resistojet heating share | 0.8 | Textbook (Sutton gives 65 to 90%). **Not tuned: there is no resistojet example.** |
+| Arcjet heating share | 0.41 | Tuned to the MR-510: 0.40 gave an Isp of 567 s against a published 585 s. |
+| Resistojet heater limit | 2,400 K | The design. |
+| Arcjet electrode limit | 6,000 K | The design. The solver settles for hydrazine well past it (7,300 K), so the fallback in the design was not needed. |
+| Arcjet wall share of gas temperature | 0.4 | The design. |
+| Flow efficiency of the chamber | 0.98 | The same figure `simulate` uses for a chamber where nothing burns. |
+| Coldest usable gas | 300 K | Chosen. A settled result colder than this is not treated as gas. |
+| "Heater is adding little" note | below 700 K | Chosen. |
+
+Beam thrusters (`src/physics/electric.ts`). The relations are Goebel and Katz, *Fundamentals of
+Electric Propulsion* (2008), chapter 2. The shares were set once, by hand, so that the four
+examples together come out near their published figures. None is set per example.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| Ion: cost of an ion | 200 V for xenon, scaled by how hard the atom is to ionise | Power spent making each ion, on top of the voltage that throws it out |
+| Ion: beam share | 0.96 | The part of the push that points straight back |
+| Ion: used share | 0.84 | The part of the propellant that leaves as ions |
+| Ion: grid limit | 1.18e-3 A/m² per V^1.5 | About a quarter of the Child-Langmuir figure for grids 1 mm apart |
+| Hall: volts lost | 40 V | |
+| Hall: electrical share | 0.8 | The part of the current that is ions leaving |
+| Hall: beam share | 0.9 | |
+| Hall: used share | 0.9 for xenon, times (atom mass / xenon's) to the power 0.15 | Lighter atoms are likelier to escape un-ionised |
+| Hall: channel's share of the face | 0.4 | |
+| Hall: channel heat limit | 450 kW/m² | Set so the two examples sit near half |
+| Vacuum needed | below 1 Pa | About 80 km. Real thrusters need a far harder vacuum; the page says so. |
+
+### How close each example comes
+
+All at 100 km, full throttle, at the published power (and voltage, for beam thrusters).
+
+| Example | Published | The model | Nearest limit |
+|---|---|---|---|
+| MR-510 arcjet, 2 kW | 258 mN, 585 s | 257.9 mN, 574 s (sized to the thrust) | Heat 63% |
+| NSTAR, 2.3 kW, 1,100 V | 92 mN, 3,100 s | 92.9 mN, 3,306 s | Grid current 58% |
+| NEXT, 6.9 kW, 1,800 V | 236 mN, 4,190 s | 231.8 mN, 4,230 s | Grid current 38% |
+| SPT-100, 1.35 kW, 300 V | 83 mN, 1,600 s | 86.2 mN, 1,615 s | Channel heat 47% |
+| XR-5, 4.5 kW, 300 V | 290 mN, 1,790 s | 287.3 mN, 1,615 s | Channel heat 54% |
+
+Where the published figures came from:
+
+- **MR-510**: the L3Harris electric propulsion data sheet gives 222 to 258 mN, 585 to 615 s and
+  1.53 to 2.04 kW. Taken at the high-thrust end. Its chamber pressure and nozzle are not
+  published; 4 bar and an area ratio of 100 are assumed.
+- **NSTAR**: NASA comparison tables (NTRS 20080010688) give 0.5 to 2.3 kW, 92 mN and "over
+  3,100 s". The Deep Space 1 report gives 92 mN on 2.9 mg/s, which is about 3,230 s; the model's
+  2.87 mg/s agrees with that. The 1,100 V is from a reference giving the screen grid at about
+  1,090 V.
+- **NEXT**: NASA long-duration test reports (NTRS 20130000079, 20140016766): 6.9 kW, 1,800 V,
+  3.52 A, 236 mN, 4,190 s, 36 cm. The model's beam current is 3.45 A.
+- **SPT-100**: Wikipedia's SPT-100 and Hall-effect thruster articles: 1,350 W, 300 V, 1,600 s,
+  and 80 or 83 mN depending on the table.
+- **XR-5 (BPT-4000): not confirmed.** A search confirmed only the 4.5 kW rating and the 300 to
+  400 V range. The 290 mN and 1,790 s at 300 V are the commonly quoted data-sheet figures, from
+  memory, and the 170 mm width is a guess. The model's Isp is 9.8% under the quoted one, the
+  widest gap of the five. If a data sheet is found, check these three numbers first.
+
+### Decisions made during the build, in order
+
+1. **The resistojet starts at 0.2 kW**, not the 0.5 kW first planned. On the starter's 0.6 mm
+   throat 0.5 kW takes hydrazine to 3,000 K and burns the heater out.
+2. **Throttling holds the gas temperature to within about 5%**, not exactly. At half the pressure
+   a little more of the gas is torn into atoms, which takes heat.
+3. **"Power into thrust" can pass 100% on hydrazine.** Hydrazine brings heat of its own, so its
+   jet can carry more than the heater gave it. The readout's tip says so.
+4. **Changing to or from an electric source does not keep the throat.** An electric engine is
+   nothing like the size of one that burns, so going to one starts from a small engine of that
+   kind, and coming back starts from the blank engine. It also stops being "the Merlin, modified".
+5. **Too little power is "underpowered" wherever the search finds no usable gas**, including a
+   stretch where a propellant would boil but condense again in the nozzle.
+6. **The Starlink argon thruster was left out** at the design stage: its published figures cannot
+   be reached by a formula that also fits the SPT-100, short of a constant made up for it. Argon
+   stays as a propellant. A real argon thruster does better than this formula's argon.
+7. **No vacuum-chamber drawing.** The altitude control already says the thruster is in space.
+8. **The failure is titled "Needs a vacuum"**, because it also covers a running thruster brought
+   down into air. The line above the gauges reads "Will not light in air" for one that is off.
+9. **A group of controls with nothing to show is hidden.** An electric engine has no mixture, and
+   the empty "Mixture" heading was left standing.
+10. **A heated-gas electric engine rumbles at 15% of an ordinary engine's volume**, and a beam
+    thruster makes no sound. A quarter of a newton does not roar.
+11. **The beam is drawn as a wedge in 32 overlaid layers**, on the 2D canvas, so no shader changed.
+
+### Proof that nothing else moved
+
+- The twelve examples' entries in both snapshot files are untouched: each file gained five entries
+  and lost no line.
+- Three older tests assumed every example is hand-tabled, every energy source keeps the throat on
+  a swap, and every example has a nozzle. Each was narrowed to the engines it is true of, with a
+  comment, and a new test pins that the tabled examples still number twelve.
+
+### Seen in a browser
+
+At 1440 by 900: an arcjet with the gas simulated inside it and its sizes in millimetres; an ion
+and a Hall thruster lit at 100 km with their beams; an ion thruster refusing at 9 km with the
+"Needs a vacuum" box and its "Switch on again" button; the picker with all seventeen cards; the
+SPT-100 example lit. No console errors.
+
+### What was left
+
+- **No resistojet example**, so its heating share is untuned.
+- **The XR-5's published figures and width are unconfirmed** (above).
+- **Other electric thrusters**: magnetoplasmadynamic, VASIMR, pulsed plasma, electrospray.
+- **The power supply**: solar panels, their size, distance from the Sun, batteries. Power is
+  simply a setting.
+- **Wear.** Real grids and channels erode over thousands of hours. Here a thruster runs within
+  its limits or it does not.
+- **The neutraliser's own flow and power** are inside the efficiency figures, not settings.
+- **The beam is drawn, not simulated**, and the gas simulation's figures are not offered for a
+  beam thruster.
+- **A heated-gas electric engine is drawn as an ordinary small engine.** There is no heater coil
+  or arc in the cutaway.
+- **An arcjet's solver assumes the atoms recombine in the nozzle.** Real ones mostly do not. The
+  heating share covers the loss on average, tuned at one point (hydrazine, 2 kW); other
+  propellants and powers are not checked against anything.
+- **Not checked at phone width** for the electric engines.
+- **The test-log line about the altitude** is written when the energy source is changed, but is
+  cleared straight away when an example is picked, because picking an example starts a new log.
+- **An altitude sweep with a beam thruster** starts on the ground and so stops at once with
+  "Needs a vacuum".
+- **`src/dev/accuracy.ts`** still lists only the four original energy sources.

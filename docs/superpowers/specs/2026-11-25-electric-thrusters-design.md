@@ -1,6 +1,6 @@
 # Electric thrusters (engine builder, part 5)
 
-Status: approved, 25 November 2026.
+Status: approved and built, 25 November 2026. Changes made while building: the resistojet starts at 0.2 kW; the vacuum failure is titled "Needs a vacuum"; the XR-5's published figures could not be confirmed against a source. `docs/future-work.md`, "Electric thrusters (part 5)", says what was built and why.
 
 ## What it is for
 
