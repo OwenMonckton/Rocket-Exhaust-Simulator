@@ -1,4 +1,6 @@
+import { RANGES } from '../physics/engine';
 import type { StageLayout } from '../sim/runtime';
+import { curvePosition } from './controls';
 
 /** By this altitude the ground and the stand have dropped out of the picture. */
 export const STAND_GONE_KM = 2;
@@ -6,6 +8,31 @@ export const STAND_GONE_KM = 2;
 /** How much of the stand shows at an altitude: all of it on the ground, none once it has fallen away. */
 export function standShare(altitudeKm: number): number {
   return Math.min(1, Math.max(0, 1 - altitudeKm / STAND_GONE_KM));
+}
+
+/** The heights marked on the picture's altitude scale: the same as the altitude slider's. */
+export const ALTITUDE_MARKS = [
+  { at: 0, label: 'Sea level' },
+  { at: 10, label: '10 km' },
+  { at: 40, label: '40 km' },
+  { at: 86, label: 'Vacuum' },
+];
+
+/** The altitude slider's spread: nearly all the air is in the first tens of kilometres. */
+const ALTITUDE_CURVE = 2;
+
+/** Where an altitude sits on the picture's scale, between its foot (the ground) and its top. */
+export function altitudeY(km: number, top: number, bottom: number): number {
+  return bottom - curvePosition(km, RANGES.altitudeKm, ALTITUDE_CURVE) * (bottom - top);
+}
+
+/** Room the scale leaves above it (the view switch) and below it (the zoom buttons), px. */
+const SCALE_TOP = 72;
+const SCALE_FOOT = 64;
+
+/** False for a picture too short to read a scale in: it is left out there. */
+export function altitudeScaleFits(heightPx: number): boolean {
+  return heightPx - SCALE_TOP - SCALE_FOOT >= 160;
 }
 
 /** A numbered mark on the engine: where its disc sits and the point on the engine it names. */
@@ -82,7 +109,29 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
   stand.append(earth, ground, wall, frame);
   const leaders = document.createElementNS(NS, 'path');
   leaders.setAttribute('class', 'leaders');
-  svg.append(stand, leaders);
+  // Down the picture's right edge: how high the engine is, so the climb shows once the stand has gone.
+  const scale = document.createElementNS(NS, 'g');
+  scale.setAttribute('class', 'altscale');
+  const rail = document.createElementNS(NS, 'path');
+  rail.setAttribute('class', 'rail');
+  const tickLabels = ALTITUDE_MARKS.map((m) => {
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('class', 'tick-label');
+    t.setAttribute('text-anchor', 'end');
+    t.textContent = m.label;
+    return t;
+  });
+  const marker = document.createElementNS(NS, 'g');
+  marker.setAttribute('class', 'marker');
+  const pointer = document.createElementNS(NS, 'path');
+  const tag = document.createElementNS(NS, 'rect');
+  const reading = document.createElementNS(NS, 'text');
+  reading.setAttribute('text-anchor', 'end');
+  marker.append(tag, reading, pointer);
+  scale.append(rail, ...tickLabels, marker);
+  scale.setAttribute('aria-hidden', 'true');
+  svg.append(stand, leaders, scale);
+  let lastScale = '';
 
   const discs = new Map<string, HTMLButtonElement>();
   let lastKey = '';
@@ -134,6 +183,39 @@ export function createStand(svg: SVGSVGElement, marks: HTMLElement, focus: (id: 
             saddle(l.originX + len * 0.8) +
             (headX > WALL ? `M${headX} ${l.centreY}H${WALL}` : ''),
         );
+      }
+
+      // The altitude scale: rail and marks only when the picture changes size, the marker every frame.
+      const fits = altitudeScaleFits(h);
+      scale.style.display = fits ? '' : 'none';
+      if (fits) {
+        const x = w - 22;
+        const top = SCALE_TOP;
+        const foot = h - SCALE_FOOT;
+        const scaleKey = `${w},${h}`;
+        if (scaleKey !== lastScale) {
+          lastScale = scaleKey;
+          rail.setAttribute('d', `M${x} ${top}V${foot}` + ALTITUDE_MARKS.map((m) => `M${x - 5} ${altitudeY(m.at, top, foot).toFixed(1)}h10`).join(''));
+          ALTITUDE_MARKS.forEach((m, i) => {
+            tickLabels[i].setAttribute('x', String(x - 10));
+            tickLabels[i].setAttribute('y', (altitudeY(m.at, top, foot) + 4).toFixed(1));
+          });
+        }
+        const y = altitudeY(altitudeKm, top, foot);
+        const text = altitudeKm >= 86 ? `${altitudeKm.toFixed(0)} km` : `${altitudeKm.toFixed(1)} km`;
+        if (reading.textContent !== text) reading.textContent = text;
+        pointer.setAttribute('d', `M${x - 1} ${y.toFixed(1)}l-8 -5v10z`);
+        reading.setAttribute('x', String(x - 16));
+        reading.setAttribute('y', (y + 4.5).toFixed(1));
+        const tw = 7.6 * text.length + 10;
+        tag.setAttribute('x', (x - 16 - tw + 5).toFixed(1));
+        tag.setAttribute('y', (y - 9).toFixed(1));
+        tag.setAttribute('width', tw.toFixed(1));
+        tag.setAttribute('height', '18');
+        // The fixed marks give way where the reading stands over them.
+        ALTITUDE_MARKS.forEach((m, i) => {
+          tickLabels[i].style.opacity = Math.abs(altitudeY(m.at, top, foot) - y) < 14 ? '0' : '';
+        });
       }
 
       const list = calloutsFor(ids, l);

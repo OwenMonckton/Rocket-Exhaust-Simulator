@@ -4,7 +4,7 @@ import { PRESETS } from '../physics/presets';
 import type { StageLayout } from '../sim/runtime';
 import { curvePosition, curveValue } from './controls';
 import { silhouettePath } from './picker';
-import { STAND_GONE_KM, calloutsFor, standShare } from './stand';
+import { ALTITUDE_MARKS, STAND_GONE_KM, altitudeScaleFits, altitudeY, calloutsFor, standShare } from './stand';
 import { stamp } from './testlog';
 
 describe('the altitude scale', () => {
@@ -127,5 +127,29 @@ describe('the engine outlines in the picker', () => {
         expect(numbers[i + 1], p.name).toBeLessThanOrEqual(56);
       }
     }
+  });
+});
+
+describe('the altitude scale in the picture (design review)', () => {
+  const top = 72;
+  const bottom = 472;
+
+  it('runs from the ground at its foot to the top of the range, spread as the altitude slider is', () => {
+    expect(altitudeY(0, top, bottom)).toBe(bottom);
+    expect(altitudeY(100, top, bottom)).toBe(top);
+    // Ten kilometres sits a third of the way up, as on the slider.
+    expect(altitudeY(10, top, bottom)).toBeCloseTo(bottom - Math.sqrt(0.1) * (bottom - top), 9);
+    expect(altitudeY(-5, top, bottom)).toBe(bottom);
+    expect(altitudeY(500, top, bottom)).toBe(top);
+  });
+
+  it('marks the same heights as the slider', () => {
+    expect(ALTITUDE_MARKS.map((m) => m.at)).toEqual([0, 10, 40, 86]);
+    expect(ALTITUDE_MARKS.map((m) => m.label)).toEqual(['Sea level', '10 km', '40 km', 'Vacuum']);
+  });
+
+  it('is left out of a picture too short to read it', () => {
+    expect(altitudeScaleFits(600)).toBe(true);
+    expect(altitudeScaleFits(260)).toBe(false);
   });
 });

@@ -35,9 +35,9 @@ describe('the engine picker, grouped (critique P2)', () => {
   it('gives each card its thrust and efficiency from the physics, where the engine is meant to run', () => {
     const merlin = PRESETS.find((p) => p.id === 'merlin-1d')!;
     const r = simulate(merlin.config, { altitudeKm: 0, throttle: 1 });
-    expect(cardFigure(merlin)).toBe(`${Math.round(r.thrust / 1000)} kN · ${Math.round(r.isp)} s at sea level`);
-    expect(cardFigure(PRESETS.find((p) => p.id === 'merlin-vac')!)).toMatch(/^\d+ kN · \d+ s in vacuum$/);
-    expect(cardFigure(PRESETS.find((p) => p.id === 'nstar')!)).toMatch(/^\d+(\.\d)? mN · 3,\d{3} s in vacuum$/);
+    expect(cardFigure(merlin)).toBe(`${Math.round(r.thrust / 1000)} kN, ${Math.round(r.isp)} s at sea level`);
+    expect(cardFigure(PRESETS.find((p) => p.id === 'merlin-vac')!)).toMatch(/^\d+ kN, \d+ s in vacuum$/);
+    expect(cardFigure(PRESETS.find((p) => p.id === 'nstar')!)).toMatch(/^\d+(\.\d)? mN, 3,\d{3} s in vacuum$/);
     for (const p of PRESETS) expect(cardFigure(p), p.id).not.toMatch(/NaN|Infinity|undefined/);
   });
 });

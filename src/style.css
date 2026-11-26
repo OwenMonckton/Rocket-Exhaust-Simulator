@@ -90,12 +90,20 @@ body {
   outline-offset: 2px;
 }
 
-h1,
-h2 {
+/* The product's name is stencilled like an instrument; the sections of the page are named in
+   ordinary case, so a capital label means a reading or a control on the stand. */
+h1 {
   margin: 0;
   font: 700 13px/1.2 var(--display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--dim);
+}
+
+h2 {
+  margin: 0;
+  font: 700 16px/1.2 var(--display);
+  letter-spacing: 0.02em;
   color: var(--dim);
 }
 
@@ -339,9 +347,8 @@ header h1 {
 
 .engine-group h3 {
   margin: 0 0 8px;
-  font: 700 13px/1.2 var(--display);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font: 700 16px/1.2 var(--display);
+  letter-spacing: 0.02em;
   color: var(--dim);
 }
 
@@ -490,8 +497,25 @@ header h1 {
   text-wrap: pretty;
 }
 
-.note:empty {
+.note:empty,
+.effect:empty {
   display: none;
+}
+
+/* What a part is doing to the engine now: one line, in the text colour, under its menu. */
+.effect {
+  margin: 5px 0 0;
+  font: 700 15px/1.2 var(--display);
+  letter-spacing: 0.02em;
+}
+
+/* A part's description shows while it is being picked; its tooltip carries it the rest of the time. */
+.group.parts .row:not(:focus-within) .note:not(.warn) {
+  display: none;
+}
+
+.note.warn {
+  color: var(--yellow);
 }
 
 .tune {
@@ -614,6 +638,39 @@ main {
   stroke-width: 7;
   stroke-linejoin: miter;
   stroke-linecap: butt;
+}
+
+/* The altitude scale down the picture's right edge, faint enough to sit under the plume. */
+.altscale .rail {
+  fill: none;
+  stroke: rgba(233, 236, 230, 0.45);
+  stroke-width: 1;
+}
+
+.altscale .tick-label {
+  fill: rgba(233, 236, 230, 0.8);
+  font: 400 11px/1 var(--body);
+  /* A thin dark edge keeps the marks readable over a bright plume. */
+  paint-order: stroke;
+  stroke: rgba(21, 27, 24, 0.55);
+  stroke-width: 3px;
+}
+
+.altscale .marker path {
+  fill: var(--text);
+}
+
+.altscale .marker rect {
+  fill: rgba(21, 27, 24, 0.9);
+  stroke: var(--line);
+  stroke-width: 1;
+  rx: 2;
+}
+
+.altscale .marker text {
+  fill: var(--text);
+  font: 700 13px/1 var(--display);
+  letter-spacing: 0.02em;
 }
 
 .leaders {
@@ -1031,10 +1088,16 @@ button.primary:hover:not(:disabled) {
 
 .k {
   display: block;
-  font: 700 13px/1.2 var(--display);
+  font: 700 15px/1.2 var(--display);
+  letter-spacing: 0.02em;
+  color: var(--dim);
+}
+
+/* The gauges are instruments: their names stay in capitals. */
+.meter .k {
+  font-size: 13px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--dim);
 }
 
 .stat {
@@ -1087,9 +1150,8 @@ button.primary:hover:not(:disabled) {
 /* What every figure in the column is: a forecast for a cold engine, readings from a lit one. */
 .run {
   margin: 0;
-  font: 700 15px/1.2 var(--display);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font: 700 17px/1.2 var(--display);
+  letter-spacing: 0.02em;
 }
 
 .run:empty {
@@ -1549,8 +1611,9 @@ button.primary:hover:not(:disabled) {
   #readouts {
     overflow: visible;
   }
+  /* Thrust and efficiency are pinned with the picture here, so the column's figure steps down. */
   .v {
-    font-size: 84px;
+    font-size: 52px;
   }
   #log-box {
     flex: none;

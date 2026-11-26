@@ -152,7 +152,7 @@ describe('exhaust species names', () => {
       Object.freeze({ name: 'H2', share: 0.291 }),
       Object.freeze({ name: 'OH', share: 0.004 }),
     ]) as { name: string; share: number }[];
-    expect(exhaustLine(exhaust)).toBe('Steam 63% · Hydrogen 29% · Hydroxyl (OH) <1% · …');
+    expect(exhaustLine(exhaust)).toBe('Steam 63%, hydrogen 29%, hydroxyl (OH) <1% and more');
     expect(exhaustLine([])).toBe('');
   });
 
@@ -163,7 +163,7 @@ describe('exhaust species names', () => {
       Object.freeze({ name: 'BeO(b)', share: 0.2 }),
       Object.freeze({ name: 'H2O', share: 0.248 }),
     ]) as { name: string; share: number }[];
-    expect(exhaustLine(exhaust)).toBe('Solid beryllium oxide 50% · Hydrogen 25% · Steam 25%');
+    expect(exhaustLine(exhaust)).toBe('Solid beryllium oxide 50%, hydrogen 25%, steam 25%');
     expect(exhaust.map((e) => e.name)).toEqual(['BeO(a)', 'H2', 'BeO(b)', 'H2O']);
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sanitize, simulate } from '../physics/engine';
 import { starterEngine, withEnergy } from '../physics/reshape';
 import { scaleBarLabel } from '../render/drawUtil';
-import { formatLength, formatPower, formatVoltage, hiddenForBeam, mixtureShown, powerShown, pressureLog, roundPressure, voltageShown } from './controls';
+import { formatAltitude, withRatio, formatLength, formatPower, formatVoltage, hiddenForBeam, mixtureShown, powerShown, pressureLog, roundPressure, voltageShown } from './controls';
 import { LIMIT_COPY, TIPS, failureCopy, limitCopy, restartLabel } from './copy';
 import { getPreset } from '../physics/presets';
 import { beamReadout, delta, fmtFlow, fmtIntoThrust, fmtPush, fmtThrust, gaugesFor, rowsHidden } from './readouts';
@@ -210,5 +210,13 @@ describe('final review', () => {
     expect(fmtIntoThrust(1)).toBe('100%');
     expect(fmtIntoThrust(4.83)).toBe('over 100%');
     expect(fmtIntoThrust(3444969.37)).toBe('over 100%');
+  });
+});
+
+describe('separators (design review)', () => {
+  it('writes a length with its ratio, and the top of the altitude range, in plain words', () => {
+    expect(withRatio(0.8, 0.2)).toBe('80.0 cm, ratio 16.0');
+    expect(formatAltitude(100)).toBe('100 km, vacuum');
+    expect(formatAltitude(26.64)).toBe('26.6 km');
   });
 });

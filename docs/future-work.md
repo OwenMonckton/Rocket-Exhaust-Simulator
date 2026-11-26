@@ -1600,3 +1600,28 @@ same day; its three P2 issues were left (below).
 
 - Fire is still the 32nd of 33 tab stops; Space is the way to it from the keyboard.
 - Thrust and the gauges are not read out as they change; only the log is.
+
+## Design review, 26 November 2026: five changes
+
+A fresh look at the page (desktop and phone, idle and climbing) found it had a clear point of view
+but too much sameness around its strong ideas. Five changes were made; DESIGN.md is updated to
+match.
+
+1. **Capitals only for what is on the stand.** The gauges, the console's Throttle and Altitude, the
+   clock, the Fire button, the nozzle state and the names stay in capitals. Section and reading
+   names are in ordinary case ("Parts", "Test log", "Efficiency (Isp)"), which also stops "Isp"
+   being shown as "ISP".
+2. **The Build column says what each part is doing.** Under each part picker is one line from the
+   physics: "Flame at 3,549 K", "Over-expanded here", "Exhaust leaving at 3.01 km/s",
+   "Mixture 2.36 : 1", "2.30 kW at 1,100 V". The part's description shows only while it is being
+   picked (its tooltip carries it otherwise); warnings always show, in yellow. Part descriptions
+   are sentences ("Xenon gas, with a voltage to throw it out.") where they were shorthand.
+   (`partEffect`, `partDescription` in `src/ui/partEffect.ts`.)
+3. **An altitude scale in the picture.** A thin rail down the right edge, marked as the altitude
+   slider is, with a marker carrying the altitude, so the climb shows after the stand has fallen
+   away. Left out where the picture is too short (on a phone).
+4. **On a phone the column's thrust figure steps down to 52px**, since thrust and Isp are pinned
+   above it.
+5. **One separator convention.** Paired figures take a slash ("283 s / 313 s"); lists and figures
+   with a qualifier take commas and words ("845 kN, 283 s at sea level"; "Steam 63%, hydrogen 29%
+   and more"; "100 km, vacuum"). No more middle dots.

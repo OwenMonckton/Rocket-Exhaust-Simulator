@@ -7,6 +7,7 @@ import { FUELS, FUEL_IDS, NO_OXIDISER, OXIDISERS, OXIDISER_IDS, type Ingredient 
 import { simulate } from '../physics/engine';
 import type { AppState, Store } from '../state/store';
 import { AEROSPIKE_DIMS, COUNT_COPY, TIPS } from './copy';
+import { partDescription, partEffect } from './partEffect';
 
 interface SliderSpec {
   id: string;
@@ -76,8 +77,8 @@ interface SelectSpec {
   options(s: AppState): { value: string; label: string; tip?: string; group?: string }[];
   get(s: AppState): string;
   set(v: string): void;
-  /** A line of small print under the menu */
-  note?(s: AppState): string;
+  /** The physics' warnings about the part, always shown under the menu */
+  warnings?(s: AppState): string;
   /** Hide the menu, and its note, for engines it does not apply to */
   hidden?(s: AppState): boolean;
 }
@@ -95,13 +96,11 @@ const noOxidiser = (s: AppState) => calculatedBurn(s) && s.config.oxidiser === N
 const mixLog = (s: AppState) => calculatedBurn(s) && mixRange(s.config).ofMin > 0;
 
 /**
- * The small print under the Propellant picker: what a tabled propellant is made of and, for an engine
- * with no oxidiser picker (a reactor), the physics' warnings about its fluid. Cached, so cheap.
+ * The warnings under the Propellant picker: for an engine with no oxidiser picker (a reactor, an
+ * electric engine), the physics' warnings about its fluid. Cached, so cheap.
  */
 export function propellantNote(s: AppState): string {
-  const made = s.config.propellant === 'calculated' ? '' : `${PROPELLANTS[s.config.propellant].fuel} + ${PROPELLANTS[s.config.propellant].oxidiser}`;
-  const warnings = burnsPair(s) ? [] : simulate(s.config, s.flight).notes;
-  return [made, ...warnings].filter(Boolean).join(' · ');
+  return burnsPair(s) ? '' : simulate(s.config, s.flight).notes.join(' ');
 }
 
 /** True for an engine that runs on electrical power, which has a Power setting. */
@@ -126,6 +125,16 @@ export const pressureLog = (s: AppState) => ENERGY_SOURCES[s.config.energy].kind
 export function roundPressure(v: number, s: AppState): number {
   const step = pressureLog(s) && v < 10 ? 0.1 : 1;
   return Math.round(v / step) * step;
+}
+
+/** A nozzle width and its area ratio to the throat, in plain words. */
+export function withRatio(dia: number, throatDia: number): string {
+  return `${formatLength(dia)}, ratio ${((dia / throatDia) ** 2).toFixed(1)}`;
+}
+
+/** The altitude, saying so where it is vacuum. */
+export function formatAltitude(km: number): string {
+  return km >= 86 ? `${km.toFixed(0)} km, vacuum` : `${km.toFixed(1)} km`;
 }
 
 /** Electrical power, in watts below a kilowatt. */
@@ -194,7 +203,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
       const shown = key === 'exitDia' && s.config.exhaust === 'aerospike' ? v * Math.sqrt(s.config.chambers) : v;
       if (isBeam(s.config.energy)) return formatLength(v);
       return key === 'exitDia'
-        ? `${formatLength(shown)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`
+        ? withRatio(shown, s.config.throatDia * (shown / v))
         : formatLength(v);
     },
     describe: (s) =>
@@ -229,7 +238,6 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           options: () => ENERGY_IDS.map((id) => ({ value: id, label: ENERGY_SOURCES[id].name, tip: ENERGY_SOURCES[id].tip })),
           get: (s) => s.config.energy,
           set: (v) => store.setEnergy(v as EnergyId),
-          note: (s) => ENERGY_SOURCES[s.config.energy].tip,
         },
         {
           id: 'exhaust',
@@ -238,7 +246,6 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           options: () => EXHAUST_IDS.map((id) => ({ value: id, label: EXHAUSTS[id].name, tip: EXHAUSTS[id].tip })),
           get: (s) => s.config.exhaust,
           set: (v) => store.setExhaust(v as ExhaustId),
-          note: (s) => EXHAUSTS[s.config.exhaust].tip,
         },
         {
           id: 'propellant',
@@ -248,7 +255,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           options: (s) => propellantsFor(s.config.energy).map((id) => ({ value: id, label: PROPELLANTS[id].name, tip: PROPELLANTS[id].tip })),
           get: (s) => s.config.propellant,
           set: (v) => store.set({ config: { propellant: v as PropellantId } }),
-          note: propellantNote,
+          warnings: propellantNote,
           // A combustion chamber picks its fuel and oxidiser separately instead.
           hidden: burnsPair,
         },
@@ -259,9 +266,6 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           options: () => FUEL_IDS.map((id) => ingredientOption(FUELS[id])),
           get: (s) => s.config.fuel,
           set: (v) => store.setFuel(v),
-          // An example on its hand-tuned table says so; a tabled engine with no example (an old link) says nothing.
-          note: (s) =>
-            calculatedBurn(s) ? FUELS[s.config.fuel].tip : s.config.presetId ? "Tuned to the real engine's published figures" : '',
           hidden: (s) => !burnsPair(s),
         },
         {
@@ -272,7 +276,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           get: (s) => s.config.oxidiser,
           set: (v) => store.setOxidiser(v),
           // The physics' warnings about this pair. The result is cached, so this costs nothing new.
-          note: (s) => simulate(s.config, s.flight).notes.join(' · '),
+          warnings: (s) => simulate(s.config, s.flight).notes.join(' '),
           hidden: (s) => !burnsPair(s),
         },
       ],
@@ -342,7 +346,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           range: (s) => innerExitRange(s.config),
           get: (s) => s.config.innerExitDia,
           set: (v) => store.set({ config: { innerExitDia: v } }),
-          format: (v, s) => `${formatLength(v)} · ratio ${((v / s.config.throatDia) ** 2).toFixed(1)}`,
+          format: (v, s) => withRatio(v, s.config.throatDia),
           hidden: shapeHidden('innerExitDia'),
         },
         {
@@ -435,7 +439,7 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           range: () => RANGES.altitudeKm,
           get: (s) => s.flight.altitudeKm,
           set: (v) => store.set({ flight: { altitudeKm: Math.round(v * 10) / 10 } }),
-          format: (v) => (v >= 86 ? `${v.toFixed(0)} km · vacuum` : `${v.toFixed(1)} km`),
+          format: formatAltitude,
           curve: 2,
           ticks: [
             { at: 0, label: 'Sea level' },
@@ -488,8 +492,12 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
       head.append(el('span', 'name', spec.label));
       const select = el('select');
       select.id = spec.id;
+      // Under each part: what it is doing to this engine now, always; what it is, only while it
+      // is being picked (the row's tooltip carries it otherwise); and any warning, always.
+      const effect = el('p', 'effect');
       const note = el('p', 'note');
-      row.append(head, select, note);
+      const warn = el('p', 'note warn');
+      row.append(head, select, effect, note, warn);
       box.append(row);
       select.addEventListener('change', () => spec.set(select.value));
       // The menu is only rebuilt when what it offers changes, so it stays open while in use.
@@ -524,8 +532,12 @@ export function createControls(root: HTMLElement, flightRoot: HTMLElement, store
           select.replaceChildren(...loose, ...headings.values());
         }
         if (select.value !== spec.get(s)) select.value = spec.get(s);
-        const text = spec.note?.(s) ?? '';
-        if (note.textContent !== text) note.textContent = text;
+        const description = partDescription(spec.id, s);
+        if (note.textContent !== description) note.textContent = description;
+        const doing = partEffect(spec.id, s, simulate(s.config, s.flight));
+        if (effect.textContent !== doing) effect.textContent = doing;
+        const warning = spec.warnings?.(s) ?? '';
+        if (warn.textContent !== warning) warn.textContent = warning;
       });
     }
     for (const spec of group.sliders) {

@@ -71,7 +71,7 @@ export function cardFigure(p: Preset): string {
   const space = p.published.atVacuum;
   const r = simulate(p.config, { altitudeKm: space ? 100 : 0, throttle: 1 });
   const thrust = r.thrust >= 1000 ? `${Math.round(r.thrust / 1000)} kN` : fmtThrust(r.thrust);
-  return `${thrust} \u00b7 ${Math.round(r.isp).toLocaleString('en-US')} s ${space ? 'in vacuum' : 'at sea level'}`;
+  return `${thrust}, ${Math.round(r.isp).toLocaleString('en-US')} s ${space ? 'in vacuum' : 'at sea level'}`;
 }
 
 export interface Picker {

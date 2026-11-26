@@ -395,7 +395,7 @@ export function speciesName(name: string): string {
   return name.split(',')[0].replace(/AL/g, 'Al').replace(/CL/g, 'Cl');
 }
 
-/** The exhaust as "Steam 63% · Hydrogen 29% · …", the dots marking what is too small to list. Never changes `exhaust`. */
+/** The exhaust as "Steam 63%, hydrogen 29% and more", a list in ordinary words; "and more" where some is too small to list. Never changes `exhaust`. */
 export function exhaustLine(exhaust: readonly { name: string; share: number }[]): string {
   if (exhaust.length === 0) return '';
   // Species with the same plain name (two solid forms of one oxide) are one thing to the reader.
@@ -405,10 +405,10 @@ export function exhaustLine(exhaust: readonly { name: string; share: number }[])
     byName.set(plain, (byName.get(plain) ?? 0) + share);
   }
   const merged = [...byName].sort((a, b) => b[1] - a[1]);
-  const parts = merged.map(([name, share]) => `${name} ${share < 0.005 ? '<1' : Math.round(share * 100)}%`);
+  // A list in a sentence: only its first name keeps its capital.
+  const parts = merged.map(([name, share], i) => `${i === 0 ? name : name.charAt(0).toLowerCase() + name.slice(1)} ${share < 0.005 ? '<1' : Math.round(share * 100)}%`);
   const listed = exhaust.reduce((sum, e) => sum + e.share, 0);
-  if (listed < 0.99) parts.push('…');
-  return parts.join(' · ');
+  return parts.join(', ') + (listed < 0.99 ? ' and more' : '');
 }
 
 /** Failure text, with wording specific to an energy source where the general wording would mislead. */

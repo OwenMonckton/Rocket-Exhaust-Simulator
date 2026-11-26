@@ -202,7 +202,7 @@ Both are self-hosted in `assets/fonts` under the SIL Open Font License. Only wei
 - **Label** (700, 13px, uppercase, 0.12em, Dim): the name of a reading, a control or a panel ("Thrust", "Wall stress", "Parts", "Test log"). A label always names the thing directly beneath or beside it.
 
 ### Named Rules
-**The Two Voices Rule.** Figures, labels and names are Barlow Condensed 700 in capitals. Sentences are Barlow in ordinary case. Never write a sentence in condensed capitals, and never set a figure in the body face.
+**The Two Voices Rule.** Figures, labels and names are Barlow Condensed 700; sentences are Barlow in ordinary case. Capitals are kept for what is on the stand itself: the product's and engine's names, the gauges, the console's Throttle and Altitude, the clock, the Fire button, the nozzle state and the Armed line. Everything else is named in ordinary case, sections and readings alike ("Parts", "Test log", "Efficiency (Isp)"), so a capital label always means an instrument. Never write a sentence in condensed capitals, and never set a figure in the body face. In running text, paired figures take a slash ("283 s / 313 s") and lists take commas, not middle dots.
 
 **The Steady Digits Rule.** Tabular figures are on for the whole page, so a number that changes many times a second does not shift sideways. Any element that shows a changing number must keep them on.
 
@@ -211,7 +211,7 @@ Both are self-hosted in `assets/fonts` under the SIL Open Font License. Only wei
 On a desktop the page is a fixed grid that fills the window and does not scroll: a top bar across the full width, then three columns. The Build column on the left is 290px, the Test data column on the right is 320px, and the picture takes whatever is left. Under the picture, in the middle column, sits the console row. The Build column and the readings scroll inside themselves if they are too tall.
 
 - **Top bar:** product name, the engine's name and one-line description, Change engine, then Display, Sound and Share pushed to the right.
-- **Build column:** numbered part pickers, each a label, a dropdown and a one-line note, then a fold-open "Tune the engine" section of sliders.
+- **Build column:** numbered part pickers, each a label, a dropdown and one line in condensed type saying what the part is doing to this engine now, from the physics ("Over-expanded here", "Flame at 3,549 K"). The part's description shows under it only while it is being picked; its tooltip carries it otherwise. Warnings from the physics always show, in Yellow. Then a fold-open "Tune the engine" section of sliders.
 - **Picture:** the engine on its stand with the ground line. Small labels sit in its corners, 12px in from the edge: the run clock top left, the view switch top right, zoom bottom right.
 - **Console row:** the Fire button sits on the picture's centreline with the Armed label above it; throttle to its left, the altitude scale to its right with the Ascend and Descend buttons under it, because they drive altitude.
 - **Test data column:** the forecast/live line, the three limit gauges, thrust, efficiency, nozzle state, a fold-open "Engineer's numbers", then the test log on a darker ground at the bottom.
@@ -220,7 +220,7 @@ Spacing is tight and even: 16px from a panel's edge to its contents, 12px for th
 
 **Below 1240px** the side columns narrow to 250px and 280px, and the console takes two rows: altitude beside Fire, then Ascend and Descend beside throttle beneath. Below 1040px the altitude scale keeps three marks, not four.
 
-**Below 900px** the page becomes one scrolling column. The picture (36% of the screen height, at least 200px) and the console stay pinned to the top; the test data, then the Build column, scroll underneath. Buttons and dropdowns get taller to be easier to tap.
+**Below 900px** the page becomes one scrolling column. The picture (32% of the screen height, at least 190px) and the console stay pinned to the top, with a line of thrust and Isp at the head of the console; the test data, then the Build column, scroll underneath, and the column's thrust figure steps down to 52px since it is already pinned. The picture's altitude scale is left out where the picture is under 296px tall. Buttons and dropdowns get taller to be easier to tap.
 
 ## Elevation & Depth
 
@@ -276,6 +276,8 @@ Each part picker in the Build column carries a number in a small ring (20px) bef
 
 **The Same Number Rule.** A number on the engine and a number in the Build column always mean the same part. Numbers are counted from the pickers that are showing, so they never skip.
 
+**The altitude scale.** Down the picture's right edge runs a thin Off-White rail marked Sea level, 10 km, 40 km and Vacuum, spread as the altitude slider is. A marker with the altitude in a Well-coloured label rides it, so the climb shows once the stand has fallen away. The fixed marks give way where the marker stands over them.
+
 ### Redline gauges (signature)
 One gauge per limit (wall stress, heat load, instability): a label on the left, a bold percentage on the right, and a 12px Well bar beneath.
 - The bar is ticked every tenth with faint off-white lines.
@@ -312,7 +314,7 @@ When the engine lights, a warm flash spreads from the nozzle exit and fades over
 - **Do** keep surfaces flat: a solid grey-green fill, a 1px Line border where needed, 3px corners.
 - **Do** set every figure, label and name in Barlow Condensed 700 capitals, and every sentence in Barlow.
 - **Do** keep tabular figures on wherever a number changes.
-- **Do** give every reading a Dim uppercase label that names it, and a plain-English line beneath when the figure needs explaining.
+- **Do** give every reading a Dim label that names it (in capitals only on a gauge), and a plain-English line beneath when the figure needs explaining.
 - **Do** use the browser's own controls (select, range, button, details) and restyle them lightly.
 - **Do** show state with the border and lettering colour, not with a new fill.
 - **Do** say whether figures are a forecast or live, and show forecasts at half strength.
